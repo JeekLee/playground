@@ -179,6 +179,29 @@ Stage 2 output for the Docs (M2) bounded context. Ten 1440-wide frames: six desk
 └──────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
+### + New document dropdown + .md import affordance
+
+- **Purpose:** two parallel paths to bring content into the system — (a) write from scratch via the BlockNote editor, (b) import an existing `.md` file from disk. Both surface from `/docs` and from any page where a `+ New document` action exists.
+- **Spec trace:** M2 spec §2 P0 (`.md` file upload bullet), §6.2 `POST /api/docs` (multipart variant with `.md` file), §7.2 row `/docs` (the `+ New document` button — now with a dropdown chevron).
+- **Auth state:** authenticated.
+- **Figma frames:** `M2 — + New document dropdown (overlay)  /docs` (node `30:859`) + `M2 — Drag-drop import overlay (active)  /docs` (node `30:860`).
+- **Key elements (dropdown):** The `/docs` page-header `+ New document` button gets a small `▾` chevron immediately to the right of the label (inside the same `accent` button surface — a 1px `accent.hover` divider separates the label from the chevron click target so the two are independently clickable). Clicking the label = default action (Blank document → `/docs/new`). Clicking the chevron opens a 200px dropdown card (`surface` bg, `border` 1px, `radius.md`, `shadow.pop` if available) with two rows: `+ Blank document` (primary path) and `↑ Import .md…` (opens native file picker filtered to `.md`).
+- **Key elements (drag-drop overlay):** Active on `/docs` AND `/docs/new` AND `/docs/{id}`. Triggered on `dragenter` of a file (any file type) anywhere in the viewport. Full-viewport `color.text @ 0.30α` backdrop + centered drop card (400×200, `surface`, dashed `border.strong` 2px, `radius.lg`). Card content: big `↑` accent glyph + title + subtitle. On `/docs/new` and `/docs/{id}` the title swaps to `Drop .md to replace this document's body` (`color.danger` accent glyph instead of `color.accent` — communicates destructive overwrite). The static Figma mock uses a solid 2px stroke because the Talk to Figma plugin's `create_rectangle` does not expose a dashed-stroke setter; the implementer applies `border-style: dashed` from CSS at impl time (see Open questions).
+- **Interactions:**
+  - **Click + New document (label):** navigates to `/docs/new` with the current folder path inherited (as today).
+  - **Click + New document (chevron):** opens the dropdown.
+  - **Click "+ Blank document" in dropdown:** same as clicking the label.
+  - **Click "↑ Import .md…" in dropdown:** opens native file picker filtered to `.md` extension. On select, `POST /api/docs` multipart (file body + `path` set to the current folder) → on success navigates to `/docs/{newId}` (the new doc opens in the editor for review).
+  - **Drag a file over the viewport:** overlay appears within 100ms. Drag-leave with no drop dismisses. Drop on the card uploads via the same multipart path.
+  - **Non-.md file dropped:** the drop is rejected; a `danger`-fg toast appears in the topbar reading `Only .md files are accepted.` for 3s.
+- **Empty / error / loading states:**
+  - **Loading (upload in progress):** drop card swaps to a single line `Uploading <filename>…` with a small spinner.
+  - **Error (413 body too large per spec §6.5):** danger toast `<filename> is too large (>1MB). Trim and try again.`
+  - **Error (multipart parse failure):** danger toast `Couldn't read <filename>. Make sure it's a UTF-8 Markdown file.`
+- **Open questions:**
+  - Chevron click-target separator inside the primary button — using a 1px `accent.hover` divider is borderline visible at this contrast. Implementer may use a wider gap or a darker divider; static mock is illustrative only.
+  - Drag-drop overlay on `/docs/{id}` is destructive (replaces body) — should it require a confirm step? Working default: no confirm, but the overlay copy is explicit ("replace"). M2.1 could add a confirm if this turns out to be a footgun.
+
 ### New document (editor) (`/docs/new`)
 
 - **Purpose:** in-app block editor for creating a brand-new document. Notion-style single-pane: each line is a block (paragraph, h1/h2/h3, list, quote, code, etc.), `/` summons a block-type picker, blocks are reorderable via a drag handle that appears on row hover. The body roundtrips raw MD: on load, MD parses to blocks via `tryParseMarkdownToBlocks`; on save, blocks serialize back via `blockToMarkdownLossy`. The public render at `/docs/public/{slug}` still uses the `unified` + `remark` + `rehype` + `shiki` pipeline against the raw MD body — BlockNote changes the **authoring** UX, not the **reading** pipeline.
@@ -500,7 +523,8 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §6.1 — `POST /api/docs/public/{slug}/view` | Document detail (fired on page load; the displayed `viewCount` reflects the post-increment value) |
 | §6.2 — `GET /api/docs/mine` | My documents |
 | §6.2 — `GET /api/docs/search?scope=mine` | Search results (default `Mine` scope in the mock); ⌘K search palette (default `Mine` scope) |
-| §6.2 — `POST /api/docs` (in-app create + `.md` file upload) | New document (editor) — the in-app create path. The `.md` file upload is mentioned in the spec but the upload affordance is M2.1 visual (drag-and-drop or button in the editor) — flagged in Open questions below. |
+| §6.2 — `POST /api/docs` (in-app create) | New document (editor) — the in-app create path (`Blank document` from the dropdown lands here). |
+| §2 P0 — `.md` file upload (multipart variant of `POST /api/docs`) | + New document dropdown (overlay) — the `↑ Import .md…` row triggers the native file picker; Drag-drop import overlay (active) — the drag-and-drop path. Both POST `multipart/form-data` to `POST /api/docs` per spec §6.2. |
 | §6.2 — `GET /api/docs/{id}` | Edit document |
 | §6.2 — `PATCH /api/docs/{id}` | New document + Edit document (the save-state pill is the user-facing artifact) |
 | §6.2 — `POST /api/docs/{id}/publish` | Edit document (Publish-changes button — opens modal) and New document (Publish button — opens modal); **Publish modal** (slug + excerpt form, footer Publish CTA fires the POST) |
@@ -535,7 +559,7 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `color.text.muted` | `#6F6A55` | Hero subtitle, document excerpts, breadcrumb, neutral chip fg, Draft chip fg, all "updated …" meta, blockquote body, save-state pill, hit chip-Draft fg, account email, list-row meta numbers, sidebar wordmark line 2, Sign-in-to-like tooltip hint |
 | `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows |
 | `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs`, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link |
-| `color.accent.hover` | `#5C6730` | (Reserved — primary-button hover treatment; not visible at rest in these static mocks but the implementer applies it on hover per spec §6.1) |
+| `color.accent.hover` | `#5C6730` | Primary-button hover treatment (applied at impl time per spec §6.1); also the 1px chevron-divider inside the `+ New document` button on the dropdown-overlay frame (separates the label click target from the chevron click target). |
 | `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg |
 | `color.success` | `#4F6B2E` | `● Signed in` topbar chip fg (signed-in screens) |
 | `success` chip bg | `#E5EBD9` | `● Signed in` chip bg; sage thumbnail gradient on document cards (this is the spec's `success` chip bg from §6.3, reused for the sage decorative gradient — same value, no new token) |
@@ -586,10 +610,9 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 
 - **Figma frame `name` field still stale on two M2 frames.** The Talk to Figma plugin allowlist exposes `set_text_content` for TEXT nodes but no node-rename tool, so frames `14:258` and `14:342` still carry the v3 names `M2 — Essays (public list)  /essays` and `M2 — Essay detail (public)  /essays/{slug}` even though all their internal text was migrated to the new vocabulary. The four other M2 frames (`14:388`, `14:463`, `14:508`, `14:563`) already had v4-compliant names. Action: the human reviewer can rename the two frames in Figma directly (right-click → Rename) to `M2 — Documents (public list)  /docs/public` and `M2 — Document detail (public)  /docs/public/{slug}` before exporting PNG assets, OR the cursor-talk-to-figma maintainer can extend the plugin to expose `set_node_name`. Cost is minimal either way.
 
-- **`.md` upload affordance.** Spec §6.2 says `POST /api/docs` accepts `multipart/form-data` with a `.md` file plus optional `title`. The mock does NOT include an upload entry point in the editor toolbar. Two options:
-  1. Add a small `↑ Upload .md` ghost button to the `/docs/new` toolbar (left of `Publish`). Ships with M2 with no schema or API change required.
-  2. Defer to M2.1 alongside image upload — both upload paths land together with a single drag-and-drop zone in the editor body. Cleaner UX but the API is sitting unused for one release.
-  Recommendation: option 1, since the API ships either way and a 32×32 ghost button is trivial. Flagging for the implementer to confirm during Stage 3.
+- **`.md` upload affordance — RESOLVED in this design round.** Spec §6.2 says `POST /api/docs` accepts `multipart/form-data` with a `.md` file plus optional `title`. Two affordances ship in M2 P0 (see the new "+ New document dropdown + .md import affordance" section above): (a) the `+ New document` button's chevron dropdown row `↑ Import .md…` (opens native file picker), and (b) drag-and-drop of a `.md` file onto the viewport (overlay accepts the drop and POSTs multipart). The earlier "add an upload button to the editor toolbar" suggestion is replaced — keeping the import path off the editor toolbar reduces toolbar clutter and groups both create paths under one entry point (the page-header `+ New document` button). M2 spec §12 acceptance criteria amended to make both affordances explicit.
+
+- **Dashed border on drop card not authored in Figma.** The Talk to Figma plugin's `create_rectangle` doesn't expose a stroke-style setter (solid / dashed / dotted), so the 400×200 drop card in `M2 — Drag-drop import overlay (active)  /docs` uses a solid 2px `border.strong` stroke instead of dashed. The implementer applies `border-style: dashed` (CSS) at impl time — the dashed treatment is the standard "drop here" affordance and reads more clearly than solid. Same plugin limitation already noted for `shadow.pop` on modal cards; the maintainer could extend the bridge to expose `setStrokeStyle` if this becomes a recurring need.
 
 - **Publish modal visual — RESOLVED in this design round.** The Publish modal frame (node `29:816`) now exists with the slug + excerpt form fields, helper text per spec §4.3 field rules, and primary/secondary footer button row per design system §6.1. The same modal is reused for `Publish changes` (pre-populated with the document's current `publish_meta.slug` and `publish_meta.excerpt`). Carried-forward sub-question: should the slug helper text live above or below the input? Working default: below (matches Material / shadcn / most form libraries). The mock shows below.
 
