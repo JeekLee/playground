@@ -28,6 +28,8 @@ out/
 
 # Claude
 .claude/settings.local.json
+.claude/worktrees/
+.superpowers/
 
 # Docker volumes
 **/volumes/
