@@ -7,3 +7,7 @@
 -- per-milestone, not M0.
 
 CREATE EXTENSION IF NOT EXISTS vector;
+
+-- M1 (identity BC) — schema-per-BC per ADR-05. Table DDL is owned by Flyway
+-- (backend/identity/identity-infra/src/main/resources/db/migration/), not here.
+CREATE SCHEMA IF NOT EXISTS identity;
