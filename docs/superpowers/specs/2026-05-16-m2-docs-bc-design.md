@@ -241,10 +241,12 @@ APPS
 
 The Workspace section is removed. Per-document actions (Write, Publish, Search, View public) live inside the Documents surface, not in the sidebar.
 
-`Documents` row behavior:
+`Documents` row behavior (effective once M2 ships):
 - **Logged out:** entry visible, click lands on `/essays` (public-read list). No 🔒 — the public face of Documents is reachable.
 - **Logged in:** entry visible, click lands on `/docs` (my list). A small numeric badge shows `published / total` (e.g., `4/12`).
 - Active state lights up `accent.soft` for any route under `/docs/**` or `/essays/**`.
+
+**Sidebar at M1 (interim — Documents not yet shipped):** the grow rule (`design-system §8.1: rows are added the moment their milestone ships`) takes priority. At M1 release, the Apps section contains exactly one row — `Home`. The `Documents` row is **not** rendered (not as a placeholder, not as a locked row). Workspace section is gone outright. This supersedes the locked-items treatment in `docs/design/M1-identity.md` v2; the M1 design-context document must be re-issued (v3) before M1 frontend implementation begins.
 
 ### 7.2 Client routes (Documents surface)
 
