@@ -387,6 +387,7 @@ These intentionally land in the architect's per-milestone ADR, not here:
 Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens. The original five bullets are preserved; new ones expand on what the design system, ADR-09, and this spec promise.
 
 - [ ] Authenticated user can create a document via the in-app editor and via `.md` file upload, both producing a stable document id.
+- [ ] The `.md` upload path is reachable from two affordances on `/docs`: (a) the `+ New document` button's chevron dropdown row `↑ Import .md…` (opens native file picker), and (b) drag-and-drop of a `.md` file onto the viewport (overlay accepts the drop and POSTs multipart). Non-`.md` files dropped are rejected with a `danger` toast.
 - [ ] `GET /api/docs/mine` returns the caller's documents (all visibilities), `GET /api/docs/{id}` returns a single doc — both **404 when the caller is not the owner**.
 - [ ] `GET /api/docs/public` and `GET /api/docs/public/{slug}` work **without an auth header** and only return `visibility='public'` rows.
 - [ ] `GET /api/docs/public` (list) returns **only owner-authored** documents — non-owner public documents are excluded even if they exist. Verified by integration test seeding a non-owner public document and asserting it is absent.
