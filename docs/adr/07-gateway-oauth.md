@@ -70,11 +70,11 @@ trust attacker-injected identity.
 
 | Pattern | Upstream |
 |---|---|
-| `/api/identity/**` | `http://identity:18081` |
-| `/api/docs/**` | `http://docs:18082` |
-| `/api/rag/ingest/**` | `http://rag-ingestion:18083` |
-| `/api/rag/chat/**` | `http://rag-chat:18084` |
-| `/api/metrics/**` | `http://metrics:18086` |
+| `/api/identity/**` | `http://identity-api:18081` |
+| `/api/docs/**` | `http://docs-api:18082` |
+| `/api/rag/ingest/**` | `http://rag-ingestion-api:18083` |
+| `/api/rag/chat/**` | `http://rag-chat-api:18084` |
+| `/api/metrics/**` | `http://metrics-api:18086` |
 | `/**` | `http://client:3000` (Next.js SSR) |
 
 Path stripping: `/api/<bc>` is stripped before forwarding so backends see

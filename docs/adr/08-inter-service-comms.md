@@ -55,7 +55,7 @@ module. It is a leaf in the dependency graph.
 
 ### Discovery
 - No service registry. DNS via compose service names is sufficient
-  (`identity:18081`, `docs:18082`, etc.).
+  (`identity-api:18081`, `docs-api:18082`, etc.).
 - Gateway routes are configured statically in `application.yml`. If a BC port
   changes, ADR-01's table is the source of truth — update both.
 

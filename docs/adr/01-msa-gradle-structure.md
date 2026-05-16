@@ -3,9 +3,10 @@
 ## Status
 Accepted — **v2 supersedes ADR-01 v1** (original 7-module map). The high-level
 posture (monorepo, JDK 21, one JVM per BC, port pins) is unchanged; the BC unit
-of build expands from one Gradle module to a **four-module quadruplet** per BC,
-and the toolchain version pins are bumped to the VIA-validated set
-(Spring Boot 3.5.6, Spring Cloud 2024.0.2, Spring AI 1.0.0-M6).
+of build expands from one Gradle module to a **four-module quadruplet** per BC.
+Toolchain version pins stay on the **Spring Boot 3.3.x / Spring AI 1.0.0 GA**
+line that ADR-04 and ADR-07/ADR-10 already commit to — VIA's newer 3.5.6 /
+1.0.0-M6 set was considered but rejected in favor of the GA-stable line.
 
 ## Context
 ADR-01 v1 shipped a 7-module map (gateway, shared-kernel, identity, docs,
@@ -18,9 +19,12 @@ module's packages. Two pressures motivated v2:
    four-module quadruplet per BC that pushes layering down to the Gradle
    dependency graph: a `-domain` module cannot accidentally `import org.springframework.*`
    because its `build.gradle.kts` doesn't depend on Spring.
-2. **Version pins drifted.** VIA validated Spring Boot 3.5.6 + Spring Cloud
-   2024.0.2 + Spring AI 1.0.0-M6 on JDK 21 — newer than the 3.3.x line ADR-01 v1
-   pinned. The pins below adopt VIA's set.
+2. **Version pins consolidated, not bumped.** VIA validated Spring Boot 3.5.6 +
+   Spring Cloud 2024.0.2 + Spring AI 1.0.0-M6 on JDK 21. After review we keep
+   ADR-01 v1's **3.3.x line** because Spring AI ships **1.0.0 GA** against
+   Spring Boot 3.3 (per ADR-04) — the GA-stable pair is preferred over VIA's
+   newer-but-milestone combination. ADR-01 v1's `1.0.0-M6` reference (carried
+   over from an earlier draft) is corrected to `1.0.0 GA` here.
 
 Alternatives considered and rejected:
 - **Keep one Gradle module per BC + ArchUnit** — rejected: ArchUnit catches
@@ -41,9 +45,12 @@ Alternatives considered and rejected:
   `settings.gradle.kts`).
 - **JDK 21 LTS** (Eclipse Temurin) — `sourceCompatibility = JavaVersion.VERSION_21`,
   `targetCompatibility = JavaVersion.VERSION_21`.
-- **Spring Boot 3.5.6** (VIA-validated patch on the 3.5.x GA line).
-- **Spring Cloud 2024.0.2** (BOM compatible with Spring Boot 3.5).
-- **Spring AI 1.0.0-M6** (milestone — see ADR-04 for the LLM wiring rationale).
+- **Spring Boot 3.3.x** (latest patch on the 3.3 line — exact patch pinned in
+  the root version catalog; ADR-07 and ADR-10 already pin against this line).
+- **Spring Cloud 2024.0.x** (BOM compatible with Spring Boot 3.3 — exact patch
+  in the version catalog).
+- **Spring AI 1.0.0 (GA)** — coordinates `org.springframework.ai:spring-ai-bom:1.0.0`
+  per ADR-04.
 
 Root version catalog lives in `gradle/libs.versions.toml`. All modules pin
 through it; no hard-coded versions in module `build.gradle.kts`.
