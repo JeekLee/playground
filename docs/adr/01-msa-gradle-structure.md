@@ -47,8 +47,11 @@ Alternatives considered and rejected:
   `targetCompatibility = JavaVersion.VERSION_21`.
 - **Spring Boot 3.3.x** (latest patch on the 3.3 line — exact patch pinned in
   the root version catalog; ADR-07 and ADR-10 already pin against this line).
-- **Spring Cloud 2024.0.x** (BOM compatible with Spring Boot 3.3 — exact patch
-  in the version catalog).
+- **Spring Cloud 2023.0.x** (BOM compatible with Spring Boot 3.3 — exact patch
+  in the version catalog; pinned at `2023.0.4` during M0 bootstrap). Spring
+  Cloud 2024.0.x requires Spring Boot 3.4.x and is therefore incompatible with
+  our 3.3 line — confirmed by the gateway's `CompatibilityVerifier` failing
+  during the M0 build.
 - **Spring AI 1.0.0 (GA)** — coordinates `org.springframework.ai:spring-ai-bom:1.0.0`
   per ADR-04.
 
