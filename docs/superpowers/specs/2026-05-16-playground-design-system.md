@@ -196,25 +196,17 @@ The app uses a fixed two-column shell on `≥1024px` viewports.
 
 ### 8.1 Sidebar (232px, left)
 
-> **Partially superseded by `2026-05-16-m2-docs-bc-design.md` §7.1.** From M2 onward the Apps / Workspace split is dropped; all Documents-related navigation is a single `Documents` entry in Apps. The Brand row, Search palette trigger, Spacer, and Account footer described below remain in force.
+> **Superseded by `2026-05-16-m2-docs-bc-design.md` §7.1** for the Apps section content and the locked-row treatment. The Brand row, Search palette trigger, Spacer, and Account footer described below remain in force. The Workspace section originally at item 4 is removed entirely.
 
 Fixed width. Background `surface.soft`. Vertical sections, top-to-bottom:
 
 1. **Brand row** — glyph + stacked wordmark.
 2. **Search** — `⌘K` palette trigger. Surface-on-cream pill, `13px text.subtle`.
-3. **Apps section** — primary navigation, one item per shipped milestone:
-   - `Home` (always)
-   - `Essays` (added when M2 ships) — with badge showing essay count
-   - `Chat` (added when M4 ships) — with `PUBLIC` badge if available without sign-in
-   - `Metrics` (added when M5 ships)
-4. **Workspace section** — actions that require sign-in. Items are present but show 🔒 badge when logged out:
-   - `Write essay` (M2+)
-   - `My documents` (M2+)
-   - `My chats` (M4+)
-5. **Spacer** (flex: 1).
-6. **Account footer** — avatar + name/email when signed in; `Not signed in — Sign in to write/chat privately` when not.
+3. **Apps section** — single navigation section listing every top-level destination from M1, with locked previews for milestones not yet shipped. See M2 spec §7.1 for the canonical row list and locked-item / shipped-item treatment. Same preview-with-locks paradigm as the home tile grid (§9 below).
+4. **Spacer** (flex: 1).
+5. **Account footer** — avatar + name/email when signed in; `Not signed in — Sign in to write/chat privately` when not.
 
-**Rule (sidebar growth):** an `Apps` row is added the moment its milestone is shipped. **Shipped** here means the GitHub milestone is closed and the feature is reachable in production. At M1 release the sidebar contains exactly one Apps row: `Home`. Do not pre-add placeholders — empty sections look broken, missing sections read as "in progress."
+**Rule (Apps row visibility):** every top-level destination is listed from M1 onward. Rows whose milestone hasn't shipped render with the locked-item treatment (see M2 spec §7.1). The shipped vs. locked distinction is driven by GitHub milestone state (milestone closed = shipped). This replaces the earlier "strict grow rule" — empty Apps lists look uninhabited, full Apps lists with explicit milestone badges read as "here's what's coming."
 
 Active state: `accent.soft` bg, `accent` text, weight 600. Hover (non-active): `surface` bg.
 
