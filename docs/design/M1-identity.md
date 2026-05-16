@@ -8,6 +8,8 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 
 > Asset note: the Figma file is fully assembled at the URL above (all four frames rendered correctly under live verification). The `mcp__TalkToFigma__export_node_as_image` calls succeed inside Figma but the harness intercepts the returned base64 as inline visual content rather than passing it through as text — so the PNGs cannot be programmatically saved under `docs/design/assets/M1/` from this agent. ASCII wireframes below remain accurate; the canonical visual reference is the Figma file. Manual one-call-per-frame export (File → Export selected, PNG @ 2x) drops them straight into `docs/design/assets/M1/{home-public,login,home-signedin,unauthorized}.png` when the human reviewer wants them inlined here.
 
+> Note on frame state (added by M2 design round 7): the Figma frames `14:2` (Public Home) and `14:135` (Signed-in Home) now visualize the **M2-shipped state**, not the M1-ship state. Two deltas: (1) the sidebar `Docs` row is shipped/inactive (full opacity, icon + label in `color.text`, no `M2 🔒` badge); (2) the `Latest documents` section is populated with a 3-column grid of 3 mock document cards (replaces the empty-state card; same mock entries as `docs/design/M2-docs.md` §Documents (public list) — "Building an agent team…", "Why I rebuilt my blog…", "Spark cluster…"). The ASCII wireframes and per-screen prose in this doc still describe the **M1-ship state** — accurate for the M1 frontend implementation; for the M2-shipped UI state see `docs/design/M2-docs.md` "Home composition deltas" plus the Figma frames.
+
 ## Screens
 
 ### Public Home (`/`) — logged-out landing
