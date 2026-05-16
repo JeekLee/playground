@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "TalkToFigma": {
-      "command": "bunx",
+      "command": "/home/jeek_lee/.bun/bin/bunx",
       "args": ["cursor-talk-to-figma-mcp@latest"]
     }
   }
