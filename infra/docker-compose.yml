@@ -1,0 +1,97 @@
+# M0 platform skeleton — boots gateway + Kafka KRaft + Postgres pgvector + Redis.
+# Service names are pinned by ADR (referenced inline). Host-exposed ports follow
+# the 102xx data-store block + 18080 gateway + 19092 Kafka.
+
+services:
+  # --- ADR-05: Postgres 16 + pgvector ---
+  postgres-playground:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-playground
+    environment:
+      POSTGRES_DB: playground
+      POSTGRES_USER: ${POSTGRES_USER:-playground}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
+    ports:
+      - "10232:5432"
+    volumes:
+      - postgres-playground-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-playground} -d playground"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- ADR-07 / ADR-08 amendment: Redis (sessions + rag-ingestion locks) ---
+  redis-playground:
+    image: redis:7-alpine
+    container_name: redis-playground
+    ports:
+      - "10279:6379"
+    volumes:
+      - redis-playground-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- ADR-03: Kafka KRaft mode (no Zookeeper) ---
+  kafka-playground:
+    image: apache/kafka:3.8.0
+    container_name: kafka-playground
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-playground:9092,EXTERNAL://localhost:19092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-playground:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+    ports:
+      - "19092:19092"
+    volumes:
+      - kafka-playground-data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-playground:9092 || exit 1"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # --- ADR-01 v2 / ADR-07: Gateway (single ingress, host-exposed) ---
+  gateway:
+    build:
+      context: ..
+      dockerfile: api/gateway/Dockerfile
+    container_name: gateway
+    depends_on:
+      postgres-playground:
+        condition: service_healthy
+      redis-playground:
+        condition: service_healthy
+      kafka-playground:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SPARK_INFERENCE_GATEWAY_URL: ${SPARK_INFERENCE_GATEWAY_URL:-http://host.docker.internal:10080}
+    ports:
+      - "18080:18080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:18080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  postgres-playground-data:
+  redis-playground-data:
+  kafka-playground-data:

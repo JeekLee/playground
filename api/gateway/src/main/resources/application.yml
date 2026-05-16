@@ -1,0 +1,23 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      # Routes are populated per milestone (ADR-07 forwarding map).
+      # M0 ships an empty list so /actuator/health works without any downstream
+      # service running.
+      routes: []
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
