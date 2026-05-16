@@ -5,7 +5,9 @@
 > Figma: https://www.figma.com/design/NOe1YyQ3NxzgcuYlAVeooN/playground-%E2%80%94-M1-Identity (M2 frames added below the M1 row at y ≥ 1000; M1 frames are unchanged)
 > Builds on: `docs/design/M1-identity.md` (sidebar shell, topbar, account pill — all reused verbatim except the `Docs` Apps row, which is unlocked + active on every M2 route)
 
-Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wide, built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
+Stage 2 output for the Docs (M2) bounded context. Seven desktop frames at 1440 wide (six page frames + the global `⌘K` overlay), built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
+
+> Layout note (v5): the `/docs` (My documents) screen now uses a **two-pane C-layout** — left tree (status filters + folder hierarchy) + right list (A-style table of docs in the currently-selected folder). This replaces the previous flat-list + segmented-switcher layout. The change is driven by the new **Document directory hierarchy** P0 spec (M2 spec §2 P0 / §4.1 `path` column / §6.2 `GET /api/docs/folders` + `POST /api/docs/{id}/move` / §7.2 row `/docs` / §10 path validity + folder-rename atomicity). Public surfaces remain **flat** — folder paths are an authoring-only organizational tool and do NOT appear on `/docs/public` or `/docs/public/{slug}`.
 
 > Terminology note (v4): per M2 spec §0, the user-facing noun is **`Document`** / **`Documents`** everywhere. The previous draft of this design doc used `essay` / `Essays` — those have been migrated. The home section is labeled `Latest documents`, the sidebar entry is `Docs`, the public list lives at `/docs/public`, single document detail lives at `/docs/public/{slug}`. The DTO names in §6.4 of the spec are `PublicDocListItem` and `PublicDocDetail`.
 
@@ -124,59 +126,72 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 
 ### My documents (`/docs`)
 
-- **Purpose:** the author's at-a-glance index of every document they've authored, mixed visibility. Tab-switched between `All / Drafts / Published`. Top-right surfaces the per-screen search (complementary to the global ⌘K palette — per-screen search is filter-friendly; ⌘K is keyboard-fastest, both ship in M2 P0) and the primary `+ New document` CTA.
-- **Spec trace:** M2 spec §6.2 (`GET /api/docs/mine`), §7.2 row 3 (`/docs`), §7.1 (the sidebar `Docs` row when signed-in shows the `published/total` numeric badge — visible here as `4/12` in `accent` `font.small`/500).
-- **Auth state:** authenticated (401 from this route lands on `/login` per M1).
+- **Purpose:** the author's at-a-glance index of every document they've authored — organized by **status filters** (All / Drafts / Published / Private) AND **folder hierarchy** (left tree with paths like `/agents/build-log/`, expand/collapse, doc counts per folder). Right pane = A-style table of docs in the currently-selected folder (or all docs if root `/` is selected). New in M2 (per spec §2 P0): documents have a `path` field; folders are implicit (no separate table — `SELECT DISTINCT path` derives the tree).
+- **Spec trace:** M2 spec §2 P0 (new "Document directory hierarchy" bullet), §4.1 (`docs.documents.path` column), §6.2 (`GET /api/docs/folders`, `POST /api/docs/{id}/move`), §7.2 row `/docs` (two-pane layout), §10 (path validity + folder rename atomicity).
+- **Auth state:** authenticated.
 - **Figma frame:** `M2 — My documents  /docs` (node `14:388`).
 - **Key elements:**
-  - **Sidebar:** brand row → search pill → Apps section with `Home`, `Docs` (active, with `4/12` numeric badge in `accent`), `Chat M4 🔒`, `System status M5 🔒` → spacer → **signed-in account footer** (28px khaki avatar + stacked `JeekLee` / `jeeklee1120@gmail.com`).
-  - **Topbar:** breadcrumb `Documents`; right side **signed-in chip** (`● Signed in`, `success.soft` bg + `success` fg, with a 4px dot) + account pill (24px khaki avatar + `JeekLee  ▾`, `surface` bg + `border` stroke, `radius.pill`).
-  - **Page header (top-left of main):** `font.h2` `My documents`. **Top-right of main:** 280px-wide `Search my documents…` input (`radius.sm`, `surface` bg, `border.strong` stroke per design system §6.2) + primary `+ New document` button (`accent` per §6.1, `radius.md`).
-  - **Segmented switcher** below the header: three segments `All / Drafts / Published`. Active segment (`All` in the mock) gets `accent.soft` bg + `accent` label weight 600; inactive segments are `text.muted` weight 500 on transparent. Background of the segment container is `surface.soft` with `radius.md`, padding 4px.
-  - **Document list card** (full-width, `surface` bg, `border` stroke, `radius.md`, `shadow.card`) with 6 rows separated by 1px `border` dividers. Each row:
-    - **Left:** title (`font.h3` 16px/600) + visibility chip on the same line. `Draft` chip uses `surface.soft` bg + `text.muted` fg; `Published` chip uses `accent.soft` bg + `accent` fg.
-    - **Middle:** `Updated <relative time>` in `font.small text.muted`.
-    - **Right:** `👁 viewCount · ♥ likeCount` in `font.small text.muted` — only present for Published rows. Draft rows show nothing here (matches the spec — view/like counters only exist meaningfully for public-reachable rows).
-    - The whole row is the hover-as-link target (border-top + bg → `surface.soft`).
-  - **6 mock rows** in the mock: `Building an agent team` (Published, 2h ago, 1.2K/42), `Why olive, not blue` (Published, 1d ago, 2.1K/73), `M2 brainstorming notes` (Draft, 3d ago), `The OpenSearch sidecar I almost didn't add` (Published, 5d ago, 612/18), `Random thoughts on RAG` (Draft, 1w ago), `Spark, but for one person` (Published, 2w ago, 864/31).
+  - **Sidebar + topbar:** same signed-in shell (sidebar with `Docs` active + `4/12` badge, account pill on the right).
+  - **Page header** (in main content area, above the two-pane body):
+    - Left: `font.h2` `My documents` + breadcrumb in `font.body text.muted` showing the current folder path (e.g., `/  agents  /  build-log` with `accent` color on each segment as a click-back affordance; current segment in `text` weight 600). When root is selected, breadcrumb shows just `/`.
+    - Right: `Search my documents…` input (280px wide, `radius.sm`, `surface` bg, `border.strong` stroke) + primary `+ New document` button (`accent` per §6.1).
+  - **Two-pane body** (main content area, below page header):
+    - **Left tree pane** (200px fixed width, `surface` bg, `border` 1px stroke, `radius.md`, padding `10px 12px`, full-height, scrollable):
+      - **Status section** — eyebrow `STATUS` in `font.eyebrow text.subtle`, followed by 4 rows: `All <count>`, `Drafts <count>`, `Published <count>`, `Private <count>`. Active status = `accent.soft` bg + `accent` label + weight 600. Multi-select intentionally NOT supported in M2 (one status filter at a time; spec §11 q15 covers richer filtering in M2.1).
+      - **Folders section** — eyebrow `FOLDERS` + tree of folder rows. Each row shows expand/collapse glyph (`▾`/`▸`) + folder name + doc count right-aligned in `font.mono text.subtle`. Indentation increases by 14px per nesting level. Active folder = `accent.soft` bg + `accent` label + weight 600.
+      - **Add-folder affordance** — `+ New folder` ghost row at the bottom of the folders section (`text.subtle`, becomes `accent` on hover). Click opens an inline input within the tree at the current folder level; submit creates an empty folder by inserting a placeholder doc OR (since folders are implicit) the folder appears only once a doc is created inside it. **Decision:** M2 P0 ships "create folder by creating a doc in it" (typing a new path on doc create); explicit `+ New folder` row is M2.1. In M2 P0 the row is visually present but disabled with `text.subtle` and the tooltip `Folders are created when you put a document in them — try + New document first.` This is called out in spec §11 q15.
+    - **Right list pane** (flex: 1, A-style table per the previous design, `surface` bg, `border` 1px, `radius.md`):
+      - **List header** (`padding 10px 14px`, `border-bottom 1px border`, `font.small`): `<N> in <current-folder-path>` on the left + `Updated ↓` sort indicator + right-aligned hint `drag rows to move folder` (only visible on hover over the list).
+      - **Row** (`padding 10px 14px`, 4-column grid: title+chip | updated-at | counters | overflow): same A-style as the previous design. Whole row clickable → `/docs/{id}` (editor). Overflow `⋯` icon at far right opens a small menu: `Open in editor` / `View public` (if published) / `Move to folder…` / `Delete`.
+      - **Drag-and-drop:** dragging a row onto a folder tree node moves the doc (`POST /api/docs/{id}/move` with the target path). Visual: dragged row reduces opacity to 0.6 + the target tree node highlights with `accent.soft` bg as drop indicator.
 - **Interactions:**
-  - Clicking a row navigates to `/docs/{id}` (the editor / edit screen).
-  - Clicking `+ New document` navigates to `/docs/new`.
-  - Search input is a per-page narrow search (filters the visible list client-side; the full search experience lives at `/docs/search`).
-  - Switcher tabs filter by visibility; URL gets a `?status=drafts|published` query param so deep-linking works.
+  - Click a status filter: replaces the URL with `?status=drafts` (or whatever), the right pane re-fetches with the filter applied.
+  - Click a folder in the tree: replaces the URL with `?path=/agents/build-log/`, the right pane re-fetches with `path=` filter applied (or `path` prefix-match if the folder has subfolders — Decision: prefix-match by default; future toggle in M2.1).
+  - Drag a row onto a folder: optimistic move (UI updates immediately, `POST /api/docs/{id}/move` happens in background; rollback on failure with a danger-fg toast).
+  - Click `+ New document` (top-right): navigates to `/docs/new` with the current folder as the default path (the editor toolbar's "Path" indicator — see editor design — shows the inherited path; the author can change it).
+  - Type in the search input: hits `GET /api/docs/search?q=…&scope=mine` and replaces the right pane with search results (same A-style row pattern). Pressing `Esc` clears the search and returns to the folder view.
+  - Click a breadcrumb segment: jumps the URL `?path=/agents/` (parent), tree re-highlights, right pane re-renders.
 - **Empty / error / loading states:**
-  - **Empty (zero documents):** centered empty-state card `No documents yet. Start writing.` + primary `+ New document` button. Same card pattern as M1's empty-state card.
-  - **Empty (filter result is empty — e.g., Drafts tab with zero drafts):** `No drafts.` line in `text.muted` rendered inside the list card.
-  - **Loading:** 5 row skeletons (title bar 50% width + chip + meta-row skeleton); list card frame visible immediately to prevent layout shift.
-  - **Error (5xx from `/api/docs/mine`):** the list card swaps to a `danger`-bordered variant with `Couldn't load your documents — retry` and a `retry` ghost button. The header (title + search + `+ New document`) stays interactive.
+  - **Empty (zero documents):** centered empty-state card in the right pane: `No documents yet. Start writing.` + primary `+ New document` button. Same card pattern as the M1 empty-state card. Left tree shows only `STATUS / All 0 / Drafts 0 / Published 0 / Private 0` and a disabled `FOLDERS` eyebrow (`No folders yet — create a document to start one.`).
+  - **Empty (current folder has zero documents but other folders have some):** right pane shows `No documents in /agents/build-log/. Move one here, or create a new one.` + `+ New document` button (which inherits the current path).
+  - **Loading:** left tree shows 6 skeleton rows; right pane shows 6 skeleton table rows. Header (`My documents`, breadcrumb, search, `+ New document`) stays interactive.
+  - **Error (5xx from `/api/docs/folders`):** the tree pane shows a `danger`-bordered card with `Couldn't load folders — retry` + a small retry ghost button. The list pane still loads (it uses `/api/docs/mine`, separate endpoint).
+  - **Error (5xx from `/api/docs/mine`):** mirror — the list card shows `Couldn't load your documents — retry`; the tree stays interactive.
 
 ```
-┌──────────────┬─────────────────────────────────────────────────────────────────────┐
-│  [J] JeekLee's│ Documents              [● Signed in]    [(JL) JeekLee ▾]           │
-│      PLAYGRD │─────────────────────────────────────────────────────────────────────│
-│              │  My documents                  [⌕ Search my documents…] [+ New doc]│
-│  [⌕ Search]  │  ┌──────────────────────┐                                          │
-│              │  │ [ All ] Drafts Pub'd │                                          │
-│  APPS        │  └──────────────────────┘                                          │
-│  ⌂ Home      │  ┌─────────────────────────────────────────────────────────────┐  │
-│  ▤ Docs 4/12 │  │ Building an agent team    [Published]   2h ago    👁1.2K ♥42│  │
-│  💬 Chat M4🔒│  │─────────────────────────────────────────────────────────────│  │
-│  📊 Stat M5🔒│  │ Why olive, not blue       [Published]   1d ago    👁2.1K ♥73│  │
-│              │  │─────────────────────────────────────────────────────────────│  │
-│              │  │ M2 brainstorming notes    [Draft]       3d ago             │  │
-│              │  │─────────────────────────────────────────────────────────────│  │
-│              │  │ The OpenSearch sidecar…   [Published]   5d ago    👁612 ♥18│  │
-│              │  │─────────────────────────────────────────────────────────────│  │
-│              │  │ Random thoughts on RAG    [Draft]       1w ago             │  │
-│              │  │─────────────────────────────────────────────────────────────│  │
-│              │  │ Spark, but for one person [Published]   2w ago    👁864 ♥31│  │
-│              │  └─────────────────────────────────────────────────────────────┘  │
-│  ┌─────────┐ │                                                                     │
-│  │(JL)     │ │                                                                     │
-│  │ JeekLee │ │                                                                     │
-│  │ jee…@   │ │                                                                     │
-│  └─────────┘ │                                                                     │
-└──────────────┴─────────────────────────────────────────────────────────────────────┘
+┌──────────────┬───────────────────────────────────────────────────────────────────────┐
+│  [J] JeekLee's│ Documents              [● Signed in]    [(JL) JeekLee ▾]             │
+│      PLAYGRD │───────────────────────────────────────────────────────────────────────│
+│              │  My documents  /  agents  /  build-log [⌕ Search…] [+ New document] │
+│  [⌕ Search]  │                                                                       │
+│              │  ┌────────────────┐  ┌───────────────────────────────────────────┐  │
+│  APPS        │  │ STATUS         │  │ 5 in /agents/build-log/   ·  Updated ↓    │  │
+│  ⌂ Home      │  │ ┌────────────┐ │  │                          drag rows…       │  │
+│  ▤ Docs 4/12 │  │ │ All     28 │ │  │───────────────────────────────────────────│  │
+│  💬 Chat M4🔒│  │ └────────────┘ │  │ Building an agent team  [Pub] 2h 👁1.2K ⋯│  │
+│  📊 Stat M5🔒│  │ Drafts      11 │  │───────────────────────────────────────────│  │
+│              │  │ Published   17 │  │ Why a single-developer  [Draft] 2d  —  ⋯ │  │
+│              │  │ Private     11 │  │───────────────────────────────────────────│  │
+│              │  │                │  │ M2 spec brainstorm…    [Draft] 5d  —  ⋯ │  │
+│              │  │ FOLDERS        │  │───────────────────────────────────────────│  │
+│              │  │ ▸ /         3  │  │ Stage 2 design — Docs… [Draft] 1w  —  ⋯ │  │
+│              │  │ ▾ agents    8  │  │───────────────────────────────────────────│  │
+│              │  │  ┌──────────┐  │  │ Architect ADR-10 notes [Draft] 2w  —  ⋯ │  │
+│              │  │  │▾build-log5│  │  │                                           │  │
+│              │  │  └──────────┘  │  │                                           │  │
+│              │  │   · m1-cycle 2 │  │                                           │  │
+│              │  │  ▸ spec-notes3 │  │                                           │  │
+│              │  │ ▸ spark     6  │  │                                           │  │
+│              │  │ ▸ architect 9  │  │                                           │  │
+│              │  │ ▸ misc      2  │  │                                           │  │
+│              │  │                │  │                                           │  │
+│              │  │ + New folder   │  │                                           │  │
+│              │  └────────────────┘  └───────────────────────────────────────────┘  │
+│  ┌─────────┐ │                                                                       │
+│  │(JL)     │ │                                                                       │
+│  │ JeekLee │ │                                                                       │
+│  └─────────┘ │                                                                       │
+└──────────────┴───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### New document (editor) (`/docs/new`)
@@ -190,6 +205,7 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
   - **Topbar:** breadcrumb `Documents / New`; right side = JL account pill only (no `Signed in` chip in the editor topbar — the editor toolbar's save-state already carries that affordance; reduces toolbar clutter for the editor surface).
   - **Editor toolbar** (slim strip below topbar, `surface.soft` bg, `border-bottom 1px border`, padding `12px 28px`, auto-layout HORIZONTAL with space-between):
     - **Left:** just the save-state pill in `font.small text.muted` (`Saved 3s ago` / `Saving…` / `Save failed — retry`). **No title input here** — the title is the first H1 block in the editor itself (Notion convention). On save the first H1's text becomes the `title` column on the `documents` row.
+    - **Path indicator** (next to the save-state pill on the left, before the title input): a small inline `font.small text.muted` reading the document's folder path (e.g., `/agents/build-log/`) as a click-to-edit pill. Default = the path the user was in when they clicked `+ New document` (i.e., from the `/docs` `?path=` query param at the time). Click → opens an inline folder picker (a compact tree dropdown sourced from `GET /api/docs/folders`); pick a folder + commit; the document's `path` is set on the next save (PATCH). Sets the right context before the first save creates the doc.
     - **Right:** primary `Publish` button (`accent` per design system §6.1).
   - **Editor surface** (main content area below toolbar):
     - `bg` background, padding `40px 0`. Inner content max-width 720px, horizontally centered (prose density).
@@ -443,7 +459,10 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §6.1 — `GET /api/docs/search?scope=public` | Search results (via the scope toggle = `Public`); ⌘K search palette (via `Tab` to toggle scope to Public) |
 | §2 P0 — Global `⌘K` search palette | ⌘K search palette (global overlay) — same API endpoint as Search results, different UX surface (keyboard-fastest vs. depth-fastest) |
 | §6.1 — `POST /api/docs/public/{slug}/view` | Document detail (fired on page load; the displayed `viewCount` reflects the post-increment value) |
-| §6.2 — `GET /api/docs/mine` | My documents |
+| §6.2 — `GET /api/docs/mine` | My documents (right list pane consumes this scoped by `path` prefix) |
+| §2 P0 / §6.2 — `GET /api/docs/folders` (folder tree, `FolderNode`) | My documents (left tree pane) |
+| §2 P0 / §6.2 — `POST /api/docs/{id}/move` (`MoveDocRequest`) | My documents (drag-and-drop a row onto a folder tree node) |
+| §4.1 — `docs.documents.path` column (folder hierarchy) | My documents (tree pane, breadcrumb, list-header current-folder label); New document (path-indicator pill in toolbar — inherits the path the user was in when they hit `+ New document`); Edit document (path indicator surfaces the existing folder, click-to-edit moves the doc). NOT surfaced on any public route — public URLs are flat per spec §2 P0 + §12 acceptance criterion. |
 | §6.2 — `GET /api/docs/search?scope=mine` | Search results (default `Mine` scope in the mock); ⌘K search palette (default `Mine` scope) |
 | §6.2 — `POST /api/docs` (in-app create + `.md` file upload) | New document (editor) — the in-app create path. The `.md` file upload is mentioned in the spec but the upload affordance is M2.1 visual (drag-and-drop or button in the editor) — flagged in Open questions below. |
 | §6.2 — `GET /api/docs/{id}` | Edit document |
@@ -478,10 +497,10 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `color.khaki` | `#C2B88A` | Khaki thumbnail gradient on document cards; sidebar-footer avatar; topbar account-pill avatar |
 | `color.text` | `#2A2C20` | Page titles, document titles, doc titles in list rows, hit titles, account name, body MD text, editor block content fg (h1/h2/h3/paragraph), highlight `<mark>` fg |
 | `color.text.muted` | `#6F6A55` | Hero subtitle, document excerpts, breadcrumb, neutral chip fg, Draft chip fg, all "updated …" meta, blockquote body, save-state pill, hit chip-Draft fg, account email, list-row meta numbers, sidebar wordmark line 2, Sign-in-to-like tooltip hint |
-| `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows |
-| `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs`, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link |
+| `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows, `/docs` tree pane `STATUS` / `FOLDERS` eyebrows, `/docs` tree pane `+ New folder` ghost row, `/docs` list-pane right-aligned "drag rows to move folder" hint |
+| `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs` status tree, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link, `/docs` tree pane **active folder label + count** (build-log), `/docs` breadcrumb non-current segments |
 | `color.accent.hover` | `#5C6730` | (Reserved — primary-button hover treatment; not visible at rest in these static mocks but the implementer applies it on hover per spec §6.1) |
-| `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg |
+| `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg, `/docs` tree pane **active row bg** (status `All`, folder `build-log`), drag-and-drop drop-indicator highlight on tree nodes |
 | `color.success` | `#4F6B2E` | `● Signed in` topbar chip fg (signed-in screens) |
 | `success` chip bg | `#E5EBD9` | `● Signed in` chip bg; sage thumbnail gradient on document cards (this is the spec's `success` chip bg from §6.3, reused for the sage decorative gradient — same value, no new token) |
 | `font.h1` | 28px / 1.2 / 700 / -0.02em | Page titles: `Documents by JeekLee`, document article titles, editor h1 block (and the `Untitled` placeholder in `text.subtle`) |
@@ -489,8 +508,8 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `font.h3` | 16px / 1.4 / 600 / 0 | Document card titles, doc list row titles, search hit titles |
 | `font.body` | 15px / 1.6 / 400 / 0 | Hero subtitle, document article body paragraphs, editor paragraph blocks, search hit snippets, search input text |
 | `font.small` | 13px / 1.5 / 400 / 0 | Document card excerpts, breadcrumb, all button labels (13px / 500 per spec §6.1), all `→` accent links, account-pill name, list-row meta text, segment labels, hit-meta chip-row text |
-| `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | Sidebar `APPS` label |
-| `font.mono` | 13px / 400 | All inline code (`.claude/agents/`), all fenced code blocks (document detail + the editor's code block type), slash-menu keyboard hints (`h1`, `h2`, `>`, `\`\`\``, `---`) |
+| `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | Sidebar `APPS` label, `/docs` tree pane `STATUS` and `FOLDERS` section labels |
+| `font.mono` | 13px / 400 | All inline code (`.claude/agents/`), all fenced code blocks (document detail + the editor's code block type), slash-menu keyboard hints (`h1`, `h2`, `>`, `\`\`\``, `---`), `/docs` tree pane folder counts (right-aligned numbers in `text.subtle` next to each folder + status row) |
 | `spacing.xs` | 4px | Intra-element micro-gaps (chip dot to label, view-public link to toolbar, search-input icon to text) |
 | `spacing.sm` | 8px | Eyebrow → title gap, tile internal gap, save-state to button gap, toolbar button-row gap |
 | `spacing.md` | 16px | Card internal padding, hero spacing, blockquote padding-left, fenced-code-block padding |
@@ -547,3 +566,11 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 - **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 7 frames into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results,kbd-search-palette}.png` when the human reviewer wants them inlined here.
 
 - **⌘K palette inline `<mark>` highlight simplification.** The static Figma mock for the ⌘K palette renders the active row's title in full `accent` (weight 600) instead of wrapping just the matched substring in an `accent.soft` `<mark>` span — the Talk to Figma plugin's TEXT node primitives don't support per-character background fills, so the inline highlight can't be authored declaratively in Figma here. The implementer reinstates the `<mark>` treatment at impl time using the same convention used on `/docs/search` (search result snippets already use the inline span), so there's no new rule to invent. The `accent`-on-title fallback in the mock is intentionally close enough that an at-a-glance design review still reads as "this is the active row with matched highlights." Resolution: implementer ships the proper inline `<mark>` span; the static mock retains the simplification. No spec change.
+
+- **Editor toolbar path-indicator pill visual (`/docs/new`, `/docs/{id}`).** The two editor frames (`14:463`, `14:508`) were NOT rebuilt in this design pass — they pre-date the directory-hierarchy P0. The new path-indicator pill described in the "New document (editor)" section above (a `font.small text.muted` click-to-edit pill next to the save-state, opening an inline folder picker sourced from `GET /api/docs/folders`) is fully specified in copy but its visual Figma authoring is deferred to a small follow-up touch round. Frontend-implementer can ship from the copy as-is; a future product-designer dispatch can add the pill to both editor frames in one cycle if a stakeholder requests a visual review before Stage 3.
+
+- **`+ New folder` row UX.** The dispatch resolved that the row visually appears as a disabled ghost in M2 P0 (`text.subtle` color + tooltip `Folders are created when you put a document in them — try + New document first.`). An explicit inline-input affordance ships in M2.1. Open: should the disabled appearance be more obviously inert (e.g., `surface.soft` muted bg + `cursor: not-allowed`) versus the current quiet `text.subtle` ghost? Working default = quiet ghost; revisit during M2.1.
+
+- **Folder-rename UX.** Spec §11 q15 deferred to M2 Stage-2 frontend refinement. Two options: (a) right-click → Rename inline input in the tree row, (b) the row's overflow menu has a `Rename folder…` item (parallel to the document row's overflow). Working default: option (a) — discoverability matches Notion/Finder muscle memory. Tracked in spec §11 q15.
+
+- **Folder drag-and-drop preview.** When a row is dragged onto a folder, the target highlights with `accent.soft` bg (drop indicator). Open: should the dragged row also render a small floating "ghost" copy following the cursor (Notion pattern), or is the in-place opacity-0.6 treatment enough? Working default: in-place opacity 0.6 ships first; floating ghost is a Stage-3 polish item.
