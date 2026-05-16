@@ -10,7 +10,7 @@
 Pin a single, low-decision-cost design system so:
 1. The `product-designer` agent does not re-invent the palette each milestone.
 2. The `frontend-implementer` agent scaffolds `client/src/shared/ui/tokens/` once and never edits it without a superseding spec.
-3. The site reads as **one place** across personal-tool surfaces (write, /me) and public-facing surfaces (blog, RAG chat, metrics).
+3. The site reads as **one place** across personal-tool surfaces (write, /me) and public-facing surfaces (document, RAG chat, metrics).
 
 This spec **does not** describe per-page UX (that lives in `docs/design/<Mx>-<slug>.md`). It describes the brand and the primitive vocabulary.
 
@@ -111,12 +111,12 @@ Semantic colors are warm-shifted to live alongside the cream/olive palette witho
 | `font.h1` | 28px / 1.2 | 700 | -0.02em | Page titles (`Sign in to continue`) |
 | `font.h2` | 20px / 1.3 | 600 | -0.01em | Section titles (`Today's documents`) |
 | `font.h3` | 16px / 1.4 | 600 | 0 | Card titles, sub-section |
-| `font.body` | 15px / 1.6 | 400 | 0 | Default body, essay content |
+| `font.body` | 15px / 1.6 | 400 | 0 | Default body, document content |
 | `font.small` | 13px / 1.5 | 400 | 0 | Meta, captions, helper |
 | `font.eyebrow` | 11px / 1.2 | 600 | +0.14em / uppercase | Section labels, brand line over hero |
 | `font.mono` | 13px | 400 | 0 | Code, kbd, numeric values |
 
-Body at 15px is intentional and slightly larger than common SaaS defaults so blog/essay surfaces (M2 onward) read as prose, not as app chrome.
+Body at 15px is intentional and slightly larger than common SaaS defaults so document/document surfaces (M2 onward) read as prose, not as app chrome.
 
 ## 5. Spacing, radius, elevation
 
@@ -182,7 +182,7 @@ Disabled state: bg `surface.soft`, color `text.subtle`, `cursor: not-allowed`.
 
 bg `surface`, border `1px solid border`, radius `md`, padding `16px`, shadow `shadow.card`. Title `font.h3`, body `font.small` in `text.muted`.
 
-Hover-as-link variant (used for blog post thumbnails and feature tiles): border → `accent`, transform `translateY(-2px)`, shadow → `shadow.pop`.
+Hover-as-link variant (used for document post thumbnails and feature tiles): border → `accent`, transform `translateY(-2px)`, shadow → `shadow.pop`.
 
 ## 7. Iconography
 
@@ -216,7 +216,7 @@ Collapsed mode (≥768px, <1024px): collapses to 64px icon-only rail. Below 768p
 
 `padding: 12px 26px`, `border-bottom: 1px solid border`.
 
-- Left: breadcrumb (current page name; `Home / Essays / Building an agent team` etc.)
+- Left: breadcrumb (current page name; `Home / Documents / Building an agent team` etc.)
 - Right: status chip (`Viewing publicly` or signed-in account chip) + global action (`Sign in with Google` or quick-action button)
 
 No second navigation bar. The sidebar owns navigation.
@@ -227,11 +227,11 @@ Padding `26px 28px 32px`. Sections inside use 22–32px vertical rhythm.
 
 ## 9. Home page composition (the public landing)
 
-> **Partially superseded by `2026-05-16-m2-docs-bc-design.md` §7.3.** From M2 onward the "Latest from the blog" section is renamed **"Latest from JeekLee's blog"** and sources only owner-authored public documents (the public-feed endpoint is owner-filtered). Layout and visual treatment described below are unchanged.
+> **Partially superseded by `2026-05-16-m2-docs-bc-design.md` §7.3.** From M2 onward the home section is labeled **"Latest documents"** (earlier drafts called it "Latest from the blog") and sources only owner-authored public documents (the public-feed endpoint is owner-filtered). Layout and visual treatment described below are unchanged.
 
 Order, top-to-bottom (inside main content area):
 
-1. **Compact hero** (no big display type on home — display type lives on dedicated essays/marketing pages):
+1. **Compact hero** (no big display type on home — display type lives on dedicated documents/marketing pages):
    - Eyebrow: `A PERSONAL PLATFORM · OPEN TO READ` (eyebrow style, accent color)
    - Title: `What would you like to do today?` (`font.h1`)
    - Subtitle: one line in `text.muted` describing the dual-mode posture.
@@ -239,10 +239,10 @@ Order, top-to-bottom (inside main content area):
    - 4-column tile grid (one per shipped user-facing surface).
    - Tile = 36×36 colored icon, title, 1–2 line description, meta row (`PUBLIC` badge / count / status chip).
    - Locked tiles (sign-in required) render at 0.72 opacity with `🔒 sign in required` meta.
-3. **`Latest from the blog`** — section label + `All essays →` link.
+3. **`Latest documents`** — section label + `All documents →` link.
    - 3-column thumbnail grid (M2+).
    - Card = 124px gradient thumbnail (khaki / cream / sage variants), title (`font.h3`), 2-line excerpt (`font.small` muted), meta row with tag chip and `· N min · {date}`.
-   - Until M2 ships, this section renders an empty-state card: `Essays will appear here when the blog is online. Track progress on GitHub.` linking to the M2 milestone.
+   - Until M2 ships, this section renders an empty-state card: `Documents will appear here when the document is online. Track progress on GitHub.` linking to the M2 milestone.
 
 At M1 release the home shows only the hero + a single tile (Home is the only shipped surface). Empty-state copy explicitly names which milestone unlocks each future tile, with a link to the GitHub milestone.
 
@@ -263,9 +263,9 @@ The current `docs/design/M1-identity.md` is **partially superseded** by this sys
 
 ## 11. Architectural ripple — public routes
 
-This spec assumes the platform serves logged-out visitors. ADR-07 (`07-gateway-oauth.md`) currently treats the gateway as OAuth-only ingress and assumes every backend trusts injected `X-User-Id`/`X-User-Email` headers. With public surfaces (M2 Essays read, M4 public Chat, M5 Metrics dashboard), the following are now required and must be resolved before the corresponding milestone's Stage 3:
+This spec assumes the platform serves logged-out visitors. ADR-07 (`07-gateway-oauth.md`) currently treats the gateway as OAuth-only ingress and assumes every backend trusts injected `X-User-Id`/`X-User-Email` headers. With public surfaces (M2 Documents read, M4 public Chat, M5 Metrics dashboard), the following are now required and must be resolved before the corresponding milestone's Stage 3:
 
-1. **Public route allowlist at the gateway.** OAuth gate applies only to `Workspace`-scoped routes (`/api/docs/mine`, `/api/chat/private`, `/api/documents/*`, `/api/me`).
+1. **Public route allowlist at the gateway.** OAuth gate applies only to `Workspace`-scoped routes (`/api/docs/mine`, `/api/chat/private`, `/api/docs/public/*`, `/api/me`).
 2. **Anonymous `X-User-Id` policy.** Public routes either receive no `X-User-Id` header, or a sentinel `anonymous` value. The downstream BC contract must be updated either way.
 3. **Cost protection on public RAG chat.** Anonymous chat must be rate-limited and token-capped per IP/session, since it dispatches against `spark-inference-gateway` (Qwen3-32B) which is real compute. Concrete numbers belong in M4's per-milestone ADR; this spec only flags that the protection is required.
 4. **Public-content scoping in retrieval.** Public chat retrieves only against documents the author marked public; private documents never enter the public retrieval scope. Document-visibility flag is an M2 schema concern.

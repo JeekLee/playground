@@ -12,7 +12,7 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 
 ### Public Home (`/`) — logged-out landing
 
-- **Purpose:** the public reader's entry into the platform — shows what the site is, what's shipped (Home), and what's coming (Essays, Chat, System status) with explicit milestone names.
+- **Purpose:** the public reader's entry into the platform — shows what the site is, what's shipped (Home), and what's coming (Documents, Chat, System status) with explicit milestone names.
 - **PRD user story (trace):** none directly — this screen serves the **design system spec §2.4 public-vs-personal posture** (logged-out visitors are first-class readers). See the new traceability row added below.
 - **Auth state:** logged-out.
 - **Figma frame:** `M1 — Home (public)  /` (node `14:2` in the Figma file; PNG export pending — see Asset note)
@@ -22,10 +22,10 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
   - **Compact hero (no display type):** eyebrow `A PERSONAL PLATFORM · OPEN TO READ` (`accent`, `font.eyebrow`), title `What would you like to do today?` (`font.h1`, `text`), subtitle in `text.muted` describing the dual-mode posture.
   - **`Things you can try`** section header with `See all →` link in `accent` → 4-column tile grid (4 × 276px wide tiles, 16px gap):
     - **Tile 1 — Home** (active, no opacity): 36×36 `accent.soft` icon box, title `Home`, desc "You're here. The dashboard for everything else as it ships.", meta chip `● shipped` (`success` chip).
-    - **Tile 2 — Essays** (locked, 0.72 opacity): icon box on `surface.soft`, desc one-liner, **`M2 — Essays`** locked-meta chip + `🔒 sign in to write` chip.
+    - **Tile 2 — Documents** (locked, 0.72 opacity): icon box on `surface.soft`, desc one-liner, **`M2 — Documents`** locked-meta chip + `🔒 sign in to write` chip.
     - **Tile 3 — Chat** (locked, 0.72 opacity): same treatment, **`M4 — Chat`** locked-meta chip + `PUBLIC when ready` accent chip.
     - **Tile 4 — System status** (locked, 0.72 opacity): same treatment, **`M5 — System status`** locked-meta chip + `PUBLIC when ready` accent chip.
-  - **`Latest from the blog`** section header with `All essays →` link → single **empty-state card** (full row, centered content): eyebrow `M2 — ESSAYS`, h3 `Essays will appear here when the blog is online.`, body `Read-only for visitors; sign in to write. Track progress on GitHub.`, accent text-link `→ Track the M2 milestone on GitHub`.
+  - **`Latest documents`** section header with `All documents →` link → single **empty-state card** (full row, centered content): eyebrow `M2 — DOCUMENTS`, h3 `Documents will appear here when the document is online.`, body `Read-only for visitors; sign in to write. Track progress on GitHub.`, accent text-link `→ Track the M2 milestone on GitHub`.
 - **Interactions:**
   - `Sign in with Google` (topbar) and the implicit CTA inside the empty-state are both routed to `/oauth2/authorization/google` per ADR-07. Spring Security's `savedRequest` brings the user back to `/` after success.
   - Clicking the `M2 milestone` link opens the GitHub milestone page in a new tab.
@@ -42,21 +42,21 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 │              │                                                                     │
 │  [⌕ Search ⌘K]│  A PERSONAL PLATFORM · OPEN TO READ                                 │
 │              │  What would you like to do today?                                   │
-│  APPS        │  Read essays, ask the model questions, or peek at how the system   │
+│  APPS        │  Read documents, ask the model questions, or peek at how the system   │
 │  ⌂ Home   ●  │  is feeling. Sign in to write your own.                            │
 │  ▤ Docs M2 🔒│                                                                     │
 │  💬 Chat M4 🔒│  Things you can try                                  See all →     │
 │  📊 Stat M5 🔒│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐      │
 │              │  │ [⌂]        │ │ [✍]  0.72  │ │ [💬] 0.72  │ │ [📊] 0.72  │      │
-│              │  │ Home       │ │ Essays     │ │ Chat       │ │ System     │      │
+│              │  │ Home       │ │ Documents     │ │ Chat       │ │ System     │      │
 │              │  │ You're here│ │ Long-form  │ │ Ask the    │ │ status     │      │
-│              │  │ ● shipped  │ │ M2-Essays  │ │ M4-Chat    │ │ M5-Status  │      │
+│              │  │ ● shipped  │ │ M2-Documents  │ │ M4-Chat    │ │ M5-Status  │      │
 │              │  └────────────┘ └────────────┘ └────────────┘ └────────────┘      │
 │              │                                                                     │
-│              │  Latest from the blog                              All essays →    │
+│              │  Latest documents                              All documents →    │
 │              │  ┌─────────────────────────────────────────────────────────────┐  │
-│              │  │   M2 — ESSAYS                                               │  │
-│              │  │   Essays will appear here when the blog is online.          │  │
+│              │  │   M2 — DOCUMENTS                                               │  │
+│              │  │   Documents will appear here when the document is online.          │  │
 │              │  │   Read-only for visitors; sign in to write.                 │  │
 │              │  │   → Track the M2 milestone on GitHub                        │  │
 │              │  └─────────────────────────────────────────────────────────────┘  │
@@ -80,7 +80,7 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
   - **Centered card** (440×420, `surface` bg, radius `lg` 14px, border `color.border`, shadow `shadow.card`):
     - Eyebrow `JEEKLEE'S PLAYGROUND` (`accent`, `font.eyebrow`).
     - Headline `Sign in to continue` (`font.h1`).
-    - Subtitle in `text.muted`: "Sign in lets you write essays, save chats, and see your own documents. Reading the site doesn't require an account." (`font.body`, makes the public/auth split unambiguous).
+    - Subtitle in `text.muted`: "Sign in lets you write documents, save chats, and see your own documents. Reading the site doesn't require an account." (`font.body`, makes the public/auth split unambiguous).
     - Primary button `Continue with Google` (`accent` bg, white text, radius `md`, full-card width, with a small `G` glyph rendered in white before the label).
     - Footnote in `text.subtle`: "We only read your name, email, and avatar. A session cookie keeps you signed in for 8 hours." (matches ADR-07's 8h sliding session).
   - **Below-card tip** in `text.subtle`: "Tip: hitting an authenticated page while logged out brings you here. Reading the site doesn't." — anchors the new public/auth boundary.
@@ -101,7 +101,7 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 │                          ┌─────────────────────────────────┐                    │
 │                          │  JEEKLEE'S PLAYGROUND           │                    │
 │                          │  Sign in to continue            │                    │
-│                          │  Sign in lets you write essays, │                    │
+│                          │  Sign in lets you write documents, │                    │
 │                          │  save chats, and see your own…  │                    │
 │                          │  ┌────────────────────────────┐ │                    │
 │                          │  │  G   Continue with Google  │ │                    │
@@ -125,7 +125,7 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
   - **Sidebar footer:** card swaps from `Not signed in` copy to a horizontal row: 28px khaki avatar + stacked `JeekLee` (`font.h3`-ish 12px Semi Bold) and `jeeklee1120@gmail.com` (10.5px `text.muted`). `Sign out` is reachable from the account pill's chevron menu (menu interactions out of M1 visual scope per the previous design doc's deferral).
   - **Hero subtitle:** rewritten to a signed-in voice: "Welcome back. Pick a surface — the locked Apps rows unlock as each milestone ships." (same `font.body`, `text.muted`.)
   - **Sidebar Apps section:** locked rows (`Docs`, `Chat`, `System status`) remain locked even when signed in — they unlock per their own milestones, not on sign-in (`Docs` unlocks at M2, etc.). Visually identical to public.
-  - **Tiles, blog empty-state, and the rest of the page:** unchanged from the Public Home composition.
+  - **Tiles, document empty-state, and the rest of the page:** unchanged from the Public Home composition.
 - **Interactions:**
   - On page load the client calls `GET /api/identity/me` (gateway strips `/api/identity` → `/me` per ADR-07). On 200, the account pill and sidebar footer render the live display name + email; the `JL` initials shown in the mock are the loading-state fallback.
   - Clicking the account pill chevron opens a dropdown (visual out of scope for M1; the M2 design cycle picks the dropdown spec — see Open questions).
@@ -139,16 +139,16 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 ┌──────────────┬─────────────────────────────────────────────────────────────────────┐
 │  [J] JeekLee's│ Home                          [● Signed in]  [(JL) JeekLee ▾]      │
 │      PLAYGRD │─────────────────────────────────────────────────────────────────────│
-│              │  (same hero, tiles, and empty-state blog card as Public Home —     │
+│              │  (same hero, tiles, and empty-state document card as Public Home —     │
 │  [⌕ Search]  │   only the subtitle text changes to "Welcome back. Pick a surface  │
 │              │   — the locked Apps rows unlock as each milestone ships.")         │
 │  APPS        │                                                                     │
 │  ⌂ Home   ●  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐      │
-│  ▤ Docs M2 🔒│  │ Home       │ │ Essays  🔒 │ │ Chat    🔒 │ │ Status  🔒 │      │
-│  💬 Chat M4 🔒│  │ ● shipped  │ │ M2-Essays  │ │ M4-Chat    │ │ M5-Status  │      │
+│  ▤ Docs M2 🔒│  │ Home       │ │ Documents  🔒 │ │ Chat    🔒 │ │ Status  🔒 │      │
+│  💬 Chat M4 🔒│  │ ● shipped  │ │ M2-Documents  │ │ M4-Chat    │ │ M5-Status  │      │
 │  📊 Stat M5 🔒│  └────────────┘ └────────────┘ └────────────┘ └────────────┘      │
 │              │                                                                     │
-│              │  Latest from the blog … (same empty-state card)                    │
+│              │  Latest documents … (same empty-state card)                    │
 │              │                                                                     │
 │  ┌─────────┐ │                                                                     │
 │  │(JL)     │ │                                                                     │
@@ -170,7 +170,7 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
   - **Centered card** (560×360, `surface` bg, radius `lg` 14px, border `color.border`, shadow `shadow.card`):
     - `401 · UNAUTHORIZED` chip in `danger.soft` bg + `danger` fg.
     - Headline `You need to sign in for this one` (`font.h1`).
-    - Body in `text.muted`: "This page needs an account — writing essays, private chats, or your own documents all require sign-in. Reading the site (home, essays, public chat, system status) doesn't." (`font.body`) — reinforces the public/auth split.
+    - Body in `text.muted`: "This page needs an account — writing documents, private chats, or your own documents all require sign-in. Reading the site (home, documents, public chat, system status) doesn't." (`font.body`) — reinforces the public/auth split.
     - Button row: primary `Continue with Google` (`accent` per spec §6.1) + **secondary** `Go home` button (per spec §10 row 6: "401 screen … use the secondary button for `Go home`").
     - Footnote in `text.subtle`: "After signing in we'll bring you back to the page you tried to open."
 - **Interactions:**
@@ -188,7 +188,7 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 │                          │  401 · UNAUTHORIZED                     │             │
 │                          │  You need to sign in for this one       │             │
 │                          │  This page needs an account — writing   │             │
-│                          │  essays, private chats, or your own     │             │
+│                          │  documents, private chats, or your own     │             │
 │                          │  documents all require sign-in.         │             │
 │                          │  Reading the site doesn't.              │             │
 │                          │  ┌────────────────────────┐ ┌────────┐  │             │
@@ -221,7 +221,7 @@ Every value is sourced verbatim from `docs/superpowers/specs/2026-05-16-playgrou
 | Token | Value | Where used |
 |---|---|---|
 | `color.bg` | `#FAF7EF` | App background on all four frames; topbar background |
-| `color.surface` | `#FFFFFF` | Login card, Unauthorized card, blog-empty-state card, tile cards, account-footer card, search pill, secondary button, account pill |
+| `color.surface` | `#FFFFFF` | Login card, Unauthorized card, document-empty-state card, tile cards, account-footer card, search pill, secondary button, account pill |
 | `color.surface.soft` | `#F4EFDF` | Sidebar background; locked tiles' icon-box bg; `kbd` pill bg; `Viewing publicly` neutral chip bg; locked-meta chips bg |
 | `color.border` | `#E6E0CB` | Card strokes, topbar `border-bottom`, login-bar `border-bottom`, account-footer card stroke, account-pill stroke, search-pill stroke |
 | `color.border.strong` | `#D6CFB3` | Secondary `Go home` button stroke (spec §6.1 secondary variant border) |
@@ -229,28 +229,28 @@ Every value is sourced verbatim from `docs/superpowers/specs/2026-05-16-playgrou
 | `color.text` | `#2A2C20` | Headings (`What would you like to do today?`, `Sign in to continue`, `You need to sign in for this one`), nav labels, tile titles, account-pill name, sidebar footer name, secondary-button label |
 | `color.text.muted` | `#6F6A55` | Hero subtitle, tile descriptions, login-card subtitle, unauthorized-card body, breadcrumb, neutral chip fg, sidebar wordmark line 2, sidebar account-footer email, kbd label |
 | `color.text.subtle` | `#8B8670` | Search-pill placeholder, login footnote ("We only read your name…"), below-card tip, unauthorized footnote, sidebar section label (`APPS`), locked Apps row labels and milestone badges |
-| `color.accent` | `#6E7A3A` | Primary button fill (`Sign in with Google`, `Continue with Google`), active nav (`Home`) fg, hero eyebrow, blog-empty-state eyebrow, all `→` accent links (`See all →`, `All essays →`, `Track the M2 milestone on GitHub`), PUBLIC accent chips fg, accent-tile icon glyph |
+| `color.accent` | `#6E7A3A` | Primary button fill (`Sign in with Google`, `Continue with Google`), active nav (`Home`) fg, hero eyebrow, document-empty-state eyebrow, all `→` accent links (`See all →`, `All documents →`, `Track the M2 milestone on GitHub`), PUBLIC accent chips fg, accent-tile icon glyph |
 | `color.accent.soft` | `#E9E8D1` | Active nav (`Home`) bg, active-tile icon-box bg, `PUBLIC when ready` accent chip bg |
 | `color.success` | `#4F6B2E` | `Signed in` chip fg (topbar, signed-in home); `● shipped` chip fg on the active Home tile; chip dot fill |
 | `color.danger` | `#B14B3B` | `401 · UNAUTHORIZED` chip fg |
 | `color.danger.soft` | `#F4E1DA` | `401 · UNAUTHORIZED` chip bg |
 | `font.h1` | 28px / 1.2 / 700 / -0.02em | Page titles: `What would you like to do today?` (both homes), `Sign in to continue` (Login), `You need to sign in for this one` (Unauthorized) |
-| `font.h2` | 20px / 1.3 / 600 / -0.01em | Section titles `Things you can try`, `Latest from the blog` |
-| `font.h3` | 16px / 1.4 / 600 / 0 | Tile titles (`Home`, `Essays`, `Chat`, `System status`); blog-empty-state h3 |
+| `font.h2` | 20px / 1.3 / 600 / -0.01em | Section titles `Things you can try`, `Latest documents` |
+| `font.h3` | 16px / 1.4 / 600 / 0 | Tile titles (`Home`, `Documents`, `Chat`, `System status`); document-empty-state h3 |
 | `font.body` | 15px / 1.6 / 400 / 0 | Hero subtitle, login-card subtitle, unauthorized-card body |
 | `font.small` | 13px / 1.5 / 400 / 0 | Tile descriptions, breadcrumb, button labels (13px / 500 per spec §6.1), nav labels, accent text-links, account-pill name |
-| `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | `A PERSONAL PLATFORM · OPEN TO READ`, `JEEKLEE'S PLAYGROUND` on Login, `M2 — ESSAYS` blog-empty-state eyebrow, sidebar section label (`APPS`) |
+| `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | `A PERSONAL PLATFORM · OPEN TO READ`, `JEEKLEE'S PLAYGROUND` on Login, `M2 — DOCUMENTS` document-empty-state eyebrow, sidebar section label (`APPS`) |
 | `font.mono` | 13px / 400 | `⌘K` glyph inside the sidebar search-pill `kbd` |
 | `spacing.xs` | 4px | Intra-element micro-gaps (chip dot to label, sidebar nav vertical gap) |
 | `spacing.sm` | 8px | Hero eyebrow → title gap; tile internal gap; button content gap |
-| `spacing.md` | 16px | Tile internal padding, blog-empty-state card padding, card-row gap in tile grid; main content top padding stem |
-| `spacing.lg` | 24px | Login card vertical rhythm; unauthorized card vertical rhythm; main-area vertical rhythm between hero / `Things you can try` / `Latest from the blog` (spec §8.3 "22–32px") |
+| `spacing.md` | 16px | Tile internal padding, document-empty-state card padding, card-row gap in tile grid; main content top padding stem |
+| `spacing.lg` | 24px | Login card vertical rhythm; unauthorized card vertical rhythm; main-area vertical rhythm between hero / `Things you can try` / `Latest documents` (spec §8.3 "22–32px") |
 | `spacing.xl` | 40px | Login card outer padding; unauthorized card outer padding |
 | `radius.sm` | 6px | `kbd` pill corner; (reserved for inputs in next milestones) |
-| `radius.md` | 10px | Buttons (primary + secondary), tile cards, blog-empty-state card, sidebar nav-item active bg, sidebar account-footer card, search-pill kbd inset |
+| `radius.md` | 10px | Buttons (primary + secondary), tile cards, document-empty-state card, sidebar nav-item active bg, sidebar account-footer card, search-pill kbd inset |
 | `radius.lg` | 14px | Login card, Unauthorized card (modal-scale surfaces) |
 | `radius.pill` | 999px | Sidebar search pill, all chips, account pill, avatar (sidebar + topbar) |
-| `shadow.card` | `0 4px 14px rgba(60,50,20,.05)` | Tile cards, blog-empty-state card, Login card, Unauthorized card |
+| `shadow.card` | `0 4px 14px rgba(60,50,20,.05)` | Tile cards, document-empty-state card, Login card, Unauthorized card |
 | `shadow.pop` | `0 10px 30px rgba(60,50,20,.10)` | (Reserved — tile-hover treatment per spec §6.4 hover-as-link variant; not used at rest in these static mocks but specified so the implementer applies it on hover) |
 
 **Verification note:** the only hex values in this document are the ones listed above. Each appears exactly in the design system spec at §3.1 / §3.2 / §3.3 / §5.3. No new tokens were invented; no spec hex was substituted with a near-miss.
@@ -268,8 +268,8 @@ Same deferrals as the v1 design doc, plus the changes implied by the new public-
 - **Avatar URL caching/proxying** — P1 in PRD; the mocks show the khaki-initials avatar fallback so M1 ships without a hard dependency on Google's CDN.
 - **Mobile / responsive layouts** — desktop only at 1440 wide. Spec §13 defers mobile breakpoints below 768px; sidebar collapse modes (768–1023 icon rail, <768 hamburger drawer) are specified in §8.1 but visual mocks for them are deferred to M4 (the first read-on-the-phone use case).
 - **Dark mode** — single light theme. Token names are reserved for the swap per spec §3.4.
-- **Real tile content / blog thumbnails** — at M1 the only shipped `Apps` row in the sidebar is `Home` (the rest render as locked previews per M2 spec §7.1), and the blog section is the empty-state card. Real essay thumbnails (`128px gradient` per spec §9) ship with M2.
-- **The "all essays" / "see all" overflow routes** — those screens live with M2.
+- **Real tile content / document thumbnails** — at M1 the only shipped `Apps` row in the sidebar is `Home` (the rest render as locked previews per M2 spec §7.1), and the document section is the empty-state card. Real document thumbnails (`128px gradient` per spec §9) ship with M2.
+- **The "all documents" / "see all" overflow routes** — those screens live with M2.
 - **`/me` route (dedicated page)** — PRD top-of-doc note says the `/me` payload renders in the sidebar account footer (signed-in state) "and optionally on a dedicated `/me` route." M1 covers the footer rendering; the dedicated route is optional and deferred.
 
 ## Open questions for the next cycle
@@ -278,6 +278,6 @@ Same deferrals as the v1 design doc, plus the changes implied by the new public-
 - **Account-pill dropdown contents.** Same open question as the v1 doc — gets answered at M2 Stage 2 when the second menu item exists.
 - **Saved-request behavior on Unauthorized.** ADR-07 documents Spring Security's saved-request default; design assumes a logged-out hit on, e.g., `/me` lands on `/401` *and* returning from OAuth puts the user back on `/me`. Frontend-implementer should confirm during Stage 3 (`/build-server`); if not, the `/401` card needs to thread a `?redirect=` param through the Google button.
 - **Bare-layout routes (`/login`, `/401`).** Both intentionally skip the sidebar+topbar shell — Login because there's no nav context yet, Unauthorized because the refusal message reads stronger uninterrupted. Both use the same brand-row-top-left layout for visual continuity. Open (carried from previous cycles): should either adopt the full shell later? Argument for shell: spec §2.4 says "same tokens everywhere." Argument against: no sidebar items are actionable on Login (anonymous user can't act on locked rows), and the shell-on-401 was tried in v1 and felt like a regular page hiding an error. Recommendation: keep both bare as drawn here.
-- **GitHub milestone URL.** The blog empty-state links to the M2 GitHub milestone, but the GitHub-issue/milestone URLs aren't pinned yet (the `/milestones` Stage 1 run produces them). Until they're pinned the link is a placeholder `→ Track the M2 milestone on GitHub`; the implementer wires the real URL during M2 Stage 3.
+- **GitHub milestone URL.** The document empty-state links to the M2 GitHub milestone, but the GitHub-issue/milestone URLs aren't pinned yet (the `/milestones` Stage 1 run produces them). Until they're pinned the link is a placeholder `→ Track the M2 milestone on GitHub`; the implementer wires the real URL during M2 Stage 3.
 - **Inline PNG capture.** The Figma file is fully assembled and all four frames render correctly under live verification via `mcp__TalkToFigma__export_node_as_image` (proof: the agent visually confirmed each frame during this run). The blocker is that the harness intercepts the export's returned base64 as inline visual content and does not pass it through as text the agent can write to disk. The path to inlined PNGs in this doc is therefore a manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) producing `assets/M1/{home-public,login,home-signedin,unauthorized}.png`. Not blocking for `frontend-implementer` — the Figma URL is the canonical visual.
 
