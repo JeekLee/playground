@@ -1,15 +1,97 @@
 server:
   port: 18080
+  # ADR-07 §"Hosting model" + ADR-10 §9 — Cloudflare Tunnel terminates TLS so
+  # Spring must honor X-Forwarded-* from upstream.
+  forward-headers-strategy: framework
+  # PLAYGROUND_SESSION cookie attributes per ADR-07.
+  reactive:
+    session:
+      cookie:
+        name: PLAYGROUND_SESSION
+        http-only: true
+        same-site: lax
+        secure: true
+        path: /
+        max-age: 8h
 
 spring:
   application:
     name: gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:redis-playground}
+      port: ${REDIS_PORT:6379}
+  session:
+    store-type: redis
+    timeout: 8h
+    redis:
+      namespace: spring:session
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+            client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
+            scope:
+              - openid
+              - profile
+              - email
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
   cloud:
     gateway:
-      # Routes are populated per milestone (ADR-07 forwarding map).
-      # M0 ships an empty list so /actuator/health works without any downstream
-      # service running.
-      routes: []
+      default-filters: []
+      routes:
+        # ADR-07 forwarding map + ADR-10 filter chain. M1 ships identity-api;
+        # the placeholders for M2+ BCs are wired with the URIs they will use so
+        # adding them later is just dropping their compose service in.
+        - id: identity-api
+          uri: http://identity-api:18081
+          predicates:
+            - Path=/api/identity/**
+          filters:
+            - StripPrefix=2
+        - id: docs-api
+          uri: http://docs-api:18082
+          predicates:
+            - Path=/api/docs/**
+          filters:
+            - StripPrefix=2
+        - id: rag-ingestion-api
+          uri: http://rag-ingestion-api:18083
+          predicates:
+            - Path=/api/rag/ingest/**
+          filters:
+            - StripPrefix=3
+        - id: rag-chat-api
+          uri: http://rag-chat-api:18084
+          predicates:
+            - Path=/api/rag/chat/**
+          filters:
+            - StripPrefix=3
+        - id: metrics-api
+          uri: http://metrics-api:18086
+          predicates:
+            - Path=/api/metrics/**
+          filters:
+            - StripPrefix=2
+        - id: users-me
+          uri: http://identity-api:18081
+          predicates:
+            - Path=/me
+        # Catch-all to the Next.js SSR server.
+        - id: frontend
+          uri: http://frontend:3000
+          predicates:
+            - Path=/**
+
+playground:
+  cookies:
+    secure: ${PLAYGROUND_COOKIES_SECURE:true}
+  identity:
+    base-url: ${IDENTITY_BASE_URL:http://identity-api:18081}
 
 management:
   endpoints:
@@ -21,3 +103,8 @@ management:
       show-details: when_authorized
       probes:
         enabled: true
+
+logging:
+  level:
+    com.playground.gateway: INFO
+    org.springframework.security: INFO
