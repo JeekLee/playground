@@ -1,31 +1,86 @@
 # Version catalog — single source of truth for module versions per ADR-01 v2.
-# Pins follow the GA-stable line: Spring Boot 3.3.x + Spring AI 1.0.0 GA + Spring Cloud 2024.0.x.
+# Pins follow the GA-stable line: Spring Boot 3.3.x + Spring AI 1.0.0 GA + Spring Cloud 2023.0.x.
 
 [versions]
 spring-boot = "3.3.5"
 spring-cloud = "2023.0.4"
 spring-ai = "1.0.0"
 spring-dependency-management = "1.1.6"
+spring-modulith = "1.2.5"
+springdoc-openapi = "2.6.0"
 lombok = "1.18.34"
+testcontainers = "1.20.3"
+wiremock = "3.9.2"
 
 [libraries]
 # Starters and runtime libraries — versions are managed by the BOMs imported in
-# the spring-boot-app convention plugin, so library entries are version-less.
+# the spring-boot-app convention plugin, so most library entries are version-less.
 
 # Spring Boot starters
+spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
 spring-boot-starter-webflux = { module = "org.springframework.boot:spring-boot-starter-webflux" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-boot-starter-oauth2-client = { module = "org.springframework.boot:spring-boot-starter-oauth2-client" }
+spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+spring-boot-starter-data-redis-reactive = { module = "org.springframework.boot:spring-boot-starter-data-redis-reactive" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+
+# Spring core (used by bc-domain, bc-app — compileOnly on shared-kernel)
+spring-context = { module = "org.springframework:spring-context" }
+spring-tx = { module = "org.springframework:spring-tx" }
+spring-web = { module = "org.springframework:spring-web" }
+spring-webmvc = { module = "org.springframework:spring-webmvc" }
+
+# Spring Session (gateway)
+spring-session-data-redis = { module = "org.springframework.session:spring-session-data-redis" }
+
+# Spring Security (used in bc-api)
+spring-security-test = { module = "org.springframework.security:spring-security-test" }
 
 # Spring Cloud (gateway)
 spring-cloud-starter-gateway = { module = "org.springframework.cloud:spring-cloud-starter-gateway" }
 
-# BOMs (imported by the spring-boot-app convention plugin — versions pinned here)
+# Spring Kafka (bc-infra)
+spring-kafka = { module = "org.springframework.kafka:spring-kafka" }
+spring-kafka-test = { module = "org.springframework.kafka:spring-kafka-test" }
+
+# Spring Modulith Events — transactional outbox (ADR-10 §8)
+spring-modulith-bom = { module = "org.springframework.modulith:spring-modulith-bom", version.ref = "spring-modulith" }
+spring-modulith-starter-jpa = { module = "org.springframework.modulith:spring-modulith-starter-jpa" }
+spring-modulith-events-jpa = { module = "org.springframework.modulith:spring-modulith-events-jpa" }
+spring-modulith-events-kafka = { module = "org.springframework.modulith:spring-modulith-events-kafka" }
+spring-modulith-events-api = { module = "org.springframework.modulith:spring-modulith-events-api" }
+
+# Springdoc OpenAPI
+springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc-openapi" }
+
+# Postgres + Flyway (bc-infra)
+postgresql = { module = "org.postgresql:postgresql" }
+flyway-core = { module = "org.flywaydb:flyway-core" }
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
+
+# Jakarta Validation API (bc-app, bc-api)
+jakarta-validation-api = { module = "jakarta.validation:jakarta.validation-api" }
+
+# BOMs (imported by convention plugins — versions pinned here)
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 spring-cloud-dependencies = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
 spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "spring-ai" }
 
 # Lombok (allowed per ADR-02 v2 on domain services + application/infra layers)
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+
+# Testcontainers (bc-infra integration tests, gateway integration tests)
+testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:junit-jupiter" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql" }
+testcontainers-kafka = { module = "org.testcontainers:kafka" }
+
+# WireMock (gateway integration tests — mocks Google OAuth)
+wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

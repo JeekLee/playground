@@ -1,0 +1,71 @@
+server:
+  port: 18081
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: identity-api
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=identity
+    username: ${POSTGRES_USER:playground}
+    password: ${POSTGRES_PASSWORD:}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: identity
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    schemas: identity
+    default-schema: identity
+    table: flyway_history
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-playground:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        linger.ms: 10
+        compression.type: lz4
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  modulith:
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: true
+      externalization:
+        enabled: true
+      kafka:
+        enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui
+
+logging:
+  level:
+    com.playground.identity: INFO
+    org.springframework.modulith.events: INFO
