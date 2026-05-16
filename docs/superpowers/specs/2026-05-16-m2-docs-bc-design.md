@@ -30,7 +30,7 @@ This spec **does not** describe the M2 PRD's user-story list, the architect's po
 ## 2. Scope summary
 
 ### In scope (P0)
-- Authoring of Markdown documents by an authenticated user (in-app split-view editor + `.md` file upload)
+- Authoring of Markdown documents by an authenticated user (in-app Notion-style block editor with raw-MD I/O + `.md` file upload)
 - A single `Document` entity with optional `PublishMeta` child for the publish-time fields
 - `visibility` toggle (`private` → `public`) with safe re-publish (slug preserved)
 - Public read surfaces: `/docs/public` (list) and `/docs/public/{slug}` (single)
@@ -294,7 +294,7 @@ The Workspace section is removed entirely. Per-document actions (Write, Publish,
 | `/docs/public` | public | Owner-filtered public document list (consumes `GET /api/docs/public`). |
 | `/docs/public/{slug}` | public | Single public document (consumes `GET /api/docs/public/{slug}`). |
 | `/docs` | auth | My documents list. Has a tab/segment switcher: `All / Drafts / Published`. Top-right `Search` input + `New document` button. |
-| `/docs/new` | auth | New document editor (split-view). |
+| `/docs/new` | auth | New document editor — single-pane Notion-style **block editor** (BlockNote), "/" command for block insertion, drag-handles per block. Body roundtrips raw MD via BlockNote's `blockToMarkdownLossy` / `tryParseMarkdownToBlocks`. See §11 Q3 for library decision rationale. |
 | `/docs/{id}` | auth | Edit existing document. Top-right has `Publish` / `Unpublish` / `Delete` and a `View public` link if published. |
 | `/docs/search` | auth | Full-page search results (scope toggle: `mine / public`). `⌘K` palette also lands here when the user hits Enter. |
 
@@ -364,7 +364,11 @@ These intentionally land in the architect's per-milestone ADR, not here:
 
 1. **Outbox library / pattern** — Spring Modulith Events vs Debezium vs hand-rolled outbox table.
 2. **M3 body fetch mechanism** — gateway-internal HTTP route vs. read-only DB role on the `docs` schema. ADR-08 currently says BC-to-BC is Kafka-only; this is the first justified exception, so either ADR-08 is superseded for this one read path, or the per-milestone ADR formally records the exception.
-3. **Editor library** — `@uiw/react-md-editor` vs. a thin CodeMirror 6 + preview combo vs. plain textarea + preview. Affects bundle size and accessibility.
+3. **Editor library — DECIDED: BlockNote** (https://www.blocknotejs.org). Brainstorm shifted from MD-source editor to Notion-style block editor; rationale captured in the M2 design doc (`docs/design/M2-docs.md` Open Questions). BlockNote chosen over alternatives:
+   - **vs. Novel** — Novel bundles AI-completion features unnecessary for M2 (RAG chat is M4's domain), making it dead weight here.
+   - **vs. TipTap + tiptap-markdown** — requires assembling Notion UX (slash menu, drag handles, block reordering) from scratch; BlockNote ships it.
+   - **vs. former candidates (`@uiw/react-md-editor`, CodeMirror 6, plain textarea + preview)** — superseded; those were all MD-source editors, the brainstorm explicitly rejected the split-view UX paradigm.
+   Per-milestone ADR pins exact `@blocknote/core` + `@blocknote/react` versions, the MD-roundtrip adapter configuration, and the SSR strategy under Next.js App Router. Bundle size and accessibility audit also belong to the per-milestone ADR.
 4. **Body size cap** — concrete number (default ~1MB) and where it's enforced.
 5. **Slug rename action (P1)** — does renaming the slug 301-redirect from the old slug? If yes, do we need a `publish_meta_aliases` table?
 6. **Rate limit for unauthenticated public reads** — `/api/docs/public/**` is cheap (no LLM); `/api/docs/search?scope=public` is expensive enough to merit a soft per-IP cap. Concrete numbers belong to the ADR.
@@ -392,7 +396,7 @@ Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens. The or
 - [ ] Public read endpoint integration test proves no `visibility='private'` row can leak through `/api/docs/public/**` under any query.
 - [ ] Tenant isolation test proves user A cannot read or mutate user B's document via any authenticated route.
 - [ ] `/docs/public/{slug}` renders MD with GFM + syntax highlighting in the design-system prose treatment; the body comes from `GET /api/docs/public/{slug}`, rendering is client-side SSR.
-- [ ] The in-app editor at `/docs/new` and `/docs/{id}` is a split-view: raw MD on the left, live prose preview on the right, both using the same `unified` pipeline that renders `/docs/public/{slug}`.
+- [ ] The in-app editor at `/docs/new` and `/docs/{id}` is a single-pane **BlockNote** block editor (Notion-style "/" menu + drag-handles). On load, body MD parses to blocks via `tryParseMarkdownToBlocks`; on save, blocks serialize back via `blockToMarkdownLossy`. The public render at `/docs/public/{slug}` continues to use the `unified` + `remark` + `rehype` + `shiki` pipeline against the raw MD body — the editor changes the **authoring** UX, not the **reading** pipeline.
 - [ ] `GET /api/docs/search?q=...&scope=mine` returns OpenSearch-backed hits scoped to the caller; `scope=public` returns hits scoped to owner-authored public docs.
 - [ ] OpenSearch projection eventually-consistent: after any `docs.document.*` event, the search index reflects the change within ≤ 2s P95.
 - [ ] OpenSearch unavailability returns `503` from search routes but **does not block** writes, reads, or other M2 routes.
