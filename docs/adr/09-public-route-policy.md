@@ -53,7 +53,7 @@ Exact algorithm (token bucket vs sliding window) and the breaker library belong 
 
 Public RAG chat retrieves **only** against `docs.documents` rows where `visibility = 'public'`. Private documents are stored in the same pgvector table but their chunks are excluded by a `WHERE visibility = 'public'` predicate added to every public-route retrieval query.
 
-The `visibility` column is added to the `docs` schema. It is an **M2 (Docs) schema concern**, not an M3 (RAG-ingestion) one — chunks inherit the parent document's visibility at ingestion time and re-inherit on visibility changes (the ingestion service consumes a `docs.document.visibility-changed` event and re-tags chunks).
+The `visibility` column is owned by **M2 (the Docs BC)** and lives in the `docs` schema. The `rag-ingestion` service (M3) does not own the column; it consumes the `docs.document.visibility-changed` Kafka event and re-tags its chunks accordingly. Chunks inherit the parent document's visibility at ingestion time.
 
 Default visibility on essay creation is `private`. The author publishes by an explicit toggle.
 
@@ -72,4 +72,4 @@ None. The allowlist table above is the diagram.
 - ADR-07 (Gateway OAuth) — auth path, header injection
 - Design system spec §2.4, §9, §11
 - Future M2 per-milestone ADR — `visibility` column + migration
-- Future M4 per-milestone ADR — concrete rate-limit algorithm + circuit-breaker library
+- Future M4 per-milestone ADR — concrete rate-limit algorithm, circuit-breaker library, and `PLAYGROUND_ANON` cookie attributes (domain, SameSite, HttpOnly, generation location)
