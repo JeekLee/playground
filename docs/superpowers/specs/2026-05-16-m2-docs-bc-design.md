@@ -249,26 +249,37 @@ PublishRequest       = { slug?: string, excerpt?: string }
 
 ### 7.1 Sidebar (replaces design system §8.1 items 3–4)
 
-The Apps / Workspace split is dropped. All Documents-related navigation lives in a single Apps section as one entry:
+The Apps / Workspace split is dropped. The sidebar has exactly one navigation section — `APPS` — containing every top-level destination the site will ever expose, visible from M1 onward:
 
 ```
 APPS
-⌂ Home               (M1)
-▤ Documents          (M2)
-💬 Chat              (M4, when shipped)
-📊 System status     (M5, when shipped)
+⌂ Home                                  (M1, active when shipped)
+▤ Docs              M2 🔒               (M2 — locked until shipped)
+💬 Chat             M4 🔒               (M4 — locked until shipped)
+📊 System status    M5 🔒               (M5 — locked until shipped)
 ```
 
-The Workspace section is removed. Per-document actions (Write, Publish, Search, View public) live inside the Documents surface, not in the sidebar.
+The Workspace section is removed entirely. Per-document actions (Write, Publish, Search, View public) live inside the Docs surface — not in the sidebar.
 
-`Documents` row behavior (effective once M2 ships):
-- **Logged out:** entry visible, click lands on `/essays` (public-read list). No 🔒 — the public face of Documents is reachable.
-- **Logged in:** entry visible, click lands on `/docs` (my list). A small numeric badge shows `published / total` (e.g., `4/12`).
+**Locked-item treatment** (when a row's milestone hasn't shipped):
+- Row is visible, opacity ~0.72, label text in `text.subtle`.
+- Right-side milestone badge (e.g., `M2`) in `text.muted` on `surface.soft`, plus a small 🔒 glyph.
+- Hover: cursor `default` (not `pointer`); no `accent.soft` activation; tooltip `Available when <milestone-title> ships`.
+- Click: no-op. The row is informational, not actionable.
+
+**Shipped-item treatment** (when the milestone is shipped — milestone closed on GitHub):
+- Full opacity, label in `text`, no badge, no 🔒.
+- Hover: `surface` bg.
+- Active: `accent.soft` bg + `accent` label, weight 600.
+
+**`Docs` row behavior (once M2 ships):**
+- **Logged out:** click lands on `/essays` (public-read list).
+- **Logged in:** click lands on `/docs` (my list). Small numeric badge shows `published / total` (e.g., `4/12`).
 - Active state lights up `accent.soft` for any route under `/docs/**` or `/essays/**`.
 
-**Sidebar at M1 (interim — Documents not yet shipped):** the grow rule (`design-system §8.1: rows are added the moment their milestone ships`) takes priority. At M1 release, the Apps section contains exactly one row — `Home`. The `Documents` row is **not** rendered (not as a placeholder, not as a locked row). Workspace section is gone outright. This supersedes the locked-items treatment in `docs/design/M1-identity.md` v2; the M1 design-context document must be re-issued (v3) before M1 frontend implementation begins.
+**Sidebar at M1:** Apps contains the same four rows. `Home` is active/shipped; `Docs`, `Chat`, `System status` render with the locked-item treatment above. This is the same preview-with-locks paradigm the home tile grid already uses (design system §9), giving both surfaces a single visual story. Supersedes the previous "strict grow rule" interim text and the "M1 design must be re-issued v3" requirement — the M1 design (`docs/design/M1-identity.md`) only needs the Workspace section dropped and its 3 locked items re-keyed to the Apps section rows above; it does not need a v3.
 
-### 7.2 Client routes (Documents surface)
+### 7.2 Client routes (Docs surface)
 
 | Route | Auth | Purpose |
 |---|---|---|
@@ -377,7 +388,7 @@ Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens. The or
 - [ ] `GET /api/docs/search?q=...&scope=mine` returns OpenSearch-backed hits scoped to the caller; `scope=public` returns hits scoped to owner-authored public docs.
 - [ ] OpenSearch projection eventually-consistent: after any `docs.document.*` event, the search index reflects the change within ≤ 2s P95.
 - [ ] OpenSearch unavailability returns `503` from search routes but **does not block** writes, reads, or other M2 routes.
-- [ ] The sidebar's Documents row is reachable from logged-out state and lands on `/essays`; from logged-in state it lands on `/docs`.
+- [ ] The sidebar's `Docs` row is reachable from logged-out state and lands on `/essays`; from logged-in state it lands on `/docs`.
 - [ ] Home renders the section labeled **"Latest from JeekLee's blog"** sourced from `GET /api/docs/public` (already owner-filtered).
 - [ ] `POST /api/docs/public/{slug}/view` increments `view_count` and the same anon cookie repeating the call within 24h does **not** increment it again. Verified by integration test.
 - [ ] `POST /api/docs/{id}/like` is idempotent; calling it twice from the same user leaves `like_count` at +1, and `DELETE /api/docs/{id}/like` returns it to 0. Verified by integration test.
