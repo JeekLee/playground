@@ -1,0 +1,33 @@
+# Java / Spring
+**/build/
+**/.gradle/
+**/target/
+*.class
+*.jar
+HELP.md
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.log
+.pnp.*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Claude
+.claude/settings.local.json
+
+# Docker volumes
+**/volumes/
