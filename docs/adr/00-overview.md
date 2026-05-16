@@ -30,6 +30,7 @@ decisions when a milestone justifies it.
 | 07 | `07-gateway-oauth.md` | Spring Cloud Gateway as OAuth2 Client (Google) |
 | 08 | `08-inter-service-comms.md` | Gateway-to-BC HTTP, BC-to-BC Kafka only |
 | 09 | `09-public-route-policy.md` | Public route allowlist, anonymous identity, public RAG chat rate limits |
+| 10 | `10-m1-identity.md` | **(per-milestone, M1)** Identity implementation — library versions, gateway filter ordering, `POST /users/bootstrap` mechanics, `PLAYGROUND_ANON` cookie attributes, `identity.users` schema, Spring Modulith Events outbox (inherited by M2+) |
 
 ### Module dependency graph (compile-time + runtime)
 
