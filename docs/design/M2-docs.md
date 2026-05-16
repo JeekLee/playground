@@ -530,14 +530,14 @@ Stage 2 output for the Docs (M2) bounded context. Ten 1440-wide frames: six desk
                                               └──────────────────────┘
 ```
 
-## Home composition deltas (no new M2 frame; deltas only)
+## Home composition deltas (applied to M1 home frames)
 
-M2 spec §7.3 supersedes design system §9 item 3 in two ways. These deltas apply to the **existing M1 home frames** (`14:2` Public Home and `14:135` Signed-in Home) when M2 ships — `frontend-implementer` applies them then; this design pass does NOT modify those M1 frames.
+M2 spec §7.3 supersedes design system §9 item 3 in two ways. These deltas apply to the **existing M1 home frames** (`14:2` Public Home and `14:135` Signed-in Home) when M2 ships — `frontend-implementer` applies them at code-implementation time. **As of design round 7 (2026-05-17), the deltas have also been applied to the Figma frames themselves** so the canonical visual reference now matches the M2-shipped state. See the corresponding "Note on frame state" added to `docs/design/M1-identity.md` for the same callout from the M1 doc's side.
 
-1. **Section header rename:** the home's documents section is labeled **`Latest documents`** (M2 spec §7.3 — supersedes any prior "Latest from the blog" wording). The data source becomes the owner-filtered `GET /api/docs/public` (already owner-filtered at the API per spec §6.1), so the wording leans into the personal-platform posture (design system §2.4).
-2. **Card meta extension:** the M1 mock currently shows the empty-state card (no real document cards yet). When M2 ships, the empty-state card is replaced by the same 3-column thumbnail grid used in `/docs/public`. The **per-card meta row** extends from `· N min · {date}` to `· N min · {date} · 👁 viewCount · ♥ likeCount` (icon glyphs are placeholders — frontend-implementer swaps to Lucide `Eye` / `Heart` per design system §7 emoji-to-icon migration rule).
+1. **Section header rename:** the home's documents section is labeled **`Latest documents`** (M2 spec §7.3 — supersedes any prior "Latest from the blog" wording), with the right-aligned link reading **`All documents →`**. The data source becomes the owner-filtered `GET /api/docs/public` (already owner-filtered at the API per spec §6.1), so the wording leans into the personal-platform posture (design system §2.4).
+2. **Card meta extension:** the M1 mock previously showed the empty-state card (no real document cards yet). When M2 ships, the empty-state card is replaced by a 3-column thumbnail-grid card using the same vocabulary as `/docs/public`. The **per-card meta row** extends from `· N min · {date}` to `<tag-chip> · N min · {date} · 👁 viewCount · ♥ likeCount` (icon glyphs are placeholders — frontend-implementer swaps to Lucide `Eye` / `Heart` per design system §7 emoji-to-icon migration rule). The 3 mock entries shown in the home grid intentionally match the documents-list mocks elsewhere in this doc for consistency: (a) `build-log · "Building an agent team for my personal playground" · 3 min · today · 👁 1.2K · ♥ 42`, (b) `architecture · "Why I rebuilt my blog as a microservice mesh" · 6 min · yesterday · 👁 850 · ♥ 28`, (c) `infra · "Spark cluster: 4 workers, 12 cores" · 5 min · this week · 👁 620 · ♥ 15`.
 
-Both deltas are textual + data-source changes; no new layout, no new tokens. The existing card geometry and the existing chip vocabulary cover everything.
+Both deltas are textual + data-source changes; no new layout, no new tokens. The existing card geometry and the existing chip vocabulary cover everything. Card thumbnails use `color.khaki` / `color.surface.soft` / `color.success.soft` for variety — three palette picks from spec §3.1 + §3.3, no new tokens.
 
 ## Traceability matrix
 
