@@ -165,9 +165,9 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 - **Auth state:** logged-out (rendered when the gateway returns 401 for an authenticated route).
 - **Figma frame:** `M1 — Unauthorized (401)  /401` (node `14:246` in the Figma file; PNG export pending — see Asset note)
 - **Key elements:**
-  - **Same chrome as Public Home** (sidebar + slim topbar), so the user is anchored in the same place visually rather than being thrown into a standalone error route. Topbar status chip = `Viewing publicly` (same as Public Home); topbar action = `Sign in with Google` primary button.
-  - **Topbar breadcrumb:** `401 · Unauthorized`.
-  - **Centered card** (560×360, `surface`, radius `lg`, shadow `shadow.card`) inside the main content area:
+  - **No sidebar, no topbar.** The 401 is a hard refusal — wrapping it in the regular app chrome (sidebar + locked Apps rows + topbar) competes with the actual message. The screen is intentionally a single centered card on `color.bg` with the brand row floated top-left. Matches the Login screen's bare layout, deliberately.
+  - **Brand row (top-left, no header bar):** glyph `J` + stacked `JeekLee's / PLAYGROUND` wordmark per spec §2.2, positioned at `spacing.lg` (24px) from the top-left of the viewport.
+  - **Centered card** (560×360, `surface` bg, radius `lg` 14px, border `color.border`, shadow `shadow.card`):
     - `401 · UNAUTHORIZED` chip in `danger.soft` bg + `danger` fg.
     - Headline `You need to sign in for this one` (`font.h1`).
     - Body in `text.muted`: "This page needs an account — writing essays, private chats, or your own documents all require sign-in. Reading the site (home, essays, public chat, system status) doesn't." (`font.body`) — reinforces the public/auth split.
@@ -176,32 +176,29 @@ Stage 2 (v2, re-run #2 + M2-spec sidebar realignment) output for the Identity mi
 - **Interactions:**
   - Primary CTA: navigates to `/oauth2/authorization/google`; Spring Security `savedRequest` returns the user to the original authenticated URL.
   - `Go home` (secondary): navigates to `/` (public). Since `/` is public, this does NOT loop back here — that loop existed in the v1 design and is explicitly broken by ADR-09.
-  - `Sign in with Google` in the topbar is functionally identical to the card's primary CTA.
 - **Empty / error / loading states:** N/A — single state. Button loading state matches the Login screen (G glyph swaps to a white spinner).
 
 ```
-┌──────────────┬─────────────────────────────────────────────────────────────────────┐
-│  [J] JeekLee's│ 401 · Unauthorized        [Viewing publicly]  [Sign in with Google]│
-│      PLAYGRD │─────────────────────────────────────────────────────────────────────│
-│              │                                                                     │
-│  [⌕ Search]  │                                                                     │
-│              │           ┌─────────────────────────────────────────┐               │
-│  APPS        │           │  401 · UNAUTHORIZED                     │               │
-│  ⌂ Home   ●  │           │  You need to sign in for this one       │               │
-│  ▤ Docs M2 🔒│           │  This page needs an account — writing   │               │
-│  💬 Chat M4 🔒│           │  essays, private chats, or your own    │               │
-│  📊 Stat M5 🔒│           │  documents all require sign-in.        │               │
-│              │           │  ┌────────────────────────┐ ┌────────┐ │               │
-│              │           │  │ G  Continue w/ Google  │ │Go home │ │               │
-│              │           │  └────────────────────────┘ └────────┘ │               │
-│              │           │  After signing in we'll bring you back. │               │
-│              │           └─────────────────────────────────────────┘               │
-│  ┌─────────┐ │                                                                     │
-│  │ Not     │ │                                                                     │
-│  │ signed  │ │                                                                     │
-│  │ in …    │ │                                                                     │
-│  └─────────┘ │                                                                     │
-└──────────────┴─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  [J] JeekLee's                                                                   │
+│      PLAYGROUND                                                                  │
+│                                                                                  │
+│                                                                                  │
+│                          ┌─────────────────────────────────────────┐             │
+│                          │  401 · UNAUTHORIZED                     │             │
+│                          │  You need to sign in for this one       │             │
+│                          │  This page needs an account — writing   │             │
+│                          │  essays, private chats, or your own     │             │
+│                          │  documents all require sign-in.         │             │
+│                          │  Reading the site doesn't.              │             │
+│                          │  ┌────────────────────────┐ ┌────────┐  │             │
+│                          │  │ G  Continue w/ Google  │ │Go home │  │             │
+│                          │  └────────────────────────┘ └────────┘  │             │
+│                          │  After signing in we'll bring you back. │             │
+│                          └─────────────────────────────────────────┘             │
+│                                                                                  │
+│                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Traceability matrix
@@ -280,7 +277,7 @@ Same deferrals as the v1 design doc, plus the changes implied by the new public-
 - **Active-tile click target.** Spec §9 describes the tile grid and the locked treatment, but doesn't say what clicking the active `Home` tile does — it's the current page. Proposal: render it as a non-link tile at M1 (no anchor, no hover lift), and re-frame it as an anchor row to whatever the M2/M3 "Today" section becomes when the home gains real-time content. Flagging for human pick.
 - **Account-pill dropdown contents.** Same open question as the v1 doc — gets answered at M2 Stage 2 when the second menu item exists.
 - **Saved-request behavior on Unauthorized.** ADR-07 documents Spring Security's saved-request default; design assumes a logged-out hit on, e.g., `/me` lands on `/401` *and* returning from OAuth puts the user back on `/me`. Frontend-implementer should confirm during Stage 3 (`/build-server`); if not, the `/401` card needs to thread a `?redirect=` param through the Google button.
-- **Topbar status chip on `/login` and other no-sidebar routes.** The login screen uses a full-width header instead of the sidebar+topbar shell because there's no navigation context yet. We use a `Not signed in` neutral chip on the right of that header. Open: should `/login` also adopt the full sidebar+topbar shell (with a `Viewing publicly` chip), to keep one shell everywhere? Argument for: spec §2.4 explicitly says "same tokens everywhere." Argument against: no sidebar items are reachable yet, so the sidebar is decorative. Recommend: defer to a Stage-3 frontend-implementer call; both options use the same tokens, so this is a layout-only decision.
+- **Bare-layout routes (`/login`, `/401`).** Both intentionally skip the sidebar+topbar shell — Login because there's no nav context yet, Unauthorized because the refusal message reads stronger uninterrupted. Both use the same brand-row-top-left layout for visual continuity. Open (carried from previous cycles): should either adopt the full shell later? Argument for shell: spec §2.4 says "same tokens everywhere." Argument against: no sidebar items are actionable on Login (anonymous user can't act on locked rows), and the shell-on-401 was tried in v1 and felt like a regular page hiding an error. Recommendation: keep both bare as drawn here.
 - **GitHub milestone URL.** The blog empty-state links to the M2 GitHub milestone, but the GitHub-issue/milestone URLs aren't pinned yet (the `/milestones` Stage 1 run produces them). Until they're pinned the link is a placeholder `→ Track the M2 milestone on GitHub`; the implementer wires the real URL during M2 Stage 3.
 - **Inline PNG capture.** The Figma file is fully assembled and all four frames render correctly under live verification via `mcp__TalkToFigma__export_node_as_image` (proof: the agent visually confirmed each frame during this run). The blocker is that the harness intercepts the export's returned base64 as inline visual content and does not pass it through as text the agent can write to disk. The path to inlined PNGs in this doc is therefore a manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) producing `assets/M1/{home-public,login,home-signedin,unauthorized}.png`. Not blocking for `frontend-implementer` — the Figma URL is the canonical visual.
 
