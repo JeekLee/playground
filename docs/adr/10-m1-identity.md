@@ -70,7 +70,7 @@ indicative — the contract is the *relative* sequence, not the literal numbers.
 | 1 | Strip client-supplied `X-User-*` headers | A `GlobalFilter` (`StripUserHeadersFilter implements GlobalFilter, Ordered`) at order `Ordered.HIGHEST_PRECEDENCE` — `exchange.getRequest().mutate().headers(h -> { h.remove("X-User-Id"); h.remove("X-User-Email"); h.remove("X-User-Sub"); }).build()` | Runs before everything else (auth, public-route check). ADR-07 mandate. Applies to **all** requests, authenticated and public. |
 | 2 | OAuth2 authentication | `ServerHttpSecurity` default — `oauth2Login()` plus `oauth2Client()` from `spring-boot-starter-oauth2-client`. Spring Security places its `AuthenticationWebFilter` at its own fixed position in the WebFlux chain. | Drives the Google redirect on protected routes; transparent on public routes (see step 3). |
 | 3 | Public-route allowlist | `SecurityWebFilterChain` config (see §3 below) — `.authorizeExchange { ... .pathMatchers(...).permitAll(); .anyExchange().authenticated() }` | Implemented as Spring Security's standard `AuthorizationWebFilter` — public-route rules `permitAll()`, everything else `authenticated()`. Anonymous traffic passes through here without redirect. |
-| 4 | `POST /users/bootstrap` on first-seen Google `sub` | A custom `GlobalFilter` (`UserBootstrapFilter`) ordered *after* Spring Security's authentication filter but *before* the header-injection filter (step 5). Reads `ReactiveSecurityContextHolder.getContext().map(ctx -> ctx.getAuthentication())`; if authenticated and the Google `sub` is not present in the Redis cache, calls `POST http://identity:18081/users/bootstrap` via `WebClient`, caches the resulting `userId`. See §4. | Skipped for unauthenticated traffic. |
+| 4 | `POST /users/bootstrap` on first-seen Google `sub` | A custom `GlobalFilter` (`UserBootstrapFilter`) ordered *after* Spring Security's authentication filter but *before* the header-injection filter (step 5). Reads `ReactiveSecurityContextHolder.getContext().map(ctx -> ctx.getAuthentication())`; if authenticated and the Google `sub` is not present in the Redis cache, calls `POST http://identity-api:18081/users/bootstrap` via `WebClient`, caches the resulting `userId`. See §4. | Skipped for unauthenticated traffic. |
 | 5 | Inject `X-User-Id`, `X-User-Email`, `X-User-Sub` | A `GlobalFilter` (`UserHeaderInjectionFilter`) ordered immediately before the gateway's `NettyRoutingFilter`. Reads `OAuth2User` from the security context and the cached `userId` from step 4; sets the three headers via `exchange.getRequest().mutate().headers(...)`. | Only runs when an authentication is present. On public routes the security context is anonymous and this filter no-ops — headers are absent, per ADR-09. |
 | 6 | Forward to upstream | Spring Cloud Gateway's built-in `NettyRoutingFilter` at `Ordered.LOWEST_PRECEDENCE - 1`. | Routes per ADR-07's forwarding map. |
 
@@ -129,7 +129,7 @@ extend the `permitAll()` list without a superseding ADR row.
 ### 4. `POST /users/bootstrap` mechanics
 
 Path: `POST /users/bootstrap` on `identity` (compose-internal URL
-`http://identity:18081/users/bootstrap`, **not** routed through any
+`http://identity-api:18081/users/bootstrap`, **not** routed through any
 gateway-exposed prefix — the gateway uses its own `WebClient` bean keyed on
 this URL, not the public route table).
 
