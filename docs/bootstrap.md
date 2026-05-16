@@ -73,6 +73,93 @@ M0 ships zero application features. The four BC quadruplets (`identity`, `docs`,
    - Redis: `redis-cli -h localhost -p 10279 ping` → `PONG`.
    - Kafka: `nc -z localhost 19092` (host-exposed PLAINTEXT listener).
 
+## Production hosting — `playground.jeeklee.com` via Cloudflare Tunnel
+
+The same `docker compose up` that runs the local stack also serves the public
+domain. Cloudflare Tunnel maps `playground.jeeklee.com` to the host's
+`localhost:18080` (the gateway). There is no separate "deploy" step beyond
+keeping the host running and the tunnel daemon up.
+
+This section is a one-time setup. After it's done, every `docker compose up`
+is effectively a deploy.
+
+### Pre-requisites
+
+| Tool | Notes |
+|---|---|
+| `cloudflared` | Install per Cloudflare's instructions. Tested with the package available from `pkg.cloudflare.com/cloudflared`. |
+| Cloudflare account | Must own the zone for `jeeklee.com` (or whatever apex domain you're using). |
+| Google Cloud project | OAuth 2.0 Client credentials with the redirect URIs listed below. |
+
+### One-time: Cloudflare Tunnel setup
+
+1. **Authenticate `cloudflared` against your Cloudflare account.** This drops `~/.cloudflared/cert.pem`.
+   ```bash
+   cloudflared tunnel login
+   ```
+
+2. **Create the tunnel** (idempotent — names are unique per account):
+   ```bash
+   cloudflared tunnel create playground
+   # → records ~/.cloudflared/<tunnel-id>.json (the tunnel's credentials)
+   ```
+   Note the tunnel ID printed; you can also recover it with `cloudflared tunnel list`.
+
+3. **Write `~/.cloudflared/config.yml`** (the tunnel's ingress rules):
+   ```yaml
+   tunnel: <tunnel-id>
+   credentials-file: /home/<your-user>/.cloudflared/<tunnel-id>.json
+
+   ingress:
+     - hostname: playground.jeeklee.com
+       service: http://localhost:18080
+     - service: http_status:404
+   ```
+   The catch-all `http_status:404` is required by `cloudflared` as the final fallback.
+
+4. **Route the DNS record.** This creates the `CNAME playground` in your Cloudflare zone pointing at the tunnel.
+   ```bash
+   cloudflared tunnel route dns playground playground.jeeklee.com
+   ```
+
+5. **Run the tunnel daemon.** Foreground for the first session to verify the
+   connection log; switch to a systemd unit (or `tmux`) for ongoing use.
+   ```bash
+   cloudflared tunnel run playground
+   # Or as a service: `sudo cloudflared service install` (uses ~/.cloudflared/config.yml)
+   ```
+
+6. **Verify** from another network that `https://playground.jeeklee.com/actuator/health`
+   returns `{"status":"UP"}`.
+
+### One-time: Google OAuth client
+
+1. In the Google Cloud Console (project of your choice), create an **OAuth 2.0 Client ID**
+   of type "Web application".
+
+2. **Authorized JavaScript origins:**
+   - `https://playground.jeeklee.com`
+   - `http://localhost:18080`
+
+3. **Authorized redirect URIs:**
+   - `https://playground.jeeklee.com/login/oauth2/code/google`
+   - `http://localhost:18080/login/oauth2/code/google`
+
+4. Copy the client ID and client secret into `infra/.env`:
+   ```bash
+   GOOGLE_OAUTH_CLIENT_ID=...
+   GOOGLE_OAUTH_CLIENT_SECRET=...
+   ```
+   **Never commit `infra/.env`.** Only `infra/.env.example` (placeholders) is committed.
+
+5. Restart the gateway service to pick up the env vars:
+   ```bash
+   cd infra && docker compose --env-file .env up -d --force-recreate gateway
+   ```
+
+After steps above are done once, every `docker compose up -d` from `infra/`
+exposes the service to the public domain automatically — no separate deploy.
+
 ## Tearing down
 
 ```bash
@@ -80,6 +167,10 @@ cd infra
 docker compose --env-file .env down       # stop containers, keep volumes
 docker compose --env-file .env down -v    # also drop volumes (loses Postgres + Kafka state)
 ```
+
+The Cloudflare Tunnel daemon is independent of compose; stop it with
+`cloudflared tunnel down playground` or the systemd unit's `stop` action if you
+no longer want the public surface up.
 
 ## Troubleshooting
 

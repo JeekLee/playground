@@ -36,7 +36,7 @@ Public routes receive an **absent** `X-User-Id` header — the gateway does not 
 
 `X-User-Email` and `X-User-Sub` are similarly absent on public routes.
 
-Backends needing rate-limit keys for anonymous traffic use the gateway-injected `X-Forwarded-For` IP (already present from Spring Cloud Gateway's default forwarding) plus, for browser sessions, an anonymous cookie `PLAYGROUND_ANON` (UUID, set on first public-page visit, no PII, 30-day rolling expiry).
+Backends needing rate-limit keys for anonymous traffic use the gateway-injected `X-Forwarded-For` IP (already present from Spring Cloud Gateway's default forwarding) plus, for browser sessions, an anonymous cookie `PLAYGROUND_ANON` (UUID, set on first public-page visit, no PII, 30-day rolling expiry, `HttpOnly`, `Secure=true`, `SameSite=Lax`). The `Secure=true` setting matches ADR-07 §"Hosting model" — the public surface is HTTPS through Cloudflare Tunnel; `Secure` cookies still flow on localhost in modern browsers for operator debugging.
 
 ### Rate-limit and cost protection (public RAG chat)
 

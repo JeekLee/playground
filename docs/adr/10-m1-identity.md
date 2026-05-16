@@ -386,6 +386,39 @@ Topic payload schema (envelope per ADR-03; payload below):
 `changedFields` is informational only — consumers downstream still read the
 full current state from the payload, not from a delta.
 
+### 9. Production hosting (`https://playground.jeeklee.com`)
+
+M1's acceptance is the OAuth flow working against the production domain, not
+just `http://localhost:18080`. The hosting model is pinned by ADR-07
+§"Hosting model" — one host server, single Spring profile, gateway
+simultaneously reachable on host loopback and through Cloudflare Tunnel.
+
+**M1-specific implications:**
+
+| Concern | Decision |
+|---|---|
+| Public domain | `playground.jeeklee.com` (sub-domain of operator-owned `jeeklee.com`) |
+| Ingress | **Cloudflare Tunnel** (`cloudflared` daemon on the host) — `playground.jeeklee.com` → `http://localhost:18080` |
+| Tunnel config location | **Host filesystem only** (`~/.cloudflared/config.yml`, `~/.cloudflared/<tunnel-id>.json`). Not committed. `docs/bootstrap.md` carries the setup steps. |
+| TLS | Terminated at Cloudflare — gateway sees HTTP. `server.forward-headers-strategy=framework` is required so Spring trusts `X-Forwarded-Proto: https`. |
+| OAuth redirect URIs (Google Cloud Console) | Both `https://playground.jeeklee.com/login/oauth2/code/google` and `http://localhost:18080/login/oauth2/code/google` registered. |
+| OAuth credentials | `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` env vars consumed by the gateway. `infra/.env` (gitignored). |
+| Cookies | `PLAYGROUND_SESSION` and `PLAYGROUND_ANON` both `Secure=true` (ADR-07 + ADR-09). |
+| Cloudflare DNS | `CNAME playground` → `<tunnel-id>.cfargotunnel.com` (created by `cloudflared tunnel route dns <tunnel-id> playground.jeeklee.com`). |
+
+**Acceptance for "M1 production-ready":**
+
+- [ ] `https://playground.jeeklee.com/` reachable, renders the public home.
+- [ ] `https://playground.jeeklee.com/login` → Google consent → callback → signed-in home in one round-trip.
+- [ ] `GET https://playground.jeeklee.com/me` returns the user's profile (200 with body) after sign-in; returns 401 in a fresh anonymous session.
+- [ ] `PLAYGROUND_SESSION` cookie set with `Secure; HttpOnly; SameSite=Lax`.
+- [ ] `PLAYGROUND_ANON` cookie set on first public-page visit (a logged-out hit to `/`) with the same attribute set.
+- [ ] `http://localhost:18080/actuator/health` returns UP for operator debugging.
+
+The infra-implementer ships the `frontend` compose service + env wiring; the
+backend-implementer ships the gateway OAuth filter chain + bootstrap call to
+`identity-api`; this section is the joint acceptance both report against.
+
 ## Diagrams
 
 ### Filter ordering (gateway request path)

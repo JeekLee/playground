@@ -27,18 +27,40 @@ Alternatives considered:
 - **Spring Session** with Redis store: `spring-session-data-redis`.
 - All on Spring Boot 3.3.x / JDK 21 per ADR-01.
 
+### Hosting model (single environment)
+
+There is **no `dev` vs `prod` Spring profile split**. The service runs on one
+host server; once `docker compose up` is running, the same gateway is
+simultaneously reachable from `http://localhost:18080` (host-direct, for
+operator debugging) and from `https://playground.jeeklee.com` (Cloudflare
+Tunnel → `localhost:18080` ingress). All security defaults are therefore set
+to the production posture (HTTPS, `Secure` cookies, forward-headers trusted).
+
+`server.forward-headers-strategy=framework` is required on the gateway so the
+Cloudflare-Tunnel-injected `X-Forwarded-Proto: https` and `X-Forwarded-Host:
+playground.jeeklee.com` are honored. Without it, `OAuth2AuthorizationRequest`
+defaults to the inbound scheme/host (`http://gateway:18080`) and the OAuth
+callback redirect breaks under the tunnel.
+
 ### OAuth provider
 - **Google** is the only configured provider for the foreseeable future.
 - Registration ID: `google`.
 - Scopes: `openid`, `profile`, `email`.
-- Redirect URI (dev): `http://localhost:18080/login/oauth2/code/google`.
-- Client ID / secret: from `.env`, never committed.
+- **Authorized redirect URIs (register both in Google Cloud Console):**
+  - `https://playground.jeeklee.com/login/oauth2/code/google` — public-facing through Cloudflare Tunnel.
+  - `http://localhost:18080/login/oauth2/code/google` — operator-only loopback for debugging Spring Security.
+- Authorized JavaScript origin: `https://playground.jeeklee.com`.
+- Client ID / secret: `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`
+  env vars consumed by the gateway. **Never committed.** `.env.example`
+  carries empty placeholders.
 
 ### Session
 - Backed by **Redis** (separate container, see below).
 - Cookie name: **`PLAYGROUND_SESSION`**.
-- Cookie attributes: `HttpOnly`, `SameSite=Lax`, `Secure` only in non-dev
-  profiles (`dev` profile uses plain HTTP on localhost).
+- Cookie attributes: `HttpOnly`, `SameSite=Lax`, `Secure=true` (always —
+  see "Hosting model" above; the public surface is HTTPS through the
+  tunnel, host-loopback debugging still works because `Secure=true` cookies
+  flow on localhost in Chrome/Firefox developer mode).
 - Session timeout: **8 hours** sliding.
 - Spring Session is mandated even though we run a single gateway replica today —
   this keeps horizontal scaling cost-free if we ever fan out.
@@ -75,7 +97,8 @@ trust attacker-injected identity.
 | `/api/rag/ingest/**` | `http://rag-ingestion-api:18083` |
 | `/api/rag/chat/**` | `http://rag-chat-api:18084` |
 | `/api/metrics/**` | `http://metrics-api:18086` |
-| `/**` | `http://client:3000` (Next.js SSR) |
+| `/oauth2/**`, `/login/**`, `/logout` | gateway-local (Spring Security; no forwarding) |
+| `/**` | `http://frontend:3000` (Next.js SSR; compose service `frontend`) |
 
 Path stripping: `/api/<bc>` is stripped before forwarding so backends see
 `/documents`, `/users/me`, etc.
@@ -99,10 +122,10 @@ headers are absent (not a sentinel value).
 
 ### Bootstrapping the user record (M1 contract)
 - On the first authenticated request from a Google `sub` the gateway has not
-  seen, the gateway calls `POST /users/bootstrap` on `identity` (compose-internal,
-  not exposed). `identity` mints the `X-User-Id` UUID, stores the `sub` mapping,
-  and returns it. The gateway caches the mapping in Redis for the session
-  lifetime.
+  seen, the gateway calls `POST /users/bootstrap` on `identity-api`
+  (compose-internal, not exposed). `identity-api` mints the `X-User-Id` UUID,
+  stores the `sub` mapping, and returns it. The gateway caches the mapping in
+  Redis for the session lifetime.
 
 ## Consequences
 - Positive: Backends remain trivially simple — one filter reads three headers,
