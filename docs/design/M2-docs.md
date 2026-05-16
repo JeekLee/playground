@@ -5,9 +5,7 @@
 > Figma: https://www.figma.com/design/NOe1YyQ3NxzgcuYlAVeooN/playground-%E2%80%94-M1-Identity (M2 frames added below the M1 row at y ≥ 1000; M1 frames are unchanged)
 > Builds on: `docs/design/M1-identity.md` (sidebar shell, topbar, account pill — all reused verbatim except the `Docs` Apps row, which is unlocked + active on every M2 route)
 
-Stage 2 output for the Docs (M2) bounded context. Seven desktop frames at 1440 wide (six page frames + the global `⌘K` overlay), built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
-
-> Layout note (v5): the `/docs` (My documents) screen now uses a **two-pane C-layout** — left tree (status filters + folder hierarchy) + right list (A-style table of docs in the currently-selected folder). This replaces the previous flat-list + segmented-switcher layout. The change is driven by the new **Document directory hierarchy** P0 spec (M2 spec §2 P0 / §4.1 `path` column / §6.2 `GET /api/docs/folders` + `POST /api/docs/{id}/move` / §7.2 row `/docs` / §10 path validity + folder-rename atomicity). Public surfaces remain **flat** — folder paths are an authoring-only organizational tool and do NOT appear on `/docs/public` or `/docs/public/{slug}`.
+Stage 2 output for the Docs (M2) bounded context. Ten 1440-wide frames: six desktop page screens + one global `⌘K` palette overlay + three modal overlays (Publish, Unpublish, Delete). Built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
 
 > Terminology note (v4): per M2 spec §0, the user-facing noun is **`Document`** / **`Documents`** everywhere. The previous draft of this design doc used `essay` / `Essays` — those have been migrated. The home section is labeled `Latest documents`, the sidebar entry is `Docs`, the public list lives at `/docs/public`, single document detail lives at `/docs/public/{slug}`. The DTO names in §6.4 of the spec are `PublicDocListItem` and `PublicDocDetail`.
 
@@ -126,72 +124,59 @@ Stage 2 output for the Docs (M2) bounded context. Seven desktop frames at 1440 w
 
 ### My documents (`/docs`)
 
-- **Purpose:** the author's at-a-glance index of every document they've authored — organized by **status filters** (All / Drafts / Published / Private) AND **folder hierarchy** (left tree with paths like `/agents/build-log/`, expand/collapse, doc counts per folder). Right pane = A-style table of docs in the currently-selected folder (or all docs if root `/` is selected). New in M2 (per spec §2 P0): documents have a `path` field; folders are implicit (no separate table — `SELECT DISTINCT path` derives the tree).
-- **Spec trace:** M2 spec §2 P0 (new "Document directory hierarchy" bullet), §4.1 (`docs.documents.path` column), §6.2 (`GET /api/docs/folders`, `POST /api/docs/{id}/move`), §7.2 row `/docs` (two-pane layout), §10 (path validity + folder rename atomicity).
-- **Auth state:** authenticated.
+- **Purpose:** the author's at-a-glance index of every document they've authored, mixed visibility. Tab-switched between `All / Drafts / Published`. Top-right surfaces the per-screen search (complementary to the global ⌘K palette — per-screen search is filter-friendly; ⌘K is keyboard-fastest, both ship in M2 P0) and the primary `+ New document` CTA.
+- **Spec trace:** M2 spec §6.2 (`GET /api/docs/mine`), §7.2 row 3 (`/docs`), §7.1 (the sidebar `Docs` row when signed-in shows the `published/total` numeric badge — visible here as `4/12` in `accent` `font.small`/500).
+- **Auth state:** authenticated (401 from this route lands on `/login` per M1).
 - **Figma frame:** `M2 — My documents  /docs` (node `14:388`).
 - **Key elements:**
-  - **Sidebar + topbar:** same signed-in shell (sidebar with `Docs` active + `4/12` badge, account pill on the right).
-  - **Page header** (in main content area, above the two-pane body):
-    - Left: `font.h2` `My documents` + breadcrumb in `font.body text.muted` showing the current folder path (e.g., `/  agents  /  build-log` with `accent` color on each segment as a click-back affordance; current segment in `text` weight 600). When root is selected, breadcrumb shows just `/`.
-    - Right: `Search my documents…` input (280px wide, `radius.sm`, `surface` bg, `border.strong` stroke) + primary `+ New document` button (`accent` per §6.1).
-  - **Two-pane body** (main content area, below page header):
-    - **Left tree pane** (200px fixed width, `surface` bg, `border` 1px stroke, `radius.md`, padding `10px 12px`, full-height, scrollable):
-      - **Status section** — eyebrow `STATUS` in `font.eyebrow text.subtle`, followed by 4 rows: `All <count>`, `Drafts <count>`, `Published <count>`, `Private <count>`. Active status = `accent.soft` bg + `accent` label + weight 600. Multi-select intentionally NOT supported in M2 (one status filter at a time; spec §11 q15 covers richer filtering in M2.1).
-      - **Folders section** — eyebrow `FOLDERS` + tree of folder rows. Each row shows expand/collapse glyph (`▾`/`▸`) + folder name + doc count right-aligned in `font.mono text.subtle`. Indentation increases by 14px per nesting level. Active folder = `accent.soft` bg + `accent` label + weight 600.
-      - **Add-folder affordance** — `+ New folder` ghost row at the bottom of the folders section (`text.subtle`, becomes `accent` on hover). Click opens an inline input within the tree at the current folder level; submit creates an empty folder by inserting a placeholder doc OR (since folders are implicit) the folder appears only once a doc is created inside it. **Decision:** M2 P0 ships "create folder by creating a doc in it" (typing a new path on doc create); explicit `+ New folder` row is M2.1. In M2 P0 the row is visually present but disabled with `text.subtle` and the tooltip `Folders are created when you put a document in them — try + New document first.` This is called out in spec §11 q15.
-    - **Right list pane** (flex: 1, A-style table per the previous design, `surface` bg, `border` 1px, `radius.md`):
-      - **List header** (`padding 10px 14px`, `border-bottom 1px border`, `font.small`): `<N> in <current-folder-path>` on the left + `Updated ↓` sort indicator + right-aligned hint `drag rows to move folder` (only visible on hover over the list).
-      - **Row** (`padding 10px 14px`, 4-column grid: title+chip | updated-at | counters | overflow): same A-style as the previous design. Whole row clickable → `/docs/{id}` (editor). Overflow `⋯` icon at far right opens a small menu: `Open in editor` / `View public` (if published) / `Move to folder…` / `Delete`.
-      - **Drag-and-drop:** dragging a row onto a folder tree node moves the doc (`POST /api/docs/{id}/move` with the target path). Visual: dragged row reduces opacity to 0.6 + the target tree node highlights with `accent.soft` bg as drop indicator.
+  - **Sidebar:** brand row → search pill → Apps section with `Home`, `Docs` (active, with `4/12` numeric badge in `accent`), `Chat M4 🔒`, `System status M5 🔒` → spacer → **signed-in account footer** (28px khaki avatar + stacked `JeekLee` / `jeeklee1120@gmail.com`).
+  - **Topbar:** breadcrumb `Documents`; right side **signed-in chip** (`● Signed in`, `success.soft` bg + `success` fg, with a 4px dot) + account pill (24px khaki avatar + `JeekLee  ▾`, `surface` bg + `border` stroke, `radius.pill`).
+  - **Page header (top-left of main):** `font.h2` `My documents`. **Top-right of main:** 280px-wide `Search my documents…` input (`radius.sm`, `surface` bg, `border.strong` stroke per design system §6.2) + primary `+ New document` button (`accent` per §6.1, `radius.md`).
+  - **Segmented switcher** below the header: three segments `All / Drafts / Published`. Active segment (`All` in the mock) gets `accent.soft` bg + `accent` label weight 600; inactive segments are `text.muted` weight 500 on transparent. Background of the segment container is `surface.soft` with `radius.md`, padding 4px.
+  - **Document list card** (full-width, `surface` bg, `border` stroke, `radius.md`, `shadow.card`) with 6 rows separated by 1px `border` dividers. Each row:
+    - **Left:** title (`font.h3` 16px/600) + visibility chip on the same line. `Draft` chip uses `surface.soft` bg + `text.muted` fg; `Published` chip uses `accent.soft` bg + `accent` fg.
+    - **Middle:** `Updated <relative time>` in `font.small text.muted`.
+    - **Right:** `👁 viewCount · ♥ likeCount` in `font.small text.muted` — only present for Published rows. Draft rows show nothing here (matches the spec — view/like counters only exist meaningfully for public-reachable rows).
+    - The whole row is the hover-as-link target (border-top + bg → `surface.soft`).
+  - **6 mock rows** in the mock: `Building an agent team` (Published, 2h ago, 1.2K/42), `Why olive, not blue` (Published, 1d ago, 2.1K/73), `M2 brainstorming notes` (Draft, 3d ago), `The OpenSearch sidecar I almost didn't add` (Published, 5d ago, 612/18), `Random thoughts on RAG` (Draft, 1w ago), `Spark, but for one person` (Published, 2w ago, 864/31).
 - **Interactions:**
-  - Click a status filter: replaces the URL with `?status=drafts` (or whatever), the right pane re-fetches with the filter applied.
-  - Click a folder in the tree: replaces the URL with `?path=/agents/build-log/`, the right pane re-fetches with `path=` filter applied (or `path` prefix-match if the folder has subfolders — Decision: prefix-match by default; future toggle in M2.1).
-  - Drag a row onto a folder: optimistic move (UI updates immediately, `POST /api/docs/{id}/move` happens in background; rollback on failure with a danger-fg toast).
-  - Click `+ New document` (top-right): navigates to `/docs/new` with the current folder as the default path (the editor toolbar's "Path" indicator — see editor design — shows the inherited path; the author can change it).
-  - Type in the search input: hits `GET /api/docs/search?q=…&scope=mine` and replaces the right pane with search results (same A-style row pattern). Pressing `Esc` clears the search and returns to the folder view.
-  - Click a breadcrumb segment: jumps the URL `?path=/agents/` (parent), tree re-highlights, right pane re-renders.
+  - Clicking a row navigates to `/docs/{id}` (the editor / edit screen).
+  - Clicking `+ New document` navigates to `/docs/new`.
+  - Search input is a per-page narrow search (filters the visible list client-side; the full search experience lives at `/docs/search`).
+  - Switcher tabs filter by visibility; URL gets a `?status=drafts|published` query param so deep-linking works.
 - **Empty / error / loading states:**
-  - **Empty (zero documents):** centered empty-state card in the right pane: `No documents yet. Start writing.` + primary `+ New document` button. Same card pattern as the M1 empty-state card. Left tree shows only `STATUS / All 0 / Drafts 0 / Published 0 / Private 0` and a disabled `FOLDERS` eyebrow (`No folders yet — create a document to start one.`).
-  - **Empty (current folder has zero documents but other folders have some):** right pane shows `No documents in /agents/build-log/. Move one here, or create a new one.` + `+ New document` button (which inherits the current path).
-  - **Loading:** left tree shows 6 skeleton rows; right pane shows 6 skeleton table rows. Header (`My documents`, breadcrumb, search, `+ New document`) stays interactive.
-  - **Error (5xx from `/api/docs/folders`):** the tree pane shows a `danger`-bordered card with `Couldn't load folders — retry` + a small retry ghost button. The list pane still loads (it uses `/api/docs/mine`, separate endpoint).
-  - **Error (5xx from `/api/docs/mine`):** mirror — the list card shows `Couldn't load your documents — retry`; the tree stays interactive.
+  - **Empty (zero documents):** centered empty-state card `No documents yet. Start writing.` + primary `+ New document` button. Same card pattern as M1's empty-state card.
+  - **Empty (filter result is empty — e.g., Drafts tab with zero drafts):** `No drafts.` line in `text.muted` rendered inside the list card.
+  - **Loading:** 5 row skeletons (title bar 50% width + chip + meta-row skeleton); list card frame visible immediately to prevent layout shift.
+  - **Error (5xx from `/api/docs/mine`):** the list card swaps to a `danger`-bordered variant with `Couldn't load your documents — retry` and a `retry` ghost button. The header (title + search + `+ New document`) stays interactive.
 
 ```
-┌──────────────┬───────────────────────────────────────────────────────────────────────┐
-│  [J] JeekLee's│ Documents              [● Signed in]    [(JL) JeekLee ▾]             │
-│      PLAYGRD │───────────────────────────────────────────────────────────────────────│
-│              │  My documents  /  agents  /  build-log [⌕ Search…] [+ New document] │
-│  [⌕ Search]  │                                                                       │
-│              │  ┌────────────────┐  ┌───────────────────────────────────────────┐  │
-│  APPS        │  │ STATUS         │  │ 5 in /agents/build-log/   ·  Updated ↓    │  │
-│  ⌂ Home      │  │ ┌────────────┐ │  │                          drag rows…       │  │
-│  ▤ Docs 4/12 │  │ │ All     28 │ │  │───────────────────────────────────────────│  │
-│  💬 Chat M4🔒│  │ └────────────┘ │  │ Building an agent team  [Pub] 2h 👁1.2K ⋯│  │
-│  📊 Stat M5🔒│  │ Drafts      11 │  │───────────────────────────────────────────│  │
-│              │  │ Published   17 │  │ Why a single-developer  [Draft] 2d  —  ⋯ │  │
-│              │  │ Private     11 │  │───────────────────────────────────────────│  │
-│              │  │                │  │ M2 spec brainstorm…    [Draft] 5d  —  ⋯ │  │
-│              │  │ FOLDERS        │  │───────────────────────────────────────────│  │
-│              │  │ ▸ /         3  │  │ Stage 2 design — Docs… [Draft] 1w  —  ⋯ │  │
-│              │  │ ▾ agents    8  │  │───────────────────────────────────────────│  │
-│              │  │  ┌──────────┐  │  │ Architect ADR-10 notes [Draft] 2w  —  ⋯ │  │
-│              │  │  │▾build-log5│  │  │                                           │  │
-│              │  │  └──────────┘  │  │                                           │  │
-│              │  │   · m1-cycle 2 │  │                                           │  │
-│              │  │  ▸ spec-notes3 │  │                                           │  │
-│              │  │ ▸ spark     6  │  │                                           │  │
-│              │  │ ▸ architect 9  │  │                                           │  │
-│              │  │ ▸ misc      2  │  │                                           │  │
-│              │  │                │  │                                           │  │
-│              │  │ + New folder   │  │                                           │  │
-│              │  └────────────────┘  └───────────────────────────────────────────┘  │
-│  ┌─────────┐ │                                                                       │
-│  │(JL)     │ │                                                                       │
-│  │ JeekLee │ │                                                                       │
-│  └─────────┘ │                                                                       │
-└──────────────┴───────────────────────────────────────────────────────────────────────┘
+┌──────────────┬─────────────────────────────────────────────────────────────────────┐
+│  [J] JeekLee's│ Documents              [● Signed in]    [(JL) JeekLee ▾]           │
+│      PLAYGRD │─────────────────────────────────────────────────────────────────────│
+│              │  My documents                  [⌕ Search my documents…] [+ New doc]│
+│  [⌕ Search]  │  ┌──────────────────────┐                                          │
+│              │  │ [ All ] Drafts Pub'd │                                          │
+│  APPS        │  └──────────────────────┘                                          │
+│  ⌂ Home      │  ┌─────────────────────────────────────────────────────────────┐  │
+│  ▤ Docs 4/12 │  │ Building an agent team    [Published]   2h ago    👁1.2K ♥42│  │
+│  💬 Chat M4🔒│  │─────────────────────────────────────────────────────────────│  │
+│  📊 Stat M5🔒│  │ Why olive, not blue       [Published]   1d ago    👁2.1K ♥73│  │
+│              │  │─────────────────────────────────────────────────────────────│  │
+│              │  │ M2 brainstorming notes    [Draft]       3d ago             │  │
+│              │  │─────────────────────────────────────────────────────────────│  │
+│              │  │ The OpenSearch sidecar…   [Published]   5d ago    👁612 ♥18│  │
+│              │  │─────────────────────────────────────────────────────────────│  │
+│              │  │ Random thoughts on RAG    [Draft]       1w ago             │  │
+│              │  │─────────────────────────────────────────────────────────────│  │
+│              │  │ Spark, but for one person [Published]   2w ago    👁864 ♥31│  │
+│              │  └─────────────────────────────────────────────────────────────┘  │
+│  ┌─────────┐ │                                                                     │
+│  │(JL)     │ │                                                                     │
+│  │ JeekLee │ │                                                                     │
+│  │ jee…@   │ │                                                                     │
+│  └─────────┘ │                                                                     │
+└──────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### New document (editor) (`/docs/new`)
@@ -205,7 +190,6 @@ Stage 2 output for the Docs (M2) bounded context. Seven desktop frames at 1440 w
   - **Topbar:** breadcrumb `Documents / New`; right side = JL account pill only (no `Signed in` chip in the editor topbar — the editor toolbar's save-state already carries that affordance; reduces toolbar clutter for the editor surface).
   - **Editor toolbar** (slim strip below topbar, `surface.soft` bg, `border-bottom 1px border`, padding `12px 28px`, auto-layout HORIZONTAL with space-between):
     - **Left:** just the save-state pill in `font.small text.muted` (`Saved 3s ago` / `Saving…` / `Save failed — retry`). **No title input here** — the title is the first H1 block in the editor itself (Notion convention). On save the first H1's text becomes the `title` column on the `documents` row.
-    - **Path indicator** (next to the save-state pill on the left, before the title input): a small inline `font.small text.muted` reading the document's folder path (e.g., `/agents/build-log/`) as a click-to-edit pill. Default = the path the user was in when they clicked `+ New document` (i.e., from the `/docs` `?path=` query param at the time). Click → opens an inline folder picker (a compact tree dropdown sourced from `GET /api/docs/folders`); pick a folder + commit; the document's `path` is set on the next save (PATCH). Sets the right context before the first save creates the doc.
     - **Right:** primary `Publish` button (`accent` per design system §6.1).
   - **Editor surface** (main content area below toolbar):
     - `bg` background, padding `40px 0`. Inner content max-width 720px, horizontally centered (prose density).
@@ -322,6 +306,61 @@ Stage 2 output for the Docs (M2) bounded context. Seven desktop frames at 1440 w
 │  └─────────┘ │                                                                     │
 └──────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Publish modal (overlay)
+
+- **Purpose:** confirm the publish-time slug + excerpt before flipping `visibility` to `public`. Opens when the `Publish` button is clicked on `/docs/new` (first-time publish) or `Publish changes` on `/docs/{id}` (when re-publishing after edits).
+- **Spec trace:** M2 spec §6.2 `POST /api/docs/{id}/publish` (`PublishRequest = { slug?, excerpt? }`), §4.3 field rules for `slug` (kebab-case, collision-resolved with `-2`, `-3`, …) and `excerpt` (~140 chars default from body).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — Publish modal  global` (node `29:816`).
+- **Key elements:**
+  - **Backdrop:** full-frame rect, `color.text` (`#2A2C20`) at `0.30` alpha — same scrim treatment as the ⌘K palette overlay (derived value, not a new token).
+  - **Modal card** (centered horizontally, anchored 200px from frame top, 480 wide, `surface` bg + `border` 1px stroke + `radius.lg` 14px, auto-layout VERTICAL with 32px padding + 20px gap). `shadow.pop` is **not** authored in the Figma mock — the Talk to Figma plugin's `create_frame` does not expose a drop-shadow / effect setter; the implementer applies `shadow.pop` from the design system §5.3 at impl time. Flagged in Open questions.
+  - **Title:** `font.h1` 28/700/-0.02em `color.text` — `Publish this document`.
+  - **Body:** `font.body` 15px `color.text.muted` — `Pick a public URL slug and a one-line excerpt. The slug becomes this document's permanent URL — even if you unpublish and re-publish later.`
+  - **Slug field:** label `Public URL slug` (`font.small` 13/600 `color.text`) → input (`surface` bg + `border.strong` 1px stroke + `radius.sm` 6px, `9px 12px` padding) containing a `/docs/public/` prefix in `color.text.subtle` followed by the editable value `building-an-agent-team` in `color.text` (the implementer renders the prefix as a non-editable input slot) → helper `Lowercase, hyphens between words. Existing slugs collide-resolve with -2, -3, …` in `font.small color.text.subtle`.
+  - **Excerpt field:** label `One-line excerpt` → 80px-tall textarea with mock content `Four agents, one human gate. The seams surprised me more than the agents did.` → helper `Shown on /docs/public and as the og:description meta. ~140 chars max.`
+  - **Footer button row** (auto-layout HORIZONTAL, right-aligned `primaryAxisAlignItems=MAX`, 8px gap): **Cancel** secondary (`surface` bg, `color.text` fg, `border.strong` 1px stroke, `radius.md` 10px, padding `8px 14px`, `font.small` weight 500) → **Publish** primary (`color.accent` bg, `#FFFFFF` fg, `color.accent` border, `radius.md`, padding `8px 14px`, `font.small` weight 500).
+- **Interactions:** Enter inside slug/excerpt commits the form; Esc dismisses; clicking the backdrop dismisses; on successful POST the modal closes and the editor toolbar shows `Saved 1s ago · Published`. The `→ View public: …` strip on `/docs/{id}` appears (or updates) after the modal closes.
+- **Empty / error / loading states:**
+  - **Loading:** `Publish` button shows an inline spinner (replaces the label text); both buttons disable.
+  - **409 slug collision** (per spec §6.5 — explicit collision when the user typed a slug already taken; also `400` with `availableSuggestions` per §6.5 when the user left slug blank and the server-derived slug collided): helper text under slug input swaps to `color.danger` with `That slug is taken. Try building-an-agent-team-2.` The first suggestion from the server's `availableSuggestions` is offered inline; clicking the suggestion populates the field.
+  - **413 body too large** (per spec §6.5): inline `color.danger` banner above the footer row `Document body exceeds the size cap. Trim before publishing.`
+  - **4xx/5xx other:** inline `color.danger` banner above the footer row with the server message, retry available via clicking `Publish` again.
+
+### Unpublish modal (overlay)
+
+- **Purpose:** confirm the visibility flip from `public` to `private`. Opens when the `Unpublish` button is clicked on `/docs/{id}`.
+- **Spec trace:** M2 spec §6.2 `POST /api/docs/{id}/unpublish`, §4.4 state machine (re-publish reuses `publish_meta` so slug survives).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — Unpublish modal  global` (node `29:817`).
+- **Key elements:**
+  - **Backdrop:** identical to Publish modal — full-frame `color.text` at `0.30` alpha.
+  - **Modal card:** same shell as Publish (480 wide, centered, `surface` bg + `border` + `radius.lg` 14px, 32px padding, 20px gap, no form fields — body content is shorter so the card hugs to ~220px).
+  - **Title:** `font.h1` — `Unpublish this document?`
+  - **Body:** `font.body color.text.muted` — `It becomes private — only you can see it. The slug is retained, so re-publishing later reuses the same public URL (no broken links).`
+  - **Footer button row** (right-aligned, 8px gap): **Cancel** secondary → **Unpublish** secondary (`surface` bg, `color.text` fg, `border.strong` stroke, `radius.md`). Unpublishing is not destructive enough to warrant `danger` but it is reductive, so `secondary` (not `primary` accent — accent is reserved for affirmative actions per design system §6.1). See Open questions for the alternative reading.
+- **Interactions:** Esc or backdrop click dismisses; on successful POST the modal closes, the editor's `→ View public` link strip disappears, and the `Unpublish` button on the toolbar hides (reverts to just `Publish changes` to re-publish later).
+- **Empty / error / loading states:**
+  - **Loading:** `Unpublish` button shows a spinner; both buttons disable.
+  - **4xx/5xx:** inline `color.danger` banner above the footer row with the server message; retry available via clicking `Unpublish` again.
+
+### Delete modal (overlay)
+
+- **Purpose:** destructive confirmation before `DELETE /api/docs/{id}`. Opens when the `🗑 Delete` ghost button is clicked on `/docs/{id}` or (post-M2) from the `⋯` overflow menu on a `/docs` list row.
+- **Spec trace:** M2 spec §6.2 `DELETE /api/docs/{id}`, §5 events (`docs.document.deleted` emitted on commit), §10 (RAG chunks cascade-removed by M3+ consumers when they ship).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — Delete modal  global` (node `29:818`).
+- **Key elements:**
+  - **Backdrop:** identical to the other two modals — `color.text` at `0.30` alpha.
+  - **Modal card:** same shell (480 wide, centered, `surface` bg + `border` + `radius.lg` 14px, 32px padding, 20px gap, body content longer so the card hugs to ~270px).
+  - **Title:** `font.h1` — `Delete this document?`
+  - **Body:** `font.body color.text.muted` — explicit "can't be undone" + public-URL 404 + RAG chunk removal: `This can't be undone. If the document is currently published, its public URL (/docs/public/<slug>) will return 404. Vector chunks created by the RAG pipeline (M3+) are also removed.`
+  - **Footer button row** (right-aligned, 8px gap): **Cancel** secondary → **Delete** `danger` (`color.danger` `#B14B3B` bg, `#FFFFFF` fg, `color.danger` border, `radius.md`, padding `8px 14px`, `font.small` weight 500). Per design system §6.1 danger variant.
+- **Interactions:** Esc or backdrop click dismisses; on successful DELETE the modal closes, the user is navigated to `/docs` (the My documents index), and a `success`-fg toast in the topbar reads `Deleted "<title>".` for 4 seconds with an `Undo` link. **UX caveat:** the `Undo` link is non-functional in M2 P0 — DELETE is committed, the cascade has already run, and reviving the document + its (future M3+) RAG chunks via DELETE reversal is non-trivial. M2.1 adds a 30s tombstone column on `docs.documents` so DELETE is soft and `Undo` actually flips the tombstone before the cascade fires. See spec §11 row 14 (added with this design pass).
+- **Empty / error / loading states:**
+  - **Loading:** `Delete` button shows a spinner; both buttons disable.
+  - **4xx/5xx:** inline `color.danger` banner above the footer row with the server message; retry available via clicking `Delete` again.
 
 ### Search results (`/docs/search`)
 
@@ -459,17 +498,14 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §6.1 — `GET /api/docs/search?scope=public` | Search results (via the scope toggle = `Public`); ⌘K search palette (via `Tab` to toggle scope to Public) |
 | §2 P0 — Global `⌘K` search palette | ⌘K search palette (global overlay) — same API endpoint as Search results, different UX surface (keyboard-fastest vs. depth-fastest) |
 | §6.1 — `POST /api/docs/public/{slug}/view` | Document detail (fired on page load; the displayed `viewCount` reflects the post-increment value) |
-| §6.2 — `GET /api/docs/mine` | My documents (right list pane consumes this scoped by `path` prefix) |
-| §2 P0 / §6.2 — `GET /api/docs/folders` (folder tree, `FolderNode`) | My documents (left tree pane) |
-| §2 P0 / §6.2 — `POST /api/docs/{id}/move` (`MoveDocRequest`) | My documents (drag-and-drop a row onto a folder tree node) |
-| §4.1 — `docs.documents.path` column (folder hierarchy) | My documents (tree pane, breadcrumb, list-header current-folder label); New document (path-indicator pill in toolbar — inherits the path the user was in when they hit `+ New document`); Edit document (path indicator surfaces the existing folder, click-to-edit moves the doc). NOT surfaced on any public route — public URLs are flat per spec §2 P0 + §12 acceptance criterion. |
+| §6.2 — `GET /api/docs/mine` | My documents |
 | §6.2 — `GET /api/docs/search?scope=mine` | Search results (default `Mine` scope in the mock); ⌘K search palette (default `Mine` scope) |
 | §6.2 — `POST /api/docs` (in-app create + `.md` file upload) | New document (editor) — the in-app create path. The `.md` file upload is mentioned in the spec but the upload affordance is M2.1 visual (drag-and-drop or button in the editor) — flagged in Open questions below. |
 | §6.2 — `GET /api/docs/{id}` | Edit document |
 | §6.2 — `PATCH /api/docs/{id}` | New document + Edit document (the save-state pill is the user-facing artifact) |
-| §6.2 — `POST /api/docs/{id}/publish` | Edit document (Publish-changes button) and New document (Publish button) |
-| §6.2 — `POST /api/docs/{id}/unpublish` | Edit document (Unpublish button) |
-| §6.2 — `DELETE /api/docs/{id}` | Edit document (🗑 Delete ghost button) |
+| §6.2 — `POST /api/docs/{id}/publish` | Edit document (Publish-changes button — opens modal) and New document (Publish button — opens modal); **Publish modal** (slug + excerpt form, footer Publish CTA fires the POST) |
+| §6.2 — `POST /api/docs/{id}/unpublish` | Edit document (Unpublish button — opens modal); **Unpublish modal** (footer Unpublish CTA fires the POST) |
+| §6.2 — `DELETE /api/docs/{id}` | Edit document (🗑 Delete ghost button — opens modal); **Delete modal** (footer Delete `danger` CTA fires the DELETE) |
 | §6.2 — `POST /api/docs/{id}/like` / `DELETE /api/docs/{id}/like` | Document detail (inline like button — disabled for anonymous in the mock, fully active in the authenticated-viewer interaction) |
 | §6.3 — Owner resolution (`PLAYGROUND_OWNER_GOOGLE_SUB`) | N/A — deployment-time concern (the env var resolves before any of these screens render; no in-UI affordance) |
 | §6.4 — DTOs (PublicDocListItem, PublicDocDetail, MyDocListItem, MyDocDetail, SearchHit) | All 6 screens consume one of these shapes — each "Key elements" section above names the data fields actually rendered |
@@ -497,10 +533,10 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `color.khaki` | `#C2B88A` | Khaki thumbnail gradient on document cards; sidebar-footer avatar; topbar account-pill avatar |
 | `color.text` | `#2A2C20` | Page titles, document titles, doc titles in list rows, hit titles, account name, body MD text, editor block content fg (h1/h2/h3/paragraph), highlight `<mark>` fg |
 | `color.text.muted` | `#6F6A55` | Hero subtitle, document excerpts, breadcrumb, neutral chip fg, Draft chip fg, all "updated …" meta, blockquote body, save-state pill, hit chip-Draft fg, account email, list-row meta numbers, sidebar wordmark line 2, Sign-in-to-like tooltip hint |
-| `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows, `/docs` tree pane `STATUS` / `FOLDERS` eyebrows, `/docs` tree pane `+ New folder` ghost row, `/docs` list-pane right-aligned "drag rows to move folder" hint |
-| `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs` status tree, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link, `/docs` tree pane **active folder label + count** (build-log), `/docs` breadcrumb non-current segments |
+| `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows |
+| `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs`, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link |
 | `color.accent.hover` | `#5C6730` | (Reserved — primary-button hover treatment; not visible at rest in these static mocks but the implementer applies it on hover per spec §6.1) |
-| `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg, `/docs` tree pane **active row bg** (status `All`, folder `build-log`), drag-and-drop drop-indicator highlight on tree nodes |
+| `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg |
 | `color.success` | `#4F6B2E` | `● Signed in` topbar chip fg (signed-in screens) |
 | `success` chip bg | `#E5EBD9` | `● Signed in` chip bg; sage thumbnail gradient on document cards (this is the spec's `success` chip bg from §6.3, reused for the sage decorative gradient — same value, no new token) |
 | `font.h1` | 28px / 1.2 / 700 / -0.02em | Page titles: `Documents by JeekLee`, document article titles, editor h1 block (and the `Untitled` placeholder in `text.subtle`) |
@@ -508,8 +544,8 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `font.h3` | 16px / 1.4 / 600 / 0 | Document card titles, doc list row titles, search hit titles |
 | `font.body` | 15px / 1.6 / 400 / 0 | Hero subtitle, document article body paragraphs, editor paragraph blocks, search hit snippets, search input text |
 | `font.small` | 13px / 1.5 / 400 / 0 | Document card excerpts, breadcrumb, all button labels (13px / 500 per spec §6.1), all `→` accent links, account-pill name, list-row meta text, segment labels, hit-meta chip-row text |
-| `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | Sidebar `APPS` label, `/docs` tree pane `STATUS` and `FOLDERS` section labels |
-| `font.mono` | 13px / 400 | All inline code (`.claude/agents/`), all fenced code blocks (document detail + the editor's code block type), slash-menu keyboard hints (`h1`, `h2`, `>`, `\`\`\``, `---`), `/docs` tree pane folder counts (right-aligned numbers in `text.subtle` next to each folder + status row) |
+| `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | Sidebar `APPS` label |
+| `font.mono` | 13px / 400 | All inline code (`.claude/agents/`), all fenced code blocks (document detail + the editor's code block type), slash-menu keyboard hints (`h1`, `h2`, `>`, `\`\`\``, `---`) |
 | `spacing.xs` | 4px | Intra-element micro-gaps (chip dot to label, view-public link to toolbar, search-input icon to text) |
 | `spacing.sm` | 8px | Eyebrow → title gap, tile internal gap, save-state to button gap, toolbar button-row gap |
 | `spacing.md` | 16px | Card internal padding, hero spacing, blockquote padding-left, fenced-code-block padding |
@@ -517,12 +553,14 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `spacing.xl` | 40px | Editor surface padding-y (`40px 0`); topbar → editor-toolbar offset |
 | `radius.sm` | 6px | Inline code rounded background; search input (`/docs` per-page narrow search); kbd pill |
 | `radius.md` | 10px | Buttons (primary + secondary + outline + ghost), cards, list card, segment-switcher container, fenced code blocks, sidebar nav-item active bg, account footer card |
-| `radius.lg` | 14px | (Reserved — for modals like the Publish modal and the Delete confirm; no static modal mocked in these frames but the implementer reserves this radius) |
+| `radius.lg` | 14px | Modal card corner radius on all three M2 modal frames (Publish, Unpublish, Delete). Was reserved in v4; now in active use. |
+| `color.danger` | `#B14B3B` | Delete button bg on the Delete modal (`danger` variant per design system §6.1); reserved for the `color.danger`-fg inline banners on all three modals' 4xx/5xx error states (rendered in implementation, not visible at rest in the mocks). |
+| `color.text` @ 0.30α (derived, not a new token) | `rgba(42,44,32,.30)` | Backdrop / scrim behind the Publish, Unpublish, and Delete modal cards. Same derivation already used by the ⌘K palette overlay — no new token introduced. |
 | `radius.pill` | 999px | Sidebar search pill, all chips, account pill, avatars, like button, large search bar in `/docs/search`, scope-toggle active segment |
 | `shadow.card` | `0 4px 14px rgba(60,50,20,.05)` | All cards at rest (document thumbnail cards, list card, account footer) |
-| `shadow.pop` | `0 10px 30px rgba(60,50,20,.10)` | (Reserved — hover-as-link card lift per spec §6.4; not visible at rest, applied on hover by the implementer) |
+| `shadow.pop` | `0 10px 30px rgba(60,50,20,.10)` | Hover-as-link card lift per spec §6.4 (applied on hover by the implementer); also the modal card elevation on all three M2 modals (Publish, Unpublish, Delete) — not authored in the Figma mock because the Talk to Figma plugin's `create_frame` doesn't expose a drop-shadow / effect setter (see Open questions); the implementer applies it from tokens. |
 
-**Verification note:** every hex value above appears in the design system spec at §3.1 / §3.2 / §3.3 / §6.3 or in §5.3 elevation. No new tokens. The thumbnail gradients explicitly reuse `khaki`, `surface.soft`, and the spec §6.3 `success` chip bg `#E5EBD9` — no fourth thumbnail color is introduced.
+**Verification note:** every hex value above appears in the design system spec at §3.1 / §3.2 / §3.3 / §6.3 or in §5.3 elevation. No new tokens. The thumbnail gradients explicitly reuse `khaki`, `surface.soft`, and the spec §6.3 `success` chip bg `#E5EBD9` — no fourth thumbnail color is introduced. The modal scrim is `color.text` at 0.30 alpha — a derived value, not a new token (same derivation already in use on the ⌘K palette overlay).
 
 ## Out of scope (this milestone)
 
@@ -553,9 +591,15 @@ Items the M2 spec defers to M2.1, plus the P2 list:
   2. Defer to M2.1 alongside image upload — both upload paths land together with a single drag-and-drop zone in the editor body. Cleaner UX but the API is sitting unused for one release.
   Recommendation: option 1, since the API ships either way and a 32×32 ghost button is trivial. Flagging for the implementer to confirm during Stage 3.
 
-- **Publish modal visual.** Spec §6.2 defines `PublishRequest { slug?, excerpt? }` and §10 mandates slug-stability tests, but the modal that surfaces the slug + excerpt fields at publish-time has no mock here. M2 should ship one. Pattern recommendation: a `radius.lg` 14px modal centered on a 50% `bg` scrim, 480×420, with two `font.body` text inputs (`Slug` and `Excerpt`), a `Cancel` (secondary) + `Publish` (primary, accent) button row at the bottom. Same modal is reused for `Publish changes` (pre-populated with current values).
+- **Publish modal visual — RESOLVED in this design round.** The Publish modal frame (node `29:816`) now exists with the slug + excerpt form fields, helper text per spec §4.3 field rules, and primary/secondary footer button row per design system §6.1. The same modal is reused for `Publish changes` (pre-populated with the document's current `publish_meta.slug` and `publish_meta.excerpt`). Carried-forward sub-question: should the slug helper text live above or below the input? Working default: below (matches Material / shadcn / most form libraries). The mock shows below.
 
-- **Delete confirm modal visual.** Same structure as the publish modal but with `danger`-bg `Delete` primary (spec §6.1 danger variant). Working default: `Cancel` (secondary) + `Delete document` (danger, white text). Open: does the modal require typing the document title to confirm (GitHub-style)? For a single-author personal site that's probably overkill; flagging anyway.
+- **Delete confirm modal visual — RESOLVED in this design round.** The Delete modal frame (node `29:818`) now exists with `Cancel` (secondary) + `Delete` (`danger` per §6.1) footer. Body copy explicitly names the 404 + RAG-chunk-removal consequences. Sub-question resolved: the modal does **not** require typing the document title to confirm (GitHub-style). For a single-author personal site that's overkill; the `Cancel` button + the explicit "can't be undone" copy are sufficient friction. The implementer can revisit if user testing shows accidental deletes.
+
+- **Unpublish-button variant — `secondary` vs. `primary` accent.** The Unpublish modal's CTA is rendered as `secondary` per design system §6.1 (`surface` bg, `color.text` fg, `border.strong` stroke) on the grounds that (a) unpublishing is reductive, not affirmative, and (b) `color.accent` is reserved for affirmative actions per spec §3.2. The alternative reading: it's still the modal's primary CTA and the user expects it to look "primary" — in which case use `color.accent` to draw the eye even though the action is reductive. Working default: `secondary` (current mock). Flagging for the reviewer in case the design system author disagrees; the swap is a one-line token change for the implementer either way.
+
+- **Modal `shadow.pop` not authored in Figma.** The Talk to Figma plugin's `create_frame` doesn't expose a drop-shadow / effect setter, so the three modal cards (Publish, Unpublish, Delete) lack the `shadow.pop` elevation in the static mock — the cards sit on the scrim with only their `border` stroke for separation. The implementer applies `shadow.pop` (`0 10px 30px rgba(60,50,20,.10)` per design system §5.3) at impl time. The Talk to Figma plugin maintainer could extend the bridge to expose `setEffects` if this becomes a recurring need (the ⌘K palette frame `27:704` has the same gap).
+
+- **Delete `Undo` toast — non-functional in M2 P0.** The Delete modal's success toast carries an `Undo` link but in M2 P0 the link does nothing — DELETE is committed at the SQL level and the cascade has already run. M2.1 adds a 30s tombstone column on `docs.documents` so DELETE is soft and `Undo` flips the tombstone before the cascade fires. Tracked in M2 spec §11 row 14 (added with this design pass). Working default for M2 P0: render the toast and the `Undo` link as visual affordance, but make the `Undo` click a no-op with a small `Couldn't undo — that's an M2.1 feature.` follow-up toast. Flagging for the implementer to confirm during Stage 3 — the alternative is to hide the `Undo` link entirely in M2 P0 (cleaner but breaks the visual contract with M2.1).
 
 - **Account pill dropdown contents.** Same open question as M1's design doc — gets answered here at M2 since `My documents` is now a second item the menu can carry. Recommendation: `My documents` (links to `/docs`), divider, `Sign out` (calls `/logout` per ADR-07). Frontend-implementer can ship this as an M2 visual at no extra cost since the chevron is already mocked.
 
@@ -563,14 +607,6 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 
 - **Search-result row click target — full row vs. title only.** The list rows in `/docs` are hover-as-link on the whole row. The search hits in `/docs/search` look similar but the meta chip + slug span feel like they could be separate targets. Working default: whole hit-block is the click target (matches the `/docs` pattern); the slug `/docs/{id-prefix}` text in the meta is non-interactive copy. Flagging in case the implementer disagrees.
 
-- **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 7 frames into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results,kbd-search-palette}.png` when the human reviewer wants them inlined here.
+- **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 10 M2 frames (6 page screens + ⌘K palette + 3 modals) into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results,kbd-search-palette,publish-modal,unpublish-modal,delete-modal}.png` when the human reviewer wants them inlined here.
 
 - **⌘K palette inline `<mark>` highlight simplification.** The static Figma mock for the ⌘K palette renders the active row's title in full `accent` (weight 600) instead of wrapping just the matched substring in an `accent.soft` `<mark>` span — the Talk to Figma plugin's TEXT node primitives don't support per-character background fills, so the inline highlight can't be authored declaratively in Figma here. The implementer reinstates the `<mark>` treatment at impl time using the same convention used on `/docs/search` (search result snippets already use the inline span), so there's no new rule to invent. The `accent`-on-title fallback in the mock is intentionally close enough that an at-a-glance design review still reads as "this is the active row with matched highlights." Resolution: implementer ships the proper inline `<mark>` span; the static mock retains the simplification. No spec change.
-
-- **Editor toolbar path-indicator pill visual (`/docs/new`, `/docs/{id}`).** The two editor frames (`14:463`, `14:508`) were NOT rebuilt in this design pass — they pre-date the directory-hierarchy P0. The new path-indicator pill described in the "New document (editor)" section above (a `font.small text.muted` click-to-edit pill next to the save-state, opening an inline folder picker sourced from `GET /api/docs/folders`) is fully specified in copy but its visual Figma authoring is deferred to a small follow-up touch round. Frontend-implementer can ship from the copy as-is; a future product-designer dispatch can add the pill to both editor frames in one cycle if a stakeholder requests a visual review before Stage 3.
-
-- **`+ New folder` row UX.** The dispatch resolved that the row visually appears as a disabled ghost in M2 P0 (`text.subtle` color + tooltip `Folders are created when you put a document in them — try + New document first.`). An explicit inline-input affordance ships in M2.1. Open: should the disabled appearance be more obviously inert (e.g., `surface.soft` muted bg + `cursor: not-allowed`) versus the current quiet `text.subtle` ghost? Working default = quiet ghost; revisit during M2.1.
-
-- **Folder-rename UX.** Spec §11 q15 deferred to M2 Stage-2 frontend refinement. Two options: (a) right-click → Rename inline input in the tree row, (b) the row's overflow menu has a `Rename folder…` item (parallel to the document row's overflow). Working default: option (a) — discoverability matches Notion/Finder muscle memory. Tracked in spec §11 q15.
-
-- **Folder drag-and-drop preview.** When a row is dragged onto a folder, the target highlights with `accent.soft` bg (drop indicator). Open: should the dragged row also render a small floating "ghost" copy following the cursor (Notion pattern), or is the in-place opacity-0.6 treatment enough? Working default: in-place opacity 0.6 ships first; floating ghost is a Stage-3 polish item.
