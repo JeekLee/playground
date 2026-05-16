@@ -22,19 +22,19 @@ Alternatives considered:
 
 ### Framework + tooling
 - **Next.js 15.x** (App Router) — currently 15.3.x on the GA channel. Pin the
-  exact patch in `client/package.json` when M0 / M1 lands.
+  exact patch in `frontend/package.json` when M0 / M1 lands.
 - **TypeScript 5.6.x**, `"strict": true`, `"noUncheckedIndexedAccess": true`.
 - **React 19.x** (matches Next 15 default).
-- **Package manager: pnpm 9.x** (workspaces not used; single `client/`).
-- **Node: 22 LTS** (declared in `client/package.json` `engines`).
+- **Package manager: pnpm 9.x** (workspaces not used; single `frontend/`).
+- **Node: 22 LTS** (declared in `frontend/package.json` `engines`).
 - Linting: **ESLint 9.x** flat config + Prettier 3.x.
 
 ### Architecture: Feature-Sliced Design (FSD) v2 — 7 layers
 
-Source root: `client/src/`.
+Source root: `frontend/src/`.
 
 ```
-client/src/
+frontend/src/
 ├── app/        # Next.js App Router routes + global providers (top of dep chain)
 ├── pages/      # Composition of widgets into route-level page components
 │              # (FSD "pages" layer; not Next.js Pages Router)
@@ -62,7 +62,7 @@ Enforcement:
 
 ### Design tokens
 - All design tokens (colors, spacing, typography scale) live under
-  `client/src/shared/ui/tokens/` as TypeScript objects, exported into Tailwind's
+  `frontend/src/shared/ui/tokens/` as TypeScript objects, exported into Tailwind's
   config. Tailwind itself is allowed but not required; if used, tokens are the
   single source of truth.
 - The Stage 2 product-designer agent produces tokens in Figma; the

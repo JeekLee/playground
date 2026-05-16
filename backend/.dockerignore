@@ -1,0 +1,22 @@
+# Keep the build context lean for the gateway Dockerfile (and future BC apps).
+# Build context is `backend/`, so anything outside backend/ is already excluded;
+# this file only needs to prune build artifacts and tooling files within backend/.
+
+# Gradle / Java build outputs
+**/build/
+**/.gradle/
+**/target/
+*.class
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# VCS (defense in depth)
+.git/
+.gitignore
+
+# Env / secrets
+**/.env
+**/.env.local

@@ -28,19 +28,20 @@ M0 ships zero application features. The four BC quadruplets (`identity`, `docs`,
 2. **Bootstrap the Gradle wrapper** (only needed once, if it isn't checked in):
 
    ```bash
-   docker run --rm -v "$PWD":/workspace -w /workspace gradle:8.10.2-jdk21 \
+   docker run --rm -v "$PWD/backend":/workspace -w /workspace gradle:8.10.2-jdk21 \
      gradle wrapper --gradle-version 8.10.2
    ```
 
-   This drops `gradlew`, `gradlew.bat`, and `gradle/wrapper/` into the repo. Commit them.
+   This drops `gradlew`, `gradlew.bat`, and `gradle/wrapper/` into `backend/`. Commit them.
 
 3. **Build the modules:**
 
    ```bash
+   cd backend
    ./gradlew build
    ```
 
-   Compiles `:api:shared-kernel` and `:api:gateway`. No tests yet — that lands per BC.
+   Compiles `:shared-kernel` and `:gateway`. No tests yet — that lands per BC.
 
 4. **Configure environment:**
 
@@ -82,10 +83,10 @@ docker compose --env-file .env down -v    # also drop volumes (loses Postgres + 
 
 ## Troubleshooting
 
-- **`./gradlew: Permission denied`** — first time after wrapper bootstrap: `chmod +x gradlew`.
+- **`./gradlew: Permission denied`** — first time after wrapper bootstrap: `chmod +x backend/gradlew`.
 - **Port already in use (`10232`, `10279`, `18080`, `19092`)** — `docker ps` to find the offender; either stop it or rebind the port in `infra/docker-compose.yml`.
 - **`pgvector` extension missing** — the init SQL only runs on first volume creation. Reset with `docker compose down -v` and bring up again.
-- **Gateway healthcheck failing** — `docker compose logs gateway`. Most common cause is BOM resolution; retry with `./gradlew --refresh-dependencies build` (host) or `docker compose build --no-cache gateway`.
+- **Gateway healthcheck failing** — `docker compose logs gateway`. Most common cause is BOM resolution; retry with `cd backend && ./gradlew --refresh-dependencies build` (host) or `docker compose build --no-cache gateway`.
 - **Kafka broker won't elect a controller** — host clock skew between WSL/macOS Docker host and the container. Restart Docker Desktop or check `date` on the host.
 
 ## What M0 deliberately leaves out

@@ -89,11 +89,15 @@ Five BCs (identity, docs, rag-ingestion, rag-chat, metrics) × four modules each
 | `metrics-infra` | Java library | no | M5 |
 | `buildSrc` | Gradle composite build (convention plugins) | n/a | M0 |
 
-Path convention: `api/<bc>/<bc>-<layer>/` (e.g., `api/identity/identity-api/`,
-`api/identity/identity-app/`). Each BC directory groups its four submodules.
-`gateway` and `shared-kernel` sit directly under `api/`. Root
-`settings.gradle.kts` aggregates all 22 modules with explicit
-`include(":identity-api", ":identity-app", …)` calls.
+Path convention: `backend/<bc>/<bc>-<layer>/` (e.g., `backend/identity/identity-api/`,
+`backend/identity/identity-app/`). Each BC directory groups its four submodules.
+`gateway` and `shared-kernel` sit directly under `backend/` (`backend/gateway/`,
+`backend/shared-kernel/`). The `backend/` directory itself is the Gradle root —
+`settings.gradle.kts`, `build.gradle.kts`, `buildSrc/`, `gradle/`, `gradlew` all
+live there. Root `backend/settings.gradle.kts` aggregates all 22 modules with
+explicit `include(":identity:identity-api", ":identity:identity-app", …)` calls.
+The repo-level monorepo root contains only `backend/`, `frontend/` (Next.js per
+ADR-06), `infra/` (compose), and `docs/`.
 
 ### Per-BC dependency wiring (the quadruplet contract)
 

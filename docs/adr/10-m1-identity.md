@@ -237,7 +237,7 @@ M4 (rag-chat) is the first consumer for rate-limit keys.
 ### 7. `identity` schema + Flyway migrations
 
 Schema: `identity` (per ADR-05). Migrations live at
-`api/identity/src/main/resources/db/migration/`. Flyway is configured with
+`backend/identity/identity-infra/src/main/resources/db/migration/`. Flyway is configured with
 `flyway.schemas=identity`, `flyway.table=flyway_history`.
 
 Migration `V202605160001__create_users.sql`:
