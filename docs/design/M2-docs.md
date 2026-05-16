@@ -493,6 +493,43 @@ Stage 2 output for the Docs (M2) bounded context. Ten 1440-wide frames: six desk
               └──────────────────────────────────────────────────────┘
 ```
 
+### Account-pill dropdown (overlay)
+
+- **Purpose:** the only menu surface attached to the topbar account pill. Surfaces (a) the signed-in user's identity (name + email — confirms the session is who they expect) and (b) the M2 destinations and account actions accessible from anywhere. Minimal at M2 ship; rows accrete as new surfaces ship (M3 adds `My chats`, M5 adds `System status`, M2.1+ adds `Account settings` once there's something to set).
+- **Spec trace:** M2 spec §7.1 (sidebar Apps row `Docs` shipped → `My documents` becomes a real destination), M1 PRD `POST /logout` semantics (the `Sign out` row triggers logout with `PLAYGROUND_SESSION` revocation), design system §2.4 (single chrome — the pill + menu are the same on every authenticated route).
+- **Auth state:** authenticated (the pill itself is only present on signed-in screens).
+- **Figma frame:** `M2 — Account pill dropdown (overlay)  global` (node `30:892`). Static mock shows the menu in its open state with the `My documents` row in hover-active treatment.
+- **Key elements:**
+  - **Trigger:** clicking the account pill (or pressing Enter when it has keyboard focus). The chevron `▾` rotates to `▴` while the menu is open (the mock shows the open-state `▴`).
+  - **Card geometry:** 220px wide, `surface` bg, `border` 1px stroke, `radius.md` 10px, `shadow.pop` if implementable. Anchored right-edge-aligned to the pill's right edge, 8px below the pill. Auto-layout VERTICAL with 4px top/bottom padding so the inner divider sits flush against the outer card edges.
+  - **Header row** (auto-layout VERTICAL, padding `12px 14px 10px`, gap `2px`): display name `JeekLee` (`font.small` weight 600 `color.text`) + email `jeeklee1120@gmail.com` (10.5px `color.text.muted` — truncates with `…` at the right if it exceeds the card width). No click target; not focusable.
+  - **Divider:** 1px height, `color.border` fill, full width.
+  - **Action rows** (auto-layout HORIZONTAL, padding `8px 14px`, 10px gap, `primaryAxisAlignItems=SPACE_BETWEEN` so optional right-side hints sit flush right):
+    - **`My documents`** (icon `▤` + label, default state: `color.text.muted` icon + `color.text` label; hover-active state shown in the mock: `color.surface.soft` bg + `color.accent` icon + `color.accent` label, weight 500). Right-side kbd-style hint `⌘D` in 10px `color.text.subtle` — **decorative only in M2 P0** (the shortcut is not wired; the slot exists so the implementer has the right pattern for future menu items in M2.1+).
+    - **`Sign out`** (icon `↪` `color.text.muted` + label `Sign out` `color.text`). Default state in the mock (no hover bg). On click triggers `POST /logout` per M1 PRD; on success the topbar account pill is replaced with the public-mode chip + `Sign in with Google` button, and the user lands on `/`. No confirm modal — the action is reversible (just sign in again).
+  - **Footer affordances:** none in M2. Future rows append above the divider for grouping (account-related at the top, app actions below the divider, destructive `Sign out` at the bottom). Working order: Header → Divider → `My documents` → (M3+) `My chats` → (M5+) `System status` → (M2.1+) `Account settings` → `Sign out` at the bottom.
+- **Interactions:**
+  - Open: click pill, Enter on focused pill. (No global keyboard shortcut to open the menu in M2 P0; the `⌘D` hint on `My documents` is decorative.)
+  - Close: Esc, click outside the card, or click any action row (after navigation).
+  - Keyboard nav inside the card: `↑↓` moves the active row, Enter activates, Esc closes. The header row is skipped during keyboard nav.
+  - **`My documents` click:** navigates to `/docs` (always to `/docs` root, even if the user was already on a sub-path like `/docs/{id}` — predictable behavior). The dropdown closes.
+  - **`Sign out` click:** `POST /logout`, then redirect to `/`. The dropdown closes during the POST round-trip.
+- **Empty / error / loading states:**
+  - **Loading (`/me` payload not yet hydrated):** the header row shows skeleton blocks for name + email; action rows remain interactive (they only depend on the session cookie, not on `/me`).
+  - **Error (`/me` returns 401 — session expired):** dropdown closes, page redirects to `/login` (matches the Signed-in Home error behavior documented in M1).
+  - **Sign-out failure (5xx from `/logout`):** danger toast in the topbar `Couldn't sign out — try again.`; session is left intact (no half-state). The dropdown re-opens so the user can retry.
+  - **Avatar URL caching fallback (P1 in M1 PRD):** when the cached avatar URL fails to load, the header row falls back to the khaki initials circle (matches the pill itself).
+
+```
+                                              ┌──────────────────────┐
+                                              │ JeekLee              │  ← header
+                                              │ jeeklee1120@gmail.com│
+                                              ├──────────────────────┤
+                                              │ ▤ My documents   ⌘D │  ← hover-active
+                                              │ ↪ Sign out           │  ← default
+                                              └──────────────────────┘
+```
+
 ## Home composition deltas (no new M2 frame; deltas only)
 
 M2 spec §7.3 supersedes design system §9 item 3 in two ways. These deltas apply to the **existing M1 home frames** (`14:2` Public Home and `14:135` Signed-in Home) when M2 ships — `frontend-implementer` applies them then; this design pass does NOT modify those M1 frames.
@@ -535,6 +572,7 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §6.4 — DTOs (PublicDocListItem, PublicDocDetail, MyDocListItem, MyDocDetail, SearchHit) | All 6 screens consume one of these shapes — each "Key elements" section above names the data fields actually rendered |
 | §6.5 — Error semantics (400/401/404/409/413/503) | Per-screen "Empty / error / loading states" entries cover the user-visible variants. 401 redirects to `/login` per M1 design. 503 from OpenSearch surfaces only on Search results (per spec, the rest of M2 still works). |
 | §7.1 — Sidebar (Apps section, `Docs` row active/badged when shipped) | All 6 screens (every sidebar mock shows the `Docs` row active with `accent.soft` bg + `accent` label) |
+| §7.1 — Sidebar `Docs` row shipped (→ `My documents` becomes a real destination from the global account-pill menu) + M1 PRD `POST /logout` semantics | **Account-pill dropdown (overlay)** — `My documents` row navigates to `/docs`, `Sign out` row fires the M1 `POST /logout` |
 | §7.2 — Client routes | Each route maps to one screen (1:1, 6 rows = 6 screens) |
 | §7.3 — Home composition deltas (rename + meta extension) | Deltas-only section above (no new M2 frame); applied to existing M1 home frames at implementation time |
 | §8 — RAG handoff trace | N/A — backend-only (the docs BC's responsibility is publishing accurate events; M3 + M4 own the user-facing chat surface) |
@@ -602,7 +640,7 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 - **Multi-author** — P2 (the site stays single-author; owner resolution is configured at deploy time per spec §6.3).
 - **Engagement-driven ranking** — P2 (view/like counters are stored, not yet used to re-order the public feed).
 - **Slug rename action** — spec §11 row 5 deferred to M2.1+. No "rename slug" affordance in the Edit document toolbar.
-- **Account-pill dropdown contents** — carried over from M1 Open questions. The chevron is visible on the JL pill but the menu contents (likely `My documents` / `Sign out`) are still deferred.
+- **Sign-out keyboard shortcut + `My documents` shortcut wiring** — the dropdown shows a decorative `⌘D` kbd hint on the `My documents` row to establish the pattern for future menu items, but the shortcut is NOT wired in M2 P0. (The dropdown contents themselves are no longer deferred — see the "Account-pill dropdown (overlay)" section above.)
 - **Mobile / responsive layouts** — desktop 1440 only. Sidebar collapse modes (768-1023 icon rail, <768 hamburger drawer) are specified in design system §8.1 but visual mocks are deferred to M4 (the first read-on-the-phone use case).
 - **Dark mode** — token names are reserved per design system §3.4.
 
@@ -624,7 +662,7 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 
 - **Delete `Undo` toast — non-functional in M2 P0.** The Delete modal's success toast carries an `Undo` link but in M2 P0 the link does nothing — DELETE is committed at the SQL level and the cascade has already run. M2.1 adds a 30s tombstone column on `docs.documents` so DELETE is soft and `Undo` flips the tombstone before the cascade fires. Tracked in M2 spec §11 row 14 (added with this design pass). Working default for M2 P0: render the toast and the `Undo` link as visual affordance, but make the `Undo` click a no-op with a small `Couldn't undo — that's an M2.1 feature.` follow-up toast. Flagging for the implementer to confirm during Stage 3 — the alternative is to hide the `Undo` link entirely in M2 P0 (cleaner but breaks the visual contract with M2.1).
 
-- **Account pill dropdown contents.** Same open question as M1's design doc — gets answered here at M2 since `My documents` is now a second item the menu can carry. Recommendation: `My documents` (links to `/docs`), divider, `Sign out` (calls `/logout` per ADR-07). Frontend-implementer can ship this as an M2 visual at no extra cost since the chevron is already mocked.
+- **Account pill dropdown contents — RESOLVED in this design round.** The menu now exists as a dedicated Figma frame (`M2 — Account pill dropdown (overlay)  global`, node `30:892`) and as a dedicated section above ("Account-pill dropdown (overlay)"). Three rows: identity header (name + email, non-interactive), `My documents` → `/docs`, `Sign out` → `POST /logout` per M1 PRD. Future rows append above the divider as new surfaces ship (M3 `My chats`, M5 `System status`, M2.1+ `Account settings`). The M1 design doc's matching open question + out-of-scope entry are also marked resolved with cross-references to this section.
 
 - **Empty-state CTA wording in `/docs`.** When the user has zero documents, the empty-state card says `No documents yet. Start writing.` with a `+ New document` button. Open: should the empty state also surface the `.md` file upload affordance (if Open question 1 lands) so first-time users can either type fresh or import? Working default: yes, with a small "or upload a .md file" secondary link below the primary button. Flagging for the implementer.
 
