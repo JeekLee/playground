@@ -196,6 +196,8 @@ The app uses a fixed two-column shell on `≥1024px` viewports.
 
 ### 8.1 Sidebar (232px, left)
 
+> **Partially superseded by `2026-05-16-m2-docs-bc-design.md` §7.1.** From M2 onward the Apps / Workspace split is dropped; all Documents-related navigation is a single `Documents` entry in Apps. The Brand row, Search palette trigger, Spacer, and Account footer described below remain in force.
+
 Fixed width. Background `surface.soft`. Vertical sections, top-to-bottom:
 
 1. **Brand row** — glyph + stacked wordmark.
@@ -232,6 +234,8 @@ No second navigation bar. The sidebar owns navigation.
 Padding `26px 28px 32px`. Sections inside use 22–32px vertical rhythm.
 
 ## 9. Home page composition (the public landing)
+
+> **Partially superseded by `2026-05-16-m2-docs-bc-design.md` §7.3.** From M2 onward the "Latest from the blog" section is renamed **"Latest from JeekLee's blog"** and sources only owner-authored public documents (the public-feed endpoint is owner-filtered). Layout and visual treatment described below are unchanged.
 
 Order, top-to-bottom (inside main content area):
 
