@@ -43,6 +43,7 @@ This spec **does not** describe the M2 PRD's user-story list, the architect's po
 - Server returns raw MD + metadata; rendering happens in Next.js with `unified` + `remark` + `rehype` + `shiki`
 - External-URL images only
 - **Global `⌘K` search palette** — overlay launchable from any authenticated page; queries `GET /api/docs/search` live with `scope=mine` default and `Tab` to toggle `public`. Enter on a result opens the document; `⌘+Enter` opens the full `/docs/search` page with the same query. The palette is the keyboard-fastest entry into search; the `/docs/search` page is the depth-fastest (filters, scope toggle, pagination, deep-link).
+- **Document directory hierarchy** — every document has a `path` (string like `/`, `/agents/`, `/agents/build-log/`). Folders are **implicit** — no separate `docs.folders` table; a folder exists if any document's `path` starts with it. The author creates/renames/moves folders entirely through the `/docs` UI (drag a row to a tree node, or use the row's overflow menu). Path is also part of the create/PATCH contract on `POST /api/docs` and `PATCH /api/docs/{id}`. **Public URLs are flat** (`/docs/public/{slug}`); the folder hierarchy is an authoring-only organizational tool and does NOT appear on any public surface. The `docs.document.moved` event is deferred to M2.1 (no consumer needs it for M2 — RAG and search index by `user_id` + `visibility` per ADR-09).
 
 ### Deferred to M2.1 (P1, same milestone bucket if cycle has slack)
 - Image / attachment upload (presigned to local volume or Postgres `bytea`, decided in M2.1 ADR)
@@ -86,6 +87,8 @@ CREATE TABLE docs.documents (
               CHECK (visibility IN ('private', 'public')),
   view_count  BIGINT       NOT NULL DEFAULT 0,
   like_count  BIGINT       NOT NULL DEFAULT 0,
+  path        TEXT         NOT NULL DEFAULT '/'
+              CHECK (path ~ '^(/|(/[a-z0-9][a-z0-9-]*)+/)$'),
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -93,6 +96,7 @@ CREATE TABLE docs.documents (
 CREATE INDEX ix_docs_user_updated      ON docs.documents (user_id, updated_at DESC);
 CREATE INDEX ix_docs_public_published  ON docs.documents (visibility, updated_at DESC)
   WHERE visibility = 'public';
+CREATE INDEX ix_docs_user_path_updated ON docs.documents (user_id, path, updated_at DESC);
 
 CREATE TABLE docs.publish_meta (
   document_id     UUID         PRIMARY KEY
@@ -148,6 +152,7 @@ Rules:
 - **`slug`** is derived from `title` at first publish (kebab-case, lowercased ASCII, non-ASCII chars stripped, then `-2`, `-3`, … suffix on collision). User-editable on the publish modal before confirming. **Once set, the slug is the document's permanent public URL** — re-publish after unpublish reuses the existing `publish_meta` row. The user may rename the slug via a separate explicit action (P1).
 - **`excerpt`** at first publish defaults to the first 200 characters of the rendered body with Markdown stripped, plus an ellipsis. User-editable.
 - **`cover_image_url`** is nullable in M2; the UI does not surface it until M2.1.
+- **`path`** is the folder the document lives in, **encoded as a slug-style string** with leading and trailing slashes (e.g., `/`, `/agents/`, `/agents/build-log/`). Default is `/` (the root folder). Segments are lowercase alphanumeric + hyphen (same rule as `slug` segments). Renaming a folder = batch-updating every document with a matching `path` prefix (handled inside the docs service, transactional). `path` changes alongside the document body do NOT bump `updated_at` — `path` is metadata, not content.
 - **`created_at` / `updated_at`** are wall-clock UTC. `updated_at` bumps on any column change (DB trigger or app-level — architect's call).
 
 ### 4.4 State machine
@@ -211,12 +216,14 @@ Public routes carry no `X-User-Id` header (ADR-09). Backend treats absence as "a
 |---|---|---|---|
 | GET | `/api/docs/mine` | — | `{ items: MyDocListItem[], nextCursor: string? }`. Cursor pagination; sort `updated_at DESC`. |
 | GET | `/api/docs/search?q=...&scope=mine` | — | OpenSearch over `userId = X-User-Id` (any visibility). Returns highlighted hits. |
-| POST | `/api/docs` | `CreateDocRequest` (JSON) **or** `multipart/form-data` with a `.md` file + optional `title` | `MyDocDetail` (201). |
+| POST | `/api/docs` | `CreateDocRequest` (JSON) **or** `multipart/form-data` with a `.md` file + optional `title` + optional `path` (default `/`) | `MyDocDetail` (201). |
 | GET | `/api/docs/{id}` | — | `MyDocDetail`. 404 if not owned by caller (do not leak existence). |
-| PATCH | `/api/docs/{id}` | `PatchDocRequest` (`title?`, `body?`) | `MyDocDetail`. |
+| PATCH | `/api/docs/{id}` | `PatchDocRequest` (`title?`, `body?`, `path?`) | `MyDocDetail`. |
 | POST | `/api/docs/{id}/publish` | `PublishRequest` (`slug?`, `excerpt?`) | `MyDocDetail` (now with PublishMeta). |
 | POST | `/api/docs/{id}/unpublish` | — | `MyDocDetail` (visibility=private, PublishMeta retained). |
 | DELETE | `/api/docs/{id}` | — | 204. |
+| GET | `/api/docs/folders` | — | `{ folders: FolderNode[] }`. Returns the caller's folder tree derived from `SELECT path, COUNT(*) AS doc_count FROM docs.documents WHERE user_id=? GROUP BY path ORDER BY path`, then folded into a nested tree of `FolderNode = { name, path /* absolute */, docCount, children: FolderNode[] }`. Root node has `name=""`, `path="/"`. Includes folders that contain only empty children — but since folders are implicit, no truly empty folders ever exist; this is a non-issue. |
+| POST | `/api/docs/{id}/move` | `MoveDocRequest` (`{ path: string }`) | `MyDocDetail` with the new path. **Convenience endpoint** — `PATCH /api/docs/{id}` with `path` works equally well; `move` exists so the UI can be explicit about intent (drag-and-drop wires here). |
 | POST | `/api/docs/{id}/like` | — | `204`. Upserts `(document_id, X-User-Id)` into `document_likes` and increments `like_count` if the row didn't already exist (idempotent — repeat calls succeed without re-incrementing). Allowed on any `visibility` for now; the UI only surfaces it on public documents. |
 | DELETE | `/api/docs/{id}/like` | — | `204`. Removes `(document_id, X-User-Id)` from `document_likes` and decrements `like_count`. Idempotent — removing a non-existent like succeeds without going below zero. |
 
@@ -236,13 +243,16 @@ Ownership check on every authenticated route: `WHERE user_id = X-User-Id`. A use
 PublicDocListItem  = { slug, title, excerpt, publishedAt, viewCount, likeCount }
 PublicDocDetail    = { slug, title, body /*raw MD*/, excerpt, publishedAt, updatedAt,
                          viewCount, likeCount, likedByMe? /* present only when X-User-Id forwarded */ }
-MyDocListItem        = { id, title, visibility, slug?, updatedAt, viewCount, likeCount }
-MyDocDetail          = { id, title, body, visibility, publishMeta?: { slug, excerpt, publishedAt },
+MyDocListItem        = { id, title, visibility, slug?, path, updatedAt, viewCount, likeCount }
+MyDocDetail          = { id, title, body, visibility, path, publishMeta?: { slug, excerpt, publishedAt },
                          viewCount, likeCount, likedByMe, createdAt, updatedAt }
 SearchHit            = { documentId, title, slug?, visibility, snippet /* highlighted */, updatedAt }
-CreateDocRequest     = { title: string, body?: string }
-PatchDocRequest      = { title?: string, body?: string }
+CreateDocRequest     = { title: string, body?: string, path?: string /* default "/" */ }
+PatchDocRequest      = { title?: string, body?: string, path?: string }
 PublishRequest       = { slug?: string, excerpt?: string }
+FolderNode           = { name: string /* e.g. "agents"; empty string for root */, path: string /* absolute, e.g. "/agents/" */,
+                         docCount: number /* total documents in this folder AND descendants */, children: FolderNode[] }
+MoveDocRequest       = { path: string /* absolute target path, e.g. "/spark/" */ }
 ```
 
 ### 6.5 Error semantics
@@ -253,6 +263,7 @@ PublishRequest       = { slug?: string, excerpt?: string }
 - `409` — slug collision when user explicitly chose the colliding slug
 - `413` — body exceeds size cap (TBD by per-milestone ADR; sensible default ~1MB raw MD)
 - `503` — OpenSearch unreachable on search routes (the rest of M2 still works; only search degrades)
+- `400` — `path` doesn't match the CHECK pattern (e.g., trailing slash missing, uppercase segment, double slash) on create / PATCH / move.
 
 ## 7. UX surfaces (supersedes design system §8.1 + §9 in part)
 
@@ -294,7 +305,7 @@ The Workspace section is removed entirely. Per-document actions (Write, Publish,
 |---|---|---|
 | `/docs/public` | public | Owner-filtered public document list (consumes `GET /api/docs/public`). |
 | `/docs/public/{slug}` | public | Single public document (consumes `GET /api/docs/public/{slug}`). |
-| `/docs` | auth | My documents list. Has a tab/segment switcher: `All / Drafts / Published`. Top-right `Search` input + `New document` button. |
+| `/docs` | auth | My documents — **two-pane layout**: left tree (status filters + folder hierarchy + `+ New folder`), right list (A-style table of documents in the currently-selected folder, with status chip + updated-at + counters per row). Top bar: page title + breadcrumb of the current folder path + top-right `Search` input + `+ New document` button. URL query: `?path=/agents/build-log/` reflects the selected folder for deep-linking and back-button (default `/` if absent). Status filter (`All / Drafts / Published`) is sticky in the left tree and applies on top of the folder filter. |
 | `/docs/new` | auth | New document editor — single-pane Notion-style **block editor** (BlockNote), "/" command for block insertion, drag-handles per block. Body roundtrips raw MD via BlockNote's `blockToMarkdownLossy` / `tryParseMarkdownToBlocks`. See §11 Q3 for library decision rationale. |
 | `/docs/{id}` | auth | Edit existing document. Top-right has `Publish` / `Unpublish` / `Delete` and a `View public` link if published. |
 | `/docs/search` | auth | Full-page search results (scope toggle: `mine / public`, filters, cursor pagination). Companion to the global `⌘K` palette: pressing `⌘+Enter` from the palette opens this page with the current query pre-applied; pressing `Enter` opens a result directly. |
@@ -355,6 +366,8 @@ If the user later toggles visibility, `docs.document.visibility-changed` re-tags
 - **Observability:** every state transition (create, publish, unpublish, delete, body-edit) emits a structured log line at INFO with `documentId`, `userId`, `event`, and `bodyChecksum` where relevant. Search projector emits separate INFO/WARN on each batch.
 - **Body size cap:** enforced at the API and via DB column constraint or trigger.
 - **Slug stability:** once published, the public URL of an document must survive unpublish/republish cycles unchanged. Test mandatory.
+- **Path validity:** every `path` value must match the CHECK pattern in §4.1. Document creation, PATCH, and move all enforce it. Test mandatory.
+- **Folder rename atomicity:** renaming a folder (e.g., `/agents/` → `/agent-team/`) is a single transaction that updates every matching `path` value (`UPDATE docs.documents SET path = REPLACE(path, '/agents/', '/agent-team/') WHERE user_id=? AND path LIKE '/agents/%'`). Concurrent moves into the same folder during a rename are serialized at the DB level (intent: pessimistic lock on the doc rows being renamed; per-milestone ADR picks the exact locking strategy).
 - **View dedup correctness:** a single anonymous visitor (same `PLAYGROUND_ANON` cookie) hitting the same slug N times within 24h increments `view_count` exactly once. Integration test required. Authors viewing their own documents are **not** excluded from the count — symmetric treatment, no special-casing in M2.
 - **Like idempotency:** `POST /api/docs/{id}/like` and `DELETE /api/docs/{id}/like` are both idempotent against repeat invocation. Concurrent like/unlike from the same user is serialized at the DB level (PK contention on `(document_id, user_id)`); the final `like_count` must equal `COUNT(*) FROM document_likes WHERE document_id=?`.
 - **Counter drift tolerance:** if `view_count` / `like_count` drift from their source-of-truth queries due to a partial failure, the nightly re-sync job repairs them; max acceptable drift between syncs is informational, not contractual.
@@ -380,12 +393,19 @@ These intentionally land in the architect's per-milestone ADR, not here:
 11. **View dedup TTL** — 24h is the working default. Should authenticated views dedup against `X-User-Id` (longer TTL, more accurate) instead of the anon cookie? For now: same anon-cookie path regardless of auth state, accepted for simplicity.
 12. **Counter sync strategy** — denormalized column + nightly re-sync (current default) vs. trigger-based maintenance vs. event-sourced rebuild from a `docs.document.engagement-*` topic. The trade-off is correctness vs. read latency; default favors read latency since the home tile is a hot path.
 13. **Anonymous viewer ergonomics** — should the like button render at all for anonymous readers, or should it be hidden entirely? Working default: render disabled with "sign in to like" tooltip. Confirmed during M2 Stage-2 design.
+14. **Folder depth limit.** Working default: no hard limit. Realistic ceiling ~5 levels (`/a/b/c/d/e/`). Concrete cap (or none) belongs to the per-milestone ADR.
+15. **Folder rename UX.** Drag-folder-to-folder is one path; double-click-rename in place is another. Visual deferred — both paths covered by the `PATCH /api/docs/{id}` + folder-rename transaction in §10. Decision in the M2 Stage-2 frontend refinement cycle.
+16. **`docs.document.moved` event** — explicitly deferred to M2.1 (no consumer in M2). If M3 (RAG) ever wants to index by folder for retrieval scoping (unlikely — it scopes by `user_id` + `visibility`), this event would be added then.
 
 ## 12. Acceptance criteria (refinement of `roadmap.md` M2)
 
 Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens. The original five bullets are preserved; new ones expand on what the design system, ADR-09, and this spec promise.
 
 - [ ] Authenticated user can create a document via the in-app editor and via `.md` file upload, both producing a stable document id.
+- [ ] Document `path` round-trips through create / PATCH / move; default `/`; invalid `path` returns 400 with the CHECK violation.
+- [ ] `GET /api/docs/folders` returns the caller's folder tree (nested `FolderNode` with `docCount` per node, root `path="/"`). Empty user (zero docs) returns `{ folders: [{ name: "", path: "/", docCount: 0, children: [] }] }`.
+- [ ] Renaming a folder via a path-prefix PATCH (or a future `/api/docs/folders/rename`) updates every matching document's `path` atomically. Test mandatory with two concurrent rename attempts.
+- [ ] Public URLs (`/docs/public` list, `/docs/public/{slug}`) MUST NOT include folder path in their URL, response payload, or any other public-facing surface. The `path` field is private-only.
 - [ ] `GET /api/docs/mine` returns the caller's documents (all visibilities), `GET /api/docs/{id}` returns a single doc — both **404 when the caller is not the owner**.
 - [ ] `GET /api/docs/public` and `GET /api/docs/public/{slug}` work **without an auth header** and only return `visibility='public'` rows.
 - [ ] `GET /api/docs/public` (list) returns **only owner-authored** documents — non-owner public documents are excluded even if they exist. Verified by integration test seeding a non-owner public document and asserting it is absent.
