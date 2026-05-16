@@ -124,7 +124,7 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 
 ### My documents (`/docs`)
 
-- **Purpose:** the author's at-a-glance index of every document they've authored, mixed visibility. Tab-switched between `All / Drafts / Published`. Top-right surfaces the per-screen search (separate from the global ⌘K palette) and the primary `+ New document` CTA.
+- **Purpose:** the author's at-a-glance index of every document they've authored, mixed visibility. Tab-switched between `All / Drafts / Published`. Top-right surfaces the per-screen search (complementary to the global ⌘K palette — per-screen search is filter-friendly; ⌘K is keyboard-fastest, both ship in M2 P0) and the primary `+ New document` CTA.
 - **Spec trace:** M2 spec §6.2 (`GET /api/docs/mine`), §7.2 row 3 (`/docs`), §7.1 (the sidebar `Docs` row when signed-in shows the `published/total` numeric badge — visible here as `4/12` in `accent` `font.small`/500).
 - **Auth state:** authenticated (401 from this route lands on `/login` per M1).
 - **Figma frame:** `M2 — My documents  /docs` (node `14:388`).
@@ -309,7 +309,7 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 
 ### Search results (`/docs/search`)
 
-- **Purpose:** full-page full-text search against the OpenSearch projection (`GET /api/docs/search?q=…&scope={mine|public}`). `⌘K` palette eventually wires into this — for M2 P0 the palette is deferred (spec §2 deferred list), so this page is reached from the per-page search input or by direct URL.
+- **Purpose:** full-page full-text search against the OpenSearch projection (`GET /api/docs/search?q=…&scope={mine|public}`). Companion to the global ⌘K palette (also M2 P0 — see the new "⌘K search palette" section below). Reached from: (a) the per-page search input on `/docs`, (b) `⌘+Enter` on a query from the ⌘K palette, (c) direct URL with `?q=…&scope=…`.
 - **Spec trace:** M2 spec §6.2 (`GET /api/docs/search?q=…&scope=mine`), §6.1 (`GET /api/docs/search?q=…&scope=public`), §7.2 row 6 (`/docs/search`), §10 (OpenSearch projection lag tolerance, search failure isolation).
 - **Auth state:** authenticated (the `mine` scope requires `X-User-Id`; the `public` scope is also reachable here for the author since they can scope-toggle).
 - **Figma frame:** `M2 — Search results  /docs/search` (node `14:563`).
@@ -368,6 +368,53 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 └──────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
+### ⌘K search palette (global overlay)
+
+- **Purpose:** keyboard-fastest entry into search. Triggered with `⌘K` (Mac) / `Ctrl+K` (Windows/Linux) from any authenticated page. Overlay-style modal — does not navigate; closing with `Esc` returns the user exactly where they were.
+- **Spec trace:** M2 spec §2 P0 (new "Global `⌘K` search palette" bullet), §6.1 (`GET /api/docs/search` — palette consumes the same endpoint as the full page, with `scope=mine` as default), §11 (the richer command palette is M2.1 P1 — this section only covers search).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — ⌘K search palette (overlay)  global` (node `27:704`).
+- **Key elements:**
+  - **Backdrop:** the page underneath dims to `rgba(42,44,32,.30)` (taken from `color.text` with .30 alpha — no new token needed). The backdrop captures clicks: clicking outside the palette closes it (`Esc` does the same).
+  - **Palette card** (centered horizontally, anchored 96px from the top of the viewport, 560px wide, `surface` bg, `radius.lg` 14px, `border` 1px stroke, `shadow.pop` shadow):
+    - **Input strip** (top, padding `12px 14px`, `border-bottom 1px border`): a `⌕` glyph (`text.muted`) + the live search input (`font.body` 15px, `text` color, transparent bg, no border, focus state shows no extra ring — the palette card itself is the focus container) + a small right-aligned scope hint in `font.mono` (`Mine` / `Public`) in `text.subtle`.
+    - **Results list** (max 6 rows visible at a time; scrollable beyond — though for M2's expected volume this rarely scrolls). Each row (padding `8px 14px`, `font.small` for title, `font.eyebrow`-like 10px `text.subtle` for meta):
+      - **Title** with `<mark>`-equivalent highlighted matches (`accent.soft` bg, `text` fg) — same convention as the `/docs/search` page. In the static Figma mock this inline `<mark>` is simplified: the active row's whole title renders in `accent` (`#6E7A3A` weight 600) without the inline span, since the Talk to Figma plugin's TEXT node primitives don't support per-character background fills. The implementer reinstates the inline span treatment at impl time using the spec's standard `<mark>` rule (see Open questions below).
+      - **Meta line:** visibility chip (Draft/Published) inline as text + `· slug or path · relative time`.
+      - **Active row:** `accent.soft` bg + `accent` title color, weight 600. Default active = first row.
+    - **Footer strip** (padding `6px 14px`, `border-top 1px border`, `font.mono` 10px in `text.subtle`): keyboard hints — `↑↓ navigate` · `↵ open` · `⌘↵ open in /docs/search` · `Tab toggle scope` · `Esc close`. Right-aligned: `Mine / Public` current scope indicator (active scope in `accent`).
+  - **No empty-state graphic:** when the query is empty the list shows "Recent documents" (last 5 viewed/edited from local storage); when the query has no matches the list shows a single row reading `No matches. Press ⌘↵ to open /docs/search.` in `text.muted`.
+- **Interactions:**
+  - `⌘K` / `Ctrl+K` from any authenticated page opens the palette. The trigger is `keydown` at the document level; works even when focus is in the BlockNote editor (the editor's `⌘K` is reserved for the global palette, not for inline link formatting — the implementer must check BlockNote's default keymap and override accordingly).
+  - Typing live-queries `GET /api/docs/search?q=<query>&scope=<current>` debounced 150ms.
+  - `↑↓` moves the active row. `Enter` opens the active row's document (`/docs/{id}` for own docs, `/docs/public/{slug}` for public docs). `⌘+Enter` opens `/docs/search?q=<query>&scope=<current>` (the full page).
+  - `Tab` toggles the scope between `Mine` and `Public`. The query persists across the toggle.
+  - `Esc` or clicking the backdrop closes the palette without navigation.
+- **Empty / error / loading states:**
+  - **Loading (query in flight):** the right side of the input strip shows a small spinner (`text.subtle`); the active row count freezes during the in-flight request to avoid flashing.
+  - **Error (503 OpenSearch down — spec §6.5):** results list swaps to a single row reading `Search is offline. Try again in a moment.` in `text.subtle` + a small retry icon. The user can keep typing; the next query auto-retries.
+  - **Empty (no query yet):** shows "Recent documents" header (`font.eyebrow text.subtle`) followed by up to 5 recent rows (sourced from local storage of recent visits).
+  - **Empty (query returns nothing):** single row `No matches. Press ⌘↵ to open /docs/search.` — gives the user a fallback to the full page (which may surface results the palette doesn't if the API's facet handling differs).
+
+```
+              (page underneath dimmed at rgba(42,44,32,.30))
+              ┌──────────────────────────────────────────────────────┐
+              │ ⌕  agent team                                   Mine │
+              ├──────────────────────────────────────────────────────┤
+              │ Building an agent team for my personal playground    │ ← active
+              │ Published · /docs/public/building-an-agent-team · 2h │
+              │ Why a single-developer agent playground?             │
+              │ Draft · /docs/9c1d2e · 3d ago                         │
+              │ Spark cluster: 4 workers, 12 cores                    │
+              │ Published · /docs/public/spark-cluster-… · 1d ago    │
+              │ Notes on Spring Modulith outbox                       │
+              │ Draft · /docs/12fe9c · 1w ago                         │
+              ├──────────────────────────────────────────────────────┤
+              │ ↑↓ navigate  ↵ open  ⌘↵ open in /docs/search  Tab… │
+              │                                       Mine / Public  │
+              └──────────────────────────────────────────────────────┘
+```
+
 ## Home composition deltas (no new M2 frame; deltas only)
 
 M2 spec §7.3 supersedes design system §9 item 3 in two ways. These deltas apply to the **existing M1 home frames** (`14:2` Public Home and `14:135` Signed-in Home) when M2 ships — `frontend-implementer` applies them then; this design pass does NOT modify those M1 frames.
@@ -393,10 +440,11 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §5.1 — In-service search projector | N/A — backend-only (observability: the lag tolerance is enforced by the projector, but the surface is `/docs/search` working correctly) |
 | §6.1 — `GET /api/docs/public` (owner-filtered list) | Documents (public list); Home (post-M2 "Latest documents" section, via the §7.3 deltas above) |
 | §6.1 — `GET /api/docs/public/{slug}` | Document detail |
-| §6.1 — `GET /api/docs/search?scope=public` | Search results (via the scope toggle = `Public`) |
+| §6.1 — `GET /api/docs/search?scope=public` | Search results (via the scope toggle = `Public`); ⌘K search palette (via `Tab` to toggle scope to Public) |
+| §2 P0 — Global `⌘K` search palette | ⌘K search palette (global overlay) — same API endpoint as Search results, different UX surface (keyboard-fastest vs. depth-fastest) |
 | §6.1 — `POST /api/docs/public/{slug}/view` | Document detail (fired on page load; the displayed `viewCount` reflects the post-increment value) |
 | §6.2 — `GET /api/docs/mine` | My documents |
-| §6.2 — `GET /api/docs/search?scope=mine` | Search results (default `Mine` scope in the mock) |
+| §6.2 — `GET /api/docs/search?scope=mine` | Search results (default `Mine` scope in the mock); ⌘K search palette (default `Mine` scope) |
 | §6.2 — `POST /api/docs` (in-app create + `.md` file upload) | New document (editor) — the in-app create path. The `.md` file upload is mentioned in the spec but the upload affordance is M2.1 visual (drag-and-drop or button in the editor) — flagged in Open questions below. |
 | §6.2 — `GET /api/docs/{id}` | Edit document |
 | §6.2 — `PATCH /api/docs/{id}` | New document + Edit document (the save-state pill is the user-facing artifact) |
@@ -463,7 +511,7 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 
 - **Image / attachment upload** — M2.1 P1 (presigned to local volume or Postgres `bytea`, decided in M2.1 ADR). The editor toolbar in `/docs/new` and `/docs/{id}` does NOT show an image-upload button.
 - **Editor auto-save** — M2.1 P1. The mock shows a manual `Saving…` save-state pill; an "Auto-save on" indicator is deferred.
-- **`⌘K` global palette** — M2.1 P1. The sidebar's `⌘K` search pill remains a visual placeholder (it exists from M1; the kbd glyph stays); enter-from-palette → `/docs/search` is implementer's call but the palette UI itself is M2.1.
+- **Richer `⌘K` command palette** — M2 ships a search-only palette (see new "⌘K search palette" section). M2.1 P1 covers expanding the palette to non-search commands (Quick: New document, Quick: Switch to drafts, jumping to non-doc surfaces, etc.). The visual treatment of the search-only palette is already defined here and is forward-compatible — M2.1 additions append rows/sections, no shell change.
 - **Cover image on documents** — M2.1 P1 (`publish_meta.cover_image_url` is nullable in M2 per spec §4.1; the Documents list cards use the design-system gradient thumbs, not cover images).
 - **Comments on public documents** — M2.1 P1. The Document detail page does NOT have a comments region; the like button is the sole engagement signal in M2.
 - **`.md` file upload affordance in the editor** — the API accepts `multipart/form-data` per spec §6.2, but the visual entry point (drag-and-drop zone or upload button) is **flagged as an Open question** below — it could ship with M2 if the implementer wires a small affordance into the editor toolbar, or defer to M2.1 alongside image upload. Mocked as deferred for now.
@@ -496,4 +544,6 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 
 - **Search-result row click target — full row vs. title only.** The list rows in `/docs` are hover-as-link on the whole row. The search hits in `/docs/search` look similar but the meta chip + slug span feel like they could be separate targets. Working default: whole hit-block is the click target (matches the `/docs` pattern); the slug `/docs/{id-prefix}` text in the meta is non-interactive copy. Flagging in case the implementer disagrees.
 
-- **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 6 frames into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results}.png` when the human reviewer wants them inlined here.
+- **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 7 frames into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results,kbd-search-palette}.png` when the human reviewer wants them inlined here.
+
+- **⌘K palette inline `<mark>` highlight simplification.** The static Figma mock for the ⌘K palette renders the active row's title in full `accent` (weight 600) instead of wrapping just the matched substring in an `accent.soft` `<mark>` span — the Talk to Figma plugin's TEXT node primitives don't support per-character background fills, so the inline highlight can't be authored declaratively in Figma here. The implementer reinstates the `<mark>` treatment at impl time using the same convention used on `/docs/search` (search result snippets already use the inline span), so there's no new rule to invent. The `accent`-on-title fallback in the mock is intentionally close enough that an at-a-glance design review still reads as "this is the active row with matched highlights." Resolution: implementer ships the proper inline `<mark>` span; the static mock retains the simplification. No spec change.

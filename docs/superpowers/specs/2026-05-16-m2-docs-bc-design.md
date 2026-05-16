@@ -42,11 +42,12 @@ This spec **does not** describe the M2 PRD's user-story list, the architect's po
 - Three Kafka events for downstream consumers
 - Server returns raw MD + metadata; rendering happens in Next.js with `unified` + `remark` + `rehype` + `shiki`
 - External-URL images only
+- **Global `⌘K` search palette** — overlay launchable from any authenticated page; queries `GET /api/docs/search` live with `scope=mine` default and `Tab` to toggle `public`. Enter on a result opens the document; `⌘+Enter` opens the full `/docs/search` page with the same query. The palette is the keyboard-fastest entry into search; the `/docs/search` page is the depth-fastest (filters, scope toggle, pagination, deep-link).
 
 ### Deferred to M2.1 (P1, same milestone bucket if cycle has slack)
 - Image / attachment upload (presigned to local volume or Postgres `bytea`, decided in M2.1 ADR)
 - Editor auto-save
-- `⌘K` global palette wiring `/api/docs/search` into a keyboard-driven UI (the search API is P0; the keyboard palette is P1)
+- Richer `⌘K` command palette beyond search (e.g., `Quick: New document`, `Quick: Switch to drafts`, jumping to non-doc surfaces) — the M2 P0 palette ships search-only; non-search commands accrete in M3+.
 - Cover image on documents
 - **Comments on public documents** — login-required comments; owner has sole moderation authority (hard-delete any comment). Separate `Comment` entity, dedicated routes, no thread depth (flat list). Data model and routes defined in the M2.1 spec/PRD when that cycle opens.
 
@@ -296,7 +297,7 @@ The Workspace section is removed entirely. Per-document actions (Write, Publish,
 | `/docs` | auth | My documents list. Has a tab/segment switcher: `All / Drafts / Published`. Top-right `Search` input + `New document` button. |
 | `/docs/new` | auth | New document editor — single-pane Notion-style **block editor** (BlockNote), "/" command for block insertion, drag-handles per block. Body roundtrips raw MD via BlockNote's `blockToMarkdownLossy` / `tryParseMarkdownToBlocks`. See §11 Q3 for library decision rationale. |
 | `/docs/{id}` | auth | Edit existing document. Top-right has `Publish` / `Unpublish` / `Delete` and a `View public` link if published. |
-| `/docs/search` | auth | Full-page search results (scope toggle: `mine / public`). `⌘K` palette also lands here when the user hits Enter. |
+| `/docs/search` | auth | Full-page search results (scope toggle: `mine / public`, filters, cursor pagination). Companion to the global `⌘K` palette: pressing `⌘+Enter` from the palette opens this page with the current query pre-applied; pressing `Enter` opens a result directly. |
 
 ### 7.3 Home composition (supersedes design system §9 item 3)
 
