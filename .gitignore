@@ -4,7 +4,7 @@
 **/target/
 *.class
 *.jar
-!gradle/wrapper/gradle-wrapper.jar
+!backend/gradle/wrapper/gradle-wrapper.jar
 HELP.md
 
 # Node / Next.js

@@ -14,14 +14,14 @@ dependencyResolutionManagement {
 }
 
 // Foundation modules — present from M0.
-include(":api:gateway")
-include(":api:shared-kernel")
+include(":gateway")
+include(":shared-kernel")
 
 // BC modules — included per milestone as quadruplets per ADR-01 v2.
 // M1 (identity):
-// include(":api:identity:identity-api")
-// include(":api:identity:identity-app")
-// include(":api:identity:identity-domain")
-// include(":api:identity:identity-infra")
+// include(":identity:identity-api")
+// include(":identity:identity-app")
+// include(":identity:identity-domain")
+// include(":identity:identity-infra")
 //
 // M2 (docs), M3 (rag-ingestion), M4 (rag-chat), M5 (metrics): same pattern.

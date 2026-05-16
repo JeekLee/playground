@@ -68,8 +68,8 @@ services:
   # --- ADR-01 v2 / ADR-07: Gateway (single ingress, host-exposed) ---
   gateway:
     build:
-      context: ..
-      dockerfile: api/gateway/Dockerfile
+      context: ../backend
+      dockerfile: gateway/Dockerfile
     container_name: gateway
     depends_on:
       postgres-playground:
