@@ -1,0 +1,48 @@
+{
+  "root": true,
+  "extends": ["next/core-web-vitals", "plugin:boundaries/recommended"],
+  "plugins": ["boundaries"],
+  "settings": {
+    "boundaries/elements": [
+      { "type": "app", "pattern": "src/app/*" },
+      { "type": "views", "pattern": "src/views/*" },
+      { "type": "widgets", "pattern": "src/widgets/*" },
+      { "type": "features", "pattern": "src/features/*" },
+      { "type": "entities", "pattern": "src/entities/*" },
+      { "type": "shared", "pattern": "src/shared/*" }
+    ],
+    "boundaries/include": ["src/**/*"]
+  },
+  "rules": {
+    "boundaries/element-types": [
+      "error",
+      {
+        "default": "disallow",
+        "rules": [
+          { "from": "app", "allow": ["views", "widgets", "features", "entities", "shared"] },
+          { "from": "views", "allow": ["widgets", "features", "entities", "shared"] },
+          { "from": "widgets", "allow": ["features", "entities", "shared"] },
+          { "from": "features", "allow": ["entities", "shared"] },
+          { "from": "entities", "allow": ["shared"] },
+          { "from": "shared", "allow": ["shared"] }
+        ]
+      }
+    ],
+    "boundaries/no-private": "error",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "Literal[value=/^#[0-9a-fA-F]{3,8}$/]",
+        "message": "Hex color literals are forbidden outside src/shared/ui/tokens/. Use a token instead."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/shared/ui/tokens/**/*.ts", "tailwind.config.ts"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
+}
