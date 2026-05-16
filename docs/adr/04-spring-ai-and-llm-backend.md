@@ -1,0 +1,99 @@
+# ADR-04: Spring AI Version + LLM Backend (spark-inference-gateway)
+
+## Status
+Accepted
+
+## Context
+The playground does **not** run its own model. It calls the existing
+`spark-inference-gateway` (a vLLM server with an OpenAI-compatible API) running
+on the developer's host. We need:
+- A pinned Spring AI version that is GA-stable on Spring Boot 3.3 / JDK 21.
+- A single client abstraction usable by both `rag-ingestion` (embeddings) and
+  `rag-chat` (generation).
+- Compose wiring that lets containers reach a host-bound port.
+
+Alternatives considered:
+- Calling the OpenAI client library directly — rejected: Spring AI's `ChatClient`
+  / `EmbeddingModel` abstractions give us a uniform Retrieval-Augmented
+  Generation pipeline (advisors, structured output).
+- Running a local Ollama in compose — rejected: duplicates infrastructure that
+  `spark-inference-gateway` already provides on this machine, and would not use
+  the same model weights.
+
+## Decision
+
+### Spring AI
+- Version: **Spring AI 1.0.0 (GA)** — coordinates `org.springframework.ai:spring-ai-bom:1.0.0`.
+  The 1.0 line is the first GA, released against Spring Boot 3.3.
+- Starter used: **`spring-ai-openai-spring-boot-starter`** (works against any
+  OpenAI-compatible endpoint, including vLLM).
+
+If, at the time M3/M4 is implemented, a newer 1.0.x patch is available on Maven
+Central, the implementer pins the latest `1.0.x` and notes it in the milestone
+ADR.
+
+### LLM backend wiring
+
+`spark-inference-gateway` is a host process bound to **`127.0.0.1:10080`**. To
+reach it from inside compose, every service that uses Spring AI declares:
+
+```yaml
+# infra/docker-compose.yml fragment
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+and configures Spring AI:
+
+```yaml
+# application.yml in rag-ingestion / rag-chat
+spring:
+  ai:
+    openai:
+      base-url: http://host.docker.internal:10080
+      api-key: dummy-not-used         # vLLM ignores it but the starter requires the property
+      chat:
+        options:
+          model: Qwen3-32B
+          temperature: 0.2
+      embedding:
+        options:
+          model: BGE-M3
+```
+
+### Models
+
+| Capability | Model | Notes |
+|---|---|---|
+| Chat / generation | **Qwen3-32B** | Used by `rag-chat`. Context window per vLLM config (assume 32k). |
+| Embeddings | **BGE-M3** | Used by `rag-ingestion`. Output dimension: **1024** (the standard BGE-M3 dense head; the model also exposes sparse + multi-vector heads, but we use only the dense vector for pgvector). |
+
+### Vector dimension contract
+The pgvector column for chunk embeddings is declared `vector(1024)`. If we ever
+switch embedding models, both the column and any cached embeddings must be
+re-built — captured as a per-milestone ADR at the time.
+
+### Which services depend on Spring AI
+
+| Service | Uses ChatClient | Uses EmbeddingModel |
+|---|---|---|
+| `rag-ingestion` | no | yes (BGE-M3) |
+| `rag-chat` | yes (Qwen3-32B) | yes (query-time embedding via BGE-M3) |
+| All others | no | no |
+
+### Operational note
+The implementer is responsible for verifying that `Qwen3-32B` and `BGE-M3` are
+the exact model names served by the local `spark-inference-gateway` (the model
+ID is whatever vLLM was launched with). If the served names differ, override the
+`spring.ai.openai.chat.options.model` / `embedding.options.model` properties; do
+not change this ADR.
+
+## Consequences
+- Positive: One LLM stack for the whole machine; playground inherits whatever
+  model upgrades the gateway ships.
+- Positive: Spring AI 1.0 GA gives a stable `ChatClient` / advisor API.
+- Negative: Tight host coupling (`host.docker.internal`) means the playground
+  cannot run on a remote Docker host without re-configuring `base-url`.
+- Negative: No fallback model — if `spark-inference-gateway` is down,
+  `rag-chat` and `rag-ingestion` fail. Acceptable for a dev-only personal
+  service.

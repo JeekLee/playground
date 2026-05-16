@@ -96,7 +96,7 @@ SecurityWebFilterChain securityFilterChain(ServerHttpSecurity http) {
       // System routes Spring Security owns
       .pathMatchers("/oauth2/**", "/login/**", "/logout").permitAll()
       // Public SSR routes — Next.js owns the rendering, gateway permits the proxy
-      .pathMatchers(HttpMethod.GET, "/", "/essays/**", "/chat", "/metrics").permitAll()
+      .pathMatchers(HttpMethod.GET, "/", "/docs/public/**", "/chat", "/metrics").permitAll()
       // Public API routes per ADR-09's allowlist table
       .pathMatchers(HttpMethod.GET, "/api/docs/public/**").permitAll()
       .pathMatchers(HttpMethod.POST, "/api/rag/chat/public").permitAll()

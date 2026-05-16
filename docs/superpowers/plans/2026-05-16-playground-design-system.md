@@ -59,7 +59,7 @@ Create `/home/jeek_lee/work/personal/playground/docs/adr/09-public-route-policy.
 Accepted
 
 ## Context
-The design system spec `docs/superpowers/specs/2026-05-16-playground-design-system.md` §2.4 and §11 establishes that JeekLee's playground is a **dual-mode site**: parts of it (essays, public RAG chat, system metrics, the home landing) serve logged-out visitors as first-class readers, while parts of it (essay authoring, private documents, private chats, `/me`) require Google sign-in.
+The design system spec `docs/superpowers/specs/2026-05-16-playground-design-system.md` §2.4 and §11 establishes that JeekLee's playground is a **dual-mode site**: parts of it (documents, public RAG chat, system metrics, the home landing) serve logged-out visitors as first-class readers, while parts of it (document authoring, private documents, private chats, `/me`) require Google sign-in.
 
 ADR-07 originally treated the gateway as an OAuth-only ingress and assumed every `/api/**` path required authentication, with backends trusting injected `X-User-Id`/`X-User-Email` headers. That assumption no longer holds. This ADR pins the new policy.
 
@@ -76,8 +76,8 @@ The gateway maintains a single allowlist of **public** route patterns. Everythin
 
 | Pattern | Class | Reason |
 |---|---|---|
-| `/` and any non-`/api` SSR route the client serves as a public page | public | The home, essays index, individual essay pages, public chat page, and metrics page are reachable without sign-in. |
-| `GET /api/docs/public/**` | public | Read-only access to essays the author marked public. |
+| `/` and any non-`/api` SSR route the client serves as a public page | public | The home, documents index, individual document pages, public chat page, and metrics page are reachable without sign-in. |
+| `GET /api/docs/public/**` | public | Read-only access to documents the author marked public. |
 | `POST /api/rag/chat/public` | public | Anonymous RAG chat against the public corpus only. |
 | `GET /api/metrics/**` | public | Read-only system status. Polling endpoint; no mutation. |
 | `/api/identity/**`, `/api/docs/mine/**`, `/api/docs/{id}` (write methods), `/api/rag/chat/private`, `/api/users/me`, `POST/PUT/DELETE /api/docs/**` | **authenticated** | Default. Anything that mutates user-owned data or reveals private content. |
@@ -110,7 +110,7 @@ Public RAG chat retrieves **only** against `docs.documents` rows where `visibili
 
 The `visibility` column is added to the `docs` schema. It is an **M2 (Docs) schema concern**, not an M3 (RAG-ingestion) one — chunks inherit the parent document's visibility at ingestion time and re-inherit on visibility changes (the ingestion service consumes a `docs.document.visibility-changed` event and re-tags chunks).
 
-Default visibility on essay creation is `private`. The author publishes by an explicit toggle.
+Default visibility on document creation is `private`. The author publishes by an explicit toggle.
 
 ## Consequences
 - Positive: Backends keep ADR-07's "trust the header" simplicity for authenticated routes; the only new contract is "header may be absent, handle it."
@@ -187,7 +187,7 @@ In `/home/jeek_lee/work/personal/playground/docs/adr/07-gateway-oauth.md`, repla
 - `/**` -> `http://client:3000` (Next.js SSR)
 
 Path stripping: `/api/<bc>` is stripped before forwarding so backends see
-`/documents`, `/users/me`, etc.
+`/docs/public`, `/users/me`, etc.
 ```
 
 with:
@@ -205,7 +205,7 @@ with:
 | `/**` | `http://client:3000` (Next.js SSR) |
 
 Path stripping: `/api/<bc>` is stripped before forwarding so backends see
-`/documents`, `/users/me`, etc.
+`/docs/public`, `/users/me`, etc.
 
 ### Route classification (auth required vs public)
 
@@ -451,7 +451,7 @@ with:
 ```
 > Note on filename: the Stage 1 prompt referenced `M1-agent-task-queue.md`, but the pinned roadmap (and the project spec at `docs/superpowers/specs/2026-05-15-agent-teams-playground-design.md`) defines M1 as **Identity**. Per the Stage 1 constraint to use the milestone list verbatim, this PRD is written for M1 = Identity at the canonical path `docs/prd/M1-identity.md`.
 
-> Note on scope (added 2026-05-16): the design system spec `docs/superpowers/specs/2026-05-16-playground-design-system.md` establishes the site as **mixed public/authenticated** (the home, essays, public chat, and metrics are reachable without sign-in; see ADR-09). M1's job is still to ship the OAuth flow, the `/me` endpoint, and the gateway's `X-User-*` header injection for authenticated routes — what changes is the **frontend treatment**: the home page is the public landing per the design system, not an auth-gated `/me` viewer. The `/me` payload renders in the sidebar account footer (signed-in state) and optionally on a dedicated `/me` route.
+> Note on scope (added 2026-05-16): the design system spec `docs/superpowers/specs/2026-05-16-playground-design-system.md` establishes the site as **mixed public/authenticated** (the home, documents, public chat, and metrics are reachable without sign-in; see ADR-09). M1's job is still to ship the OAuth flow, the `/me` endpoint, and the gateway's `X-User-*` header injection for authenticated routes — what changes is the **frontend treatment**: the home page is the public landing per the design system, not an auth-gated `/me` viewer. The `/me` payload renders in the sidebar account footer (signed-in state) and optionally on a dedicated `/me` route.
 ```
 
 - [ ] **Step 3: Update the "Out of scope" section to add a clarifier**
@@ -494,7 +494,7 @@ Replace exactly:
 with:
 
 ```
-- [ ] Unauthenticated request to an **authenticated-only** route (see ADR-09 for the classification) returns `401` from the gateway, or the frontend redirects to the login flow — the behavior is consistent and documented. Public routes (`/`, `/essays/**`, `/chat`, `/metrics`, `GET /api/docs/public/**`, `GET /api/metrics/**`) MUST NOT return 401 to logged-out callers; they render normally.
+- [ ] Unauthenticated request to an **authenticated-only** route (see ADR-09 for the classification) returns `401` from the gateway, or the frontend redirects to the login flow — the behavior is consistent and documented. Public routes (`/`, `/docs/public/**`, `/chat`, `/metrics`, `GET /api/docs/public/**`, `GET /api/metrics/**`) MUST NOT return 401 to logged-out callers; they render normally.
 ```
 
 - [ ] **Step 5: Verify all three edits landed**
@@ -661,7 +661,7 @@ Your task:
 - REPLACE docs/design/M1-identity.md with a new version that applies the design system tokens (olive accent #6E7A3A, cream surfaces, Inter typography, 232px sidebar per spec §8, Genspark-style home per spec §9).
 - REPLACE all PNGs under docs/design/assets/M1/ with new screenshots that reflect the new system.
 - M1 screens you must produce (changes from the previous design doc):
-  • PUBLIC HOME (/) — replaces the previous auth-only Home screen. Apply spec §9 verbatim: 232px sidebar (only "Home" in the Apps section since no other milestone has shipped), slim topbar with "Viewing publicly" chip + "Sign in with Google" primary button, compact hero ("What would you like to do today?"), 1 active tile + 3 locked tiles (locked tiles name their unlocking milestone explicitly: "M2 — Essays", "M4 — Chat", "M5 — System status"), and an empty-state card under "Latest from the blog" pointing to the M2 GitHub milestone.
+  • PUBLIC HOME (/) — replaces the previous auth-only Home screen. Apply spec §9 verbatim: 232px sidebar (only "Home" in the Apps section since no other milestone has shipped), slim topbar with "Viewing publicly" chip + "Sign in with Google" primary button, compact hero ("What would you like to do today?"), 1 active tile + 3 locked tiles (locked tiles name their unlocking milestone explicitly: "M2 — Documents", "M4 — Chat", "M5 — System status"), and an empty-state card under "Latest documents" pointing to the M2 GitHub milestone.
   • LOGIN (/login) — keep the screen but apply the new tokens. Same layout, new colors. Use spec §2.2 wordmark and spec §6.1 primary button styling for "Continue with Google".
   • SIGNED-IN HOME — same /  route as PUBLIC HOME, but topbar shows the account pill (avatar + name + chevron) instead of the public chip + Sign in button. Sidebar footer shows avatar + email. The locked "Workspace" tiles are STILL locked at M1 (Workspace tiles unlock per their own milestones), but the topbar reads "Signed in" instead of "Viewing publicly".
   • UNAUTHORIZED (/401) — keep the screen for hits to authenticated-only routes (see ADR-09 for which routes those are). Apply the new tokens. Note: hitting / while logged out NO LONGER redirects to 401 — / is public now.

@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-The design system spec `docs/superpowers/specs/2026-05-16-playground-design-system.md` §2.4 and §11 establishes that JeekLee's playground is a **dual-mode site**: parts of it (essays, public RAG chat, system metrics, the home landing) serve logged-out visitors as first-class readers, while parts of it (essay authoring, private documents, private chats, `/me`) require Google sign-in.
+The design system spec `docs/superpowers/specs/2026-05-16-playground-design-system.md` §2.4 and §11 establishes that JeekLee's playground is a **dual-mode site**: parts of it (documents, public RAG chat, system metrics, the home landing) serve logged-out visitors as first-class readers, while parts of it (document authoring, private documents, private chats, `/me`) require Google sign-in.
 
 ADR-07 originally treated the gateway as an OAuth-only ingress and assumed every `/api/**` path required authentication, with backends trusting injected `X-User-Id`/`X-User-Email` headers. That assumption no longer holds. This ADR pins the new policy.
 
@@ -21,8 +21,8 @@ The gateway maintains a single allowlist of **public** route patterns. Everythin
 
 | Pattern | Class | Reason |
 |---|---|---|
-| `/` and any non-`/api` SSR route the client serves as a public page | public | The home, essays index, individual essay pages, public chat page, and metrics page are reachable without sign-in. |
-| `GET /api/docs/public/**` | public | Read-only access to essays the author marked public. |
+| `/` and any non-`/api` SSR route the client serves as a public page | public | The home, documents index, individual document pages, public chat page, and metrics page are reachable without sign-in. |
+| `GET /api/docs/public/**` | public | Read-only access to documents the author marked public. |
 | `POST /api/rag/chat/public` | public | Anonymous RAG chat against the public corpus only. |
 | `GET /api/metrics/**` | public | Read-only system status. Polling endpoint; no mutation. |
 | `/api/identity/**`, `/api/docs/mine/**`, `/api/docs/{id}` (write methods), `/api/rag/chat/private`, `/api/users/me`, `POST/PUT/DELETE /api/docs/**` | **authenticated** | Default. Anything that mutates user-owned data or reveals private content. |
@@ -55,7 +55,7 @@ Public RAG chat retrieves **only** against `docs.documents` rows where `visibili
 
 The `visibility` column is owned by **M2 (the Docs BC)** and lives in the `docs` schema. The `rag-ingestion` service (M3) does not own the column; it consumes the `docs.document.visibility-changed` Kafka event and re-tags its chunks accordingly. Chunks inherit the parent document's visibility at ingestion time.
 
-Default visibility on essay creation is `private`. The author publishes by an explicit toggle.
+Default visibility on document creation is `private`. The author publishes by an explicit toggle.
 
 ## Consequences
 - Positive: Backends keep ADR-07's "trust the header" simplicity for authenticated routes; the only new contract is "header may be absent, handle it."
