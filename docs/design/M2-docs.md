@@ -181,56 +181,65 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 
 ### New document (editor) (`/docs/new`)
 
-- **Purpose:** the in-app split-view editor for creating a brand-new document. Left pane is the raw Markdown source, right pane is the live preview using the same `unified` pipeline as `/docs/public/{slug}`. Title input lives in the editor toolbar (top strip).
-- **Spec trace:** M2 spec §6.2 (`POST /api/docs`), §7.2 row 4 (`/docs/new`), §9 (MD feature scope — the preview pane uses the same rendering pipeline as the public document detail), §11 row 3 (editor library choice deferred to per-milestone ADR — visual is library-agnostic split-view).
+- **Purpose:** in-app block editor for creating a brand-new document. Notion-style single-pane: each line is a block (paragraph, h1/h2/h3, list, quote, code, etc.), `/` summons a block-type picker, blocks are reorderable via a drag handle that appears on row hover. The body roundtrips raw MD: on load, MD parses to blocks via `tryParseMarkdownToBlocks`; on save, blocks serialize back via `blockToMarkdownLossy`. The public render at `/docs/public/{slug}` still uses the `unified` + `remark` + `rehype` + `shiki` pipeline against the raw MD body — BlockNote changes the **authoring** UX, not the **reading** pipeline.
+- **Spec trace:** M2 spec §6.2 (`POST /api/docs`), §7.2 row 4 (single-pane block editor — BlockNote), §9 (MD feature scope — preserved because storage is still raw MD), §11 Q3 (DECIDED: BlockNote).
 - **Auth state:** authenticated.
 - **Figma frame:** `M2 — New document (editor)  /docs/new` (node `14:463`).
 - **Key elements:**
-  - **Sidebar:** same signed-in shell as `/docs` — `Docs` active with `4/12` badge, signed-in footer.
+  - **Sidebar:** same signed-in shell as `/docs` — `Docs` active with `4/12` badge, locked Chat/System status rows, signed-in account footer.
   - **Topbar:** breadcrumb `Documents / New`; right side = JL account pill only (no `Signed in` chip in the editor topbar — the editor toolbar's save-state already carries that affordance; reduces toolbar clutter for the editor surface).
-  - **Editor toolbar** (full-width strip directly under the topbar, height 64, `surface.soft` bg, `border-bottom 1px border`):
-    - **Left:** large title input — placeholder `Untitled` in `text.subtle` rendered at `font.h2` (20px/600), transparent background, no border, no padding. On focus (out of scope visually) only shows a 2px-wide `accent` underline.
-    - **Right:** save-state pill in `text.muted` (`Saving…` in the mock; `Saved <time> ago` is the resting state) + primary `Publish` button (`accent`, `radius.md`).
-  - **Split-view body** (below the toolbar, fills remaining vertical space):
-    - **Left pane** (50%, `surface.soft` bg): raw MD source rendered in `font.mono` 14px, padding 24px/28px. The mock source shows H1, paragraph, H2, paragraph, fenced code block, bulleted list — enough to verify every preview-pane primitive.
-    - **Right pane** (50%, `bg`): live preview, max content-width ~640px inside the pane for prose readability, padding 32px/40px. Renders the same MD primitives as `/docs/public/{slug}`: `font.h1` for `#`, `font.h2` for `##`, `font.body` paragraphs, `font.mono` + `surface.soft` for inline code and fenced code blocks (`radius.md`), bulleted list with 24px indent.
-    - **Thin 1px `border` vertical divider** between the two panes.
+  - **Editor toolbar** (slim strip below topbar, `surface.soft` bg, `border-bottom 1px border`, padding `12px 28px`, auto-layout HORIZONTAL with space-between):
+    - **Left:** just the save-state pill in `font.small text.muted` (`Saved 3s ago` / `Saving…` / `Save failed — retry`). **No title input here** — the title is the first H1 block in the editor itself (Notion convention). On save the first H1's text becomes the `title` column on the `documents` row.
+    - **Right:** primary `Publish` button (`accent` per design system §6.1).
+  - **Editor surface** (main content area below toolbar):
+    - `bg` background, padding `40px 0`. Inner content max-width 720px, horizontally centered (prose density).
+    - On first load (empty doc): renders a single placeholder block at `font.h1`/`text.subtle` reading `Untitled` followed by a paragraph block at `font.body`/`text.subtle` reading `Type / for commands…`. Both clear on first keystroke.
+    - **Each block row:**
+      - On hover, the left margin (24px outside the prose column) reveals a small `+` add button (`text.subtle`, `radius.sm`, click → adds an empty block below) AND a `⋮⋮` drag handle (`text.subtle`, drag → reorders). Neither is visible at rest — keeps the page calm.
+      - The block content itself renders in the appropriate spec token: `font.h1` for h1 blocks, `font.h2` for h2, `font.body` for paragraphs, `font.mono` 13px on `surface.soft` rounded `radius.sm` for inline code, multi-line `font.mono` on `surface.soft` `radius.md` 10px padding for fenced code, `border.strong` left rule + 16px padding-left for blockquote.
+    - **Slash command popover** (mocked open in the static frame): triggered by typing `/` in any empty paragraph block. Floating card (`surface`, `radius.md`, `shadow.pop`, ~280px wide) positioned to the right of the caret. Lists block types: `Heading 1`, `Heading 2`, `Heading 3`, `Bulleted list`, `Numbered list`, `Quote`, `Code block`, `Divider`, `Image` (the Image item is M2.1 — render as disabled in M2). Each row shows an icon glyph + label + small `font.mono` keyboard hint right-aligned (e.g., `h1`, `h2`, `>`, `\`\`\``, `---`). Active row highlighted `accent.soft` bg + `accent` label. Keyboard navigation: ↑↓ to move, Enter to insert, Esc to dismiss.
 - **Interactions:**
-  - **Auto-save** is M2.1 — for M2 the save-state pill flips manually on each `PATCH` triggered by the implementer's chosen editor library (per spec §11 row 3); the visual stays the same either way.
-  - **Publish** opens a publish modal (visual deferred — confirmable slug + excerpt fields per spec §6.2 `PublishRequest`); on confirm the doc gets a `publish_meta` row and the screen optionally redirects to `/docs/{id}` (now in edit mode).
-  - Typing in the left pane re-renders the right pane (debounced 200ms is a reasonable default for the implementer — not pinned by spec).
+  - Typing renders blocks as you type — what you see IS the prose; no preview re-render to wait for.
+  - `/` in an empty block opens the slash menu. Typing a few letters filters (`/h1` jumps to Heading 1).
+  - Hovering a block reveals its side menu (`+` and `⋮⋮`).
+  - Drag the handle to reorder the block; drop indicators on adjacent blocks.
+  - `Publish` (toolbar right) opens the Publish modal (visual deferred per M2 Open questions).
+  - `⌘+S` or autosave triggers `PATCH /api/docs/{id}`; the save-state pill updates.
 - **Empty / error / loading states:**
-  - **First-load (empty doc):** left pane shows a faint placeholder `# Start writing…` in `text.subtle` (gets cleared on first keystroke); right pane shows the same heading rendered.
-  - **Save error (4xx/5xx on PATCH):** save-state pill swaps to `danger`-fg `Save failed — retry`; left pane stays editable; the publish button disables until the next successful save.
+  - **First-load (empty doc):** `Untitled` h1 placeholder + `Type / for commands…` paragraph placeholder, both in `text.subtle`, both clear on first keystroke.
+  - **Save error (4xx/5xx on PATCH):** save-state pill swaps to `danger`-fg `Save failed — retry`; editor stays editable; `Publish` button disables until the next successful save.
   - **413 (body too large per spec §6.5):** save-state pill swaps to `danger`-fg `Document too large — trim`; cursor stays in the editor.
+  - **`.md` upload failure:** deferred — upload affordance visual is a separate brainstorm round (see Open questions).
 
 ```
 ┌──────────────┬─────────────────────────────────────────────────────────────────────┐
 │  [J] JeekLee's│ Documents / New                          [(JL) JeekLee ▾]          │
 │      PLAYGRD │─────────────────────────────────────────────────────────────────────│
 │              │┌───────────────────────────────────────────────────────────────────┐│
-│  [⌕ Search]  ││ Untitled                                  Saving…   [ Publish ]  ││
+│  [⌕ Search]  ││ Saved 3s ago                                       [ Publish ]   ││
 │              │└───────────────────────────────────────────────────────────────────┘│
-│  APPS        │┌────────────────────────────┬──────────────────────────────────────┐│
-│  ⌂ Home      ││ # Notes on the design      │ Notes on the design pipeline         ││
-│  ▤ Docs 4/12 ││   pipeline                 │                                      ││
-│  💬 Chat M4🔒││                            │ The team is a PM, an architect, a    ││
-│  📊 Stat M5🔒││ The team is a PM, an       │ designer, a reviewer — none of them  ││
-│              ││ architect, a designer …    │ me, none of them human.              ││
-│              ││                            │                                      ││
-│              ││ ## Why a team              │ Why a team                           ││
-│              ││                            │                                      ││
-│              ││ One agent has to be …      │ One agent has to be everything;      ││
-│              ││                            │ a team can specialize.               ││
-│              ││ ```                        │ ┌──────────────────────────────────┐ ││
-│              ││ $ /design M2               │ │ $ /design M2                     │ ││
-│              ││ ```                        │ │ → dispatching product-designer…  │ ││
-│              ││                            │ └──────────────────────────────────┘ ││
-│              ││ - each agent has a brief   │                                      ││
-│              ││ - the orchestrator …       │ •  each agent has a narrow brief    ││
-│              ││ - every cycle ends in …    │ •  the orchestrator never improvis…││
-│              ││                            │ •  every cycle ends in a checkpoint ││
-│  ┌─────────┐ │└────────────────────────────┴──────────────────────────────────────┘│
+│  APPS        │                                                                     │
+│  ⌂ Home      │                  ┌─────────────────────────────────┐                │
+│  ▤ Docs 4/12 │                  │                                 │                │
+│  💬 Chat M4🔒│                  │  Untitled                       │                │
+│  📊 Stat M5🔒│                  │                                 │                │
+│              │                  │  Type / for commands…           │                │
+│              │                  │           │                     │                │
+│              │                  │           │   ┌───────────────┐ │                │
+│              │                  │           └──▶│ /             │ │                │
+│              │                  │               │───────────────│ │                │
+│              │                  │               │ ▤ Heading 1 h1│ │                │
+│              │                  │               │ ▤ Heading 2 h2│ │                │
+│              │                  │               │ ▤ Heading 3 h3│ │                │
+│              │                  │               │ • Bulleted    │ │                │
+│              │                  │               │ 1. Numbered   │ │                │
+│              │                  │               │ ❝ Quote     > │ │                │
+│              │                  │               │ ⌗ Code  ``` ` │ │                │
+│              │                  │               │ ─ Divider --- │ │                │
+│              │                  │               │ 🖼 Image (M2.1)│ │                │
+│              │                  │               └───────────────┘ │                │
+│              │                  └─────────────────────────────────┘                │
+│  ┌─────────┐ │                                                                     │
 │  │(JL)     │ │                                                                     │
 │  │ JeekLee │ │                                                                     │
 │  └─────────┘ │                                                                     │
@@ -239,17 +248,17 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 
 ### Edit document (`/docs/{id}`)
 
-- **Purpose:** edit an existing document. Same split-view editor as `/docs/new`, with three additions for the published-document case: a `→ View public` deep-link above the toolbar (visible only when published), an `Unpublish` outline button and a `Delete` ghost button in the toolbar (before the primary), and a primary CTA reframed from `Publish` to `Publish changes`.
-- **Spec trace:** M2 spec §6.2 (`PATCH /api/docs/{id}`, `POST /api/docs/{id}/publish`, `POST /api/docs/{id}/unpublish`, `DELETE /api/docs/{id}`), §7.2 row 5 (`/docs/{id}`).
+- **Purpose:** edit an existing document via the same single-pane BlockNote editor as `/docs/new`, with three additions for the published-document case: a `→ View public` deep-link above the toolbar (visible only when published), an `Unpublish` outline button and a `Delete` ghost button in the toolbar (before the primary), and a primary CTA reframed from `Publish` to `Publish changes`. The first H1 block in the editor body is the saved title (in this mock, `Building an agent team`).
+- **Spec trace:** M2 spec §6.2 (`PATCH /api/docs/{id}`, `POST /api/docs/{id}/publish`, `POST /api/docs/{id}/unpublish`, `DELETE /api/docs/{id}`), §7.2 row 5 (`/docs/{id}`), §11 Q3 (DECIDED: BlockNote).
 - **Auth state:** authenticated.
 - **Figma frame:** `M2 — Edit document  /docs/{id}` (node `14:508`).
 - **Key elements:**
   - **Sidebar + topbar:** identical to `/docs/new` — `Docs` active with `4/12` badge, account pill on the right. Breadcrumb changes to `Documents / Building an agent team` (full title; ellipsis at 320px).
   - **`→ View public: /docs/public/building-an-agent-team`** accent text-link (`font.small`/500) rendered between the topbar and the editor toolbar (4px-padded strip on `bg`). Shown only when the doc is currently published; in the mock the doc is `Published` so the link is present.
-  - **Editor toolbar** (same `surface.soft` strip):
-    - **Left:** title input populated with `Building an agent team` (no placeholder; the actual saved title in `font.h2`/600).
-    - **Right:** save-state pill `Saved 3s ago` → outline `Unpublish` button (`surface` bg + `border.strong` stroke, `radius.md`) → ghost `🗑 Delete` button (`surface.soft` bg, `text.muted` fg, becomes `danger` on hover per the implementer's CSS — not visible in this static mock) → primary `Publish changes` button (`accent`).
-  - **Split-view body:** identical pane layout to `/docs/new`. Mock content is a fuller version of the same MD source / preview as the new-doc screen — long enough to exercise paragraph, h2, inline code, fenced code, list, blockquote in the preview pane.
+  - **Editor toolbar** (same `surface.soft` strip, padding `12px 28px`, auto-layout HORIZONTAL with space-between):
+    - **Left:** save-state pill `Saved 3s ago` in `font.small text.muted`. **No title input** — the title is the first H1 block in the editor body.
+    - **Right (button row, `spacing.sm` gap):** ghost `🗑 Delete` button (`surface.soft` bg, `text.muted` fg, becomes `danger` on hover per the implementer's CSS — not visible in this static mock) → outline `Unpublish` button (`surface` bg + `border.strong` stroke, `radius.md`) → primary `Publish changes` button (`accent`).
+  - **Editor surface:** identical BlockNote layout to `/docs/new` — single pane, `bg` background, padding `40px 0`, 720px-wide inner column. In this mock the body is populated (not empty placeholder): the first H1 block reads `Building an agent team`, followed by a paragraph, an H2 `What worked`, a bulleted list with three items, an H2 `What didn't`, and a paragraph with inline code. The slash-menu popover is NOT shown (the populated state is at-rest; the popover only opens on demand).
 - **Interactions:**
   - `Publish changes` calls `PATCH /api/docs/{id}` (body) then implicitly re-emits the slug + excerpt edit if changed via the publish modal (spec §6.2 `PublishRequest`).
   - `Unpublish` opens a confirm modal `Unpublish this document? Its slug is retained for re-publish.` (matches the spec §4.4 state-machine guarantee that re-publish reuses the existing `publish_meta` row, slug intact).
@@ -266,31 +275,32 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 │      PLAYGRD │─────────────────────────────────────────────────────────────────────│
 │              │ → View public: /docs/public/building-an-agent-team                  │
 │  [⌕ Search]  │┌───────────────────────────────────────────────────────────────────┐│
-│              ││ Building an agent team    Saved 3s ago  [Unpub] [🗑Del] [Pub chg] ││
+│              ││ Saved 3s ago               [🗑 Delete] [Unpublish] [Publish chg.] ││
 │  APPS        │└───────────────────────────────────────────────────────────────────┘│
-│  ⌂ Home      │┌────────────────────────────┬──────────────────────────────────────┐│
-│  ▤ Docs 4/12 ││ # Building an agent team   │ Building an agent team               ││
-│  💬 Chat M4🔒││                            │                                      ││
-│  📊 Stat M5🔒││ Most days I write more     │ Most days I write more prompts than  ││
-│              ││ prompts than I write code  │ I write code. Three months in, that  ││
-│              ││ …                          │ math has stayed honest…              ││
-│              ││                            │                                      ││
-│              ││ ## Why a team, not a       │ Why a team, not a single agent       ││
-│              ││    single agent            │                                      ││
-│              ││                            │ One agent has to be everything;      ││
-│              ││ One agent has to be …      │ a team can specialize. Read more in  ││
-│              ││ `.claude/agents/` —        │ [.claude/agents/] — that's the…     ││
-│              ││ that's the whole int…      │                                      ││
-│              ││                            │ ┌──────────────────────────────────┐ ││
-│              ││ ```bash                    │ │ $ /design M2                     │ ││
-│              ││ $ /design M2               │ │ → dispatching product-designer…  │ ││
-│              ││ ```                        │ └──────────────────────────────────┘ ││
-│              ││                            │                                      ││
-│              ││ - each agent has a brief   │ •  each agent has a narrow brief    ││
-│              ││ - the orchestrator …       │ •  the orchestrator never improvis…││
-│              ││                            │ •  every cycle ends in a checkpoint ││
-│              ││ > The thing I keep …       │ │ The thing I keep coming back to…  ││
-│              │└────────────────────────────┴──────────────────────────────────────┘│
+│  ⌂ Home      │                                                                     │
+│  ▤ Docs 4/12 │                  ┌─────────────────────────────────┐                │
+│  💬 Chat M4🔒│                  │  Building an agent team         │                │
+│  📊 Stat M5🔒│                  │                                 │                │
+│              │                  │  Most days I write more prompts │                │
+│              │                  │  than I write code. The team    │                │
+│              │                  │  is a PM, an architect, a       │                │
+│              │                  │  designer, a reviewer.          │                │
+│              │                  │                                 │                │
+│              │                  │  What worked                    │                │
+│              │                  │                                 │                │
+│              │                  │  •  each agent has a narrow     │                │
+│              │                  │     brief                       │                │
+│              │                  │  •  the orchestrator never      │                │
+│              │                  │     improvises                  │                │
+│              │                  │  •  every cycle ends in a       │                │
+│              │                  │     checkpoint                  │                │
+│              │                  │                                 │                │
+│              │                  │  What didn't                    │                │
+│              │                  │                                 │                │
+│              │                  │  Anything that touched          │                │
+│              │                  │  `.claude/agents/` mid-cycle    │                │
+│              │                  │  cost me a re-run.              │                │
+│              │                  └─────────────────────────────────┘                │
 │  ┌─────────┐ │                                                                     │
 │  │(JL)     │ │                                                                     │
 │  └─────────┘ │                                                                     │
@@ -401,7 +411,7 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §7.2 — Client routes | Each route maps to one screen (1:1, 6 rows = 6 screens) |
 | §7.3 — Home composition deltas (rename + meta extension) | Deltas-only section above (no new M2 frame); applied to existing M1 home frames at implementation time |
 | §8 — RAG handoff trace | N/A — backend-only (the docs BC's responsibility is publishing accurate events; M3 + M4 own the user-facing chat surface) |
-| §9 — Markdown feature scope (GFM, code highlighting, fenced code, blockquote, list, inline code, external-URL images) | Document detail (renders the full set); New document + Edit document (preview pane uses the same pipeline) |
+| §9 — Markdown feature scope (GFM, code highlighting, fenced code, blockquote, list, inline code, external-URL images) | Document detail (the public reader renders the full set through the `unified` pipeline); New document + Edit document (the BlockNote block editor authors the same MD set on the storage layer, so every block type in the slash menu round-trips through `tryParseMarkdownToBlocks` ⇄ `blockToMarkdownLossy` and survives the public render unchanged) |
 | §10 — Non-functional requirements (tenant isolation, search lag tolerance, view dedup, like idempotency) | Surfaces only through correct behavior; tenant-isolation 404 explicitly mocked in Edit document's 404 state. Search lag and view dedup are invisible when working correctly. |
 
 Every §6 / §7 row that has a user-facing surface is mapped above. Backend-only rows are explicitly tagged.
@@ -412,13 +422,13 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 
 | Token | Value | Where used |
 |---|---|---|
-| `color.bg` | `#FAF7EF` | App background on all six frames; topbar bg; preview pane bg in editor |
+| `color.bg` | `#FAF7EF` | App background on all six frames; topbar bg; editor surface bg in `/docs/new` and `/docs/{id}` |
 | `color.surface` | `#FFFFFF` | Document cards, doc list card, account footer card, like button, search input, account pill, secondary-button bg, segment-switcher inactive bg |
-| `color.surface.soft` | `#F4EFDF` | Sidebar bg; editor toolbar bg; editor MD pane bg; inline-code bg; fenced-code-block bg; segment-switcher container bg; Draft chip bg; sand thumbnail gradient on document cards; Delete-ghost-button bg |
-| `color.border` | `#E6E0CB` | Card strokes; topbar `border-bottom`; editor-toolbar `border-bottom`; list-row dividers; split-view vertical divider; account-pill stroke; account-footer card stroke |
+| `color.surface.soft` | `#F4EFDF` | Sidebar bg; editor toolbar bg; slash-menu icon-glyph bg; inline-code bg; fenced-code-block bg; segment-switcher container bg; Draft chip bg; sand thumbnail gradient on document cards; Delete-ghost-button bg |
+| `color.border` | `#E6E0CB` | Card strokes; topbar `border-bottom`; editor-toolbar `border-bottom`; list-row dividers; slash-menu popover stroke; account-pill stroke; account-footer card stroke |
 | `color.border.strong` | `#D6CFB3` | Search input border; large search-bar border; secondary `Load more` button stroke; Unpublish-outline button stroke; blockquote left rule |
 | `color.khaki` | `#C2B88A` | Khaki thumbnail gradient on document cards; sidebar-footer avatar; topbar account-pill avatar |
-| `color.text` | `#2A2C20` | Page titles, document titles, doc titles in list rows, hit titles, account name, body MD text, preview h1/h2 fg, highlight `<mark>` fg |
+| `color.text` | `#2A2C20` | Page titles, document titles, doc titles in list rows, hit titles, account name, body MD text, editor block content fg (h1/h2/h3/paragraph), highlight `<mark>` fg |
 | `color.text.muted` | `#6F6A55` | Hero subtitle, document excerpts, breadcrumb, neutral chip fg, Draft chip fg, all "updated …" meta, blockquote body, save-state pill, hit chip-Draft fg, account email, list-row meta numbers, sidebar wordmark line 2, Sign-in-to-like tooltip hint |
 | `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows |
 | `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs`, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link |
@@ -426,18 +436,18 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg |
 | `color.success` | `#4F6B2E` | `● Signed in` topbar chip fg (signed-in screens) |
 | `success` chip bg | `#E5EBD9` | `● Signed in` chip bg; sage thumbnail gradient on document cards (this is the spec's `success` chip bg from §6.3, reused for the sage decorative gradient — same value, no new token) |
-| `font.h1` | 28px / 1.2 / 700 / -0.02em | Page titles: `Documents by JeekLee`, document article titles, preview-pane h1 |
-| `font.h2` | 20px / 1.3 / 600 / -0.01em | Section titles (`Latest`, `My documents`), preview-pane h2, MD body h2, editor toolbar title input |
+| `font.h1` | 28px / 1.2 / 700 / -0.02em | Page titles: `Documents by JeekLee`, document article titles, editor h1 block (and the `Untitled` placeholder in `text.subtle`) |
+| `font.h2` | 20px / 1.3 / 600 / -0.01em | Section titles (`Latest`, `My documents`), document article h2, editor h2 block |
 | `font.h3` | 16px / 1.4 / 600 / 0 | Document card titles, doc list row titles, search hit titles |
-| `font.body` | 15px / 1.6 / 400 / 0 | Hero subtitle, document article body paragraphs, preview-pane paragraphs, search hit snippets, search input text |
+| `font.body` | 15px / 1.6 / 400 / 0 | Hero subtitle, document article body paragraphs, editor paragraph blocks, search hit snippets, search input text |
 | `font.small` | 13px / 1.5 / 400 / 0 | Document card excerpts, breadcrumb, all button labels (13px / 500 per spec §6.1), all `→` accent links, account-pill name, list-row meta text, segment labels, hit-meta chip-row text |
 | `font.eyebrow` | 11px / 1.2 / 600 / +0.14em / uppercase | Sidebar `APPS` label |
-| `font.mono` | 13px / 400 | All inline code (`.claude/agents/`), all fenced code blocks (document detail + both editor preview panes), MD source pane (rendered at 14px mono per the editor convention, still spec mono family) |
+| `font.mono` | 13px / 400 | All inline code (`.claude/agents/`), all fenced code blocks (document detail + the editor's code block type), slash-menu keyboard hints (`h1`, `h2`, `>`, `\`\`\``, `---`) |
 | `spacing.xs` | 4px | Intra-element micro-gaps (chip dot to label, view-public link to toolbar, search-input icon to text) |
 | `spacing.sm` | 8px | Eyebrow → title gap, tile internal gap, save-state to button gap, toolbar button-row gap |
 | `spacing.md` | 16px | Card internal padding, hero spacing, blockquote padding-left, fenced-code-block padding |
 | `spacing.lg` | 24px | Section vertical rhythm, hero → grid gap, page-header → segment-switcher gap, list-card internal padding-y, editor pane padding-y |
-| `spacing.xl` | 40px | Editor preview pane padding-x; topbar → editor-toolbar offset |
+| `spacing.xl` | 40px | Editor surface padding-y (`40px 0`); topbar → editor-toolbar offset |
 | `radius.sm` | 6px | Inline code rounded background; search input (`/docs` per-page narrow search); kbd pill |
 | `radius.md` | 10px | Buttons (primary + secondary + outline + ghost), cards, list card, segment-switcher container, fenced code blocks, sidebar nav-item active bg, account footer card |
 | `radius.lg` | 14px | (Reserved — for modals like the Publish modal and the Delete confirm; no static modal mocked in these frames but the implementer reserves this radius) |
