@@ -1,7 +1,7 @@
 # Spec: M2 — Docs BC (design)
 
 **Date:** 2026-05-16
-**Status:** Draft (brainstorming output) — v2 (incorporates: Apps-only sidebar grouping, OpenSearch full-text, owner-filtered blog feed, explicit RAG handoff trace)
+**Status:** Draft (brainstorming output) — v3 (incorporates: Apps-only sidebar grouping, OpenSearch full-text, owner-filtered blog feed, explicit RAG handoff trace, view/like counters as P0 + comments promoted to M2.1 P1)
 **Audience:** the PM agent who will write `docs/prd/M2-docs.md` when the M2 cycle starts; the architect agent who will write the per-milestone ADR `docs/adr/NN-m2-docs.md`; the human reviewer.
 **Relationship to other docs:**
 - Supersedes the M2 stub in `docs/roadmap.md` (which stays as the one-paragraph summary).
@@ -29,6 +29,7 @@ This spec **does not** describe the M2 PRD's user-story list, the architect's po
 - Private read/edit surfaces: `/docs` (my list), `/docs/new`, `/docs/{id}` (edit), `/docs/search`
 - **Full-text search backed by OpenSearch** — `GET /api/docs/search` with `mine` and `public` scopes, fed by a Kafka consumer inside the docs service that mirrors writes to OpenSearch
 - **Owner-filtered public feed** — `GET /api/docs/public` returns only documents authored by the platform owner (resolved via `PLAYGROUND_OWNER_GOOGLE_SUB` env var); home's "Latest from JeekLee's blog" section consumes this
+- **Reader engagement signals** — view counter (anonymous) and like toggle (login-required) on public essays. Counters live on the `docs.documents` row; no separate analytics BC for M2.
 - **RAG handoff** — every `docs.document.uploaded` event reaches M3, which embeds the body and stores chunks scoped to the author's `user_id`. M4's `/api/rag/chat/private` then retrieves those chunks for the same user, giving the author a chat grounded in their own documents. M2 owns the contract; M3 and M4 own the behavior.
 - Three Kafka events for downstream consumers
 - Server returns raw MD + metadata; rendering happens in Next.js with `unified` + `remark` + `rehype` + `shiki`
@@ -39,22 +40,24 @@ This spec **does not** describe the M2 PRD's user-story list, the architect's po
 - Editor auto-save
 - `⌘K` global palette wiring `/api/docs/search` into a keyboard-driven UI (the search API is P0; the keyboard palette is P1)
 - Cover image on essays
+- **Comments on public essays** — login-required comments; owner has sole moderation authority (hard-delete any comment). Separate `Comment` entity, dedicated routes, no thread depth (flat list). Data model and routes defined in the M2.1 spec/PRD when that cycle opens.
 
 ### Out of scope (P2, separate future milestone)
 - Tags / categories
-- Comments
 - RSS / Atom feeds
 - Version history / diff view
 - Multi-author (the site stays single-author; owner is configured at deploy time)
+- Engagement-driven ranking (using view/like signals to re-order the public feed or RAG retrieval — counters are stored, not yet consumed for ranking)
 
 ## 3. Bounded Context: Docs
 
-- **책임 (Responsibility):** Owns user-authored Markdown content end-to-end — storage, lifecycle, visibility, and **full-text indexing** (mirroring to OpenSearch). Owns the `visibility` flag that ADR-09 made canonical for public-vs-private retrieval. Owns the **owner-filter** semantics for the public feed. Does **not** own embeddings, vector chunks, or any RAG concern — those are M3.
+- **책임 (Responsibility):** Owns user-authored Markdown content end-to-end — storage, lifecycle, visibility, **full-text indexing** (mirroring to OpenSearch), and **reader engagement signals** (view + like counters on public essays). Owns the `visibility` flag that ADR-09 made canonical for public-vs-private retrieval. Owns the **owner-filter** semantics for the public feed. Does **not** own embeddings, vector chunks, or any RAG concern — those are M3. Does **not** own comments — those land in M2.1.
 - **외부 의존성 (External deps):**
   - `identity` (M1): only via `X-User-Id` / `X-User-Sub` headers on authenticated routes. No HTTP call from `docs` → `identity` at runtime.
   - `shared-kernel`: event envelope, common DTOs.
   - Postgres `docs` schema (source of truth).
   - **OpenSearch** (search projection) — pinned to a single index `docs-v1`. Concrete version + client library belong to the per-milestone ADR.
+  - **Redis** — short-TTL dedup keys for anonymous view counting. Already present in compose per M0.
   - Kafka.
 - **누가 docs를 호출하나:**
   - Gateway → `docs` for all `/api/docs/**` traffic (per ADR-07/08).
@@ -72,6 +75,8 @@ CREATE TABLE docs.documents (
   body        TEXT         NOT NULL,                          -- raw Markdown, GFM-flavored
   visibility  TEXT         NOT NULL DEFAULT 'private'
               CHECK (visibility IN ('private', 'public')),
+  view_count  BIGINT       NOT NULL DEFAULT 0,
+  like_count  BIGINT       NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -90,7 +95,17 @@ CREATE TABLE docs.publish_meta (
 );
 
 CREATE UNIQUE INDEX uq_publish_meta_slug ON docs.publish_meta (slug);
+
+-- Per-user like (login required; toggle semantics)
+CREATE TABLE docs.document_likes (
+  document_id  UUID         NOT NULL REFERENCES docs.documents(id) ON DELETE CASCADE,
+  user_id      UUID         NOT NULL,
+  liked_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  PRIMARY KEY (document_id, user_id)
+);
 ```
+
+`view_count` / `like_count` are denormalized counters maintained alongside the row mutation (single transaction). For 1-user-traffic load, a periodic re-sync job (`COUNT(*) FROM document_likes …`) reconciles drift; the per-milestone ADR picks the cadence (default: nightly).
 
 ### 4.2 OpenSearch index (`docs-v1` — search projection)
 
@@ -177,6 +192,7 @@ The `docs` service hosts a Kafka consumer (`docs-search-projector`) that subscri
 | GET | `/api/docs/public` | — | `{ items: PublicEssayListItem[], nextCursor: string? }`. **Owner-filtered:** only documents where `user_id` matches the resolved `PLAYGROUND_OWNER_GOOGLE_SUB` AND `visibility='public'`. Cursor pagination; page size 20. Sort: `published_at DESC`. |
 | GET | `/api/docs/public/{slug}` | — | `PublicEssayDetail` (see §6.4). 404 if no row has that slug **and** `visibility='public'`. **Not** owner-filtered — anyone's published essay is reachable by direct slug if it exists; the owner filter only governs the discovery feed. |
 | GET | `/api/docs/search?q=...&scope=public` | — | OpenSearch-backed full-text search over `visibility='public'` + `isOwnerDoc=true`. Returns `{ items: SearchHit[], nextCursor: string? }` with highlight snippets. Rate-limited at the gateway (anti-scrape, per-IP soft cap). |
+| POST | `/api/docs/public/{slug}/view` | — | `204`. Increments `view_count` on the row matching `slug` AND `visibility='public'`. Deduplicated via Redis key `view:{slug}:{PLAYGROUND_ANON}` (TTL 24h) — repeat hits within the window are silently dropped. Missing `PLAYGROUND_ANON` cookie falls back to `view:{slug}:ip:{X-Forwarded-For}` with the same TTL. 404 if slug is private or unknown. |
 
 Public routes carry no `X-User-Id` header (ADR-09). Backend treats absence as "anonymous reader."
 
@@ -192,6 +208,8 @@ Public routes carry no `X-User-Id` header (ADR-09). Backend treats absence as "a
 | POST | `/api/docs/{id}/publish` | `PublishRequest` (`slug?`, `excerpt?`) | `MyDocDetail` (now with PublishMeta). |
 | POST | `/api/docs/{id}/unpublish` | — | `MyDocDetail` (visibility=private, PublishMeta retained). |
 | DELETE | `/api/docs/{id}` | — | 204. |
+| POST | `/api/docs/{id}/like` | — | `204`. Upserts `(document_id, X-User-Id)` into `document_likes` and increments `like_count` if the row didn't already exist (idempotent — repeat calls succeed without re-incrementing). Allowed on any `visibility` for now; the UI only surfaces it on public essays. |
+| DELETE | `/api/docs/{id}/like` | — | `204`. Removes `(document_id, X-User-Id)` from `document_likes` and decrements `like_count`. Idempotent — removing a non-existent like succeeds without going below zero. |
 
 Ownership check on every authenticated route: `WHERE user_id = X-User-Id`. A user fetching another user's doc gets the same 404 as a missing doc.
 
@@ -206,10 +224,12 @@ Ownership check on every authenticated route: `WHERE user_id = X-User-Id`. A use
 
 ```ts
 // Sketch only — final field names mirror Java/Kotlin record conventions per ADR-02.
-PublicEssayListItem  = { slug, title, excerpt, publishedAt }
-PublicEssayDetail    = { slug, title, body /*raw MD*/, excerpt, publishedAt, updatedAt }
-MyDocListItem        = { id, title, visibility, slug?, updatedAt }
-MyDocDetail          = { id, title, body, visibility, publishMeta?: { slug, excerpt, publishedAt }, createdAt, updatedAt }
+PublicEssayListItem  = { slug, title, excerpt, publishedAt, viewCount, likeCount }
+PublicEssayDetail    = { slug, title, body /*raw MD*/, excerpt, publishedAt, updatedAt,
+                         viewCount, likeCount, likedByMe? /* present only when X-User-Id forwarded */ }
+MyDocListItem        = { id, title, visibility, slug?, updatedAt, viewCount, likeCount }
+MyDocDetail          = { id, title, body, visibility, publishMeta?: { slug, excerpt, publishedAt },
+                         viewCount, likeCount, likedByMe, createdAt, updatedAt }
 SearchHit            = { documentId, title, slug?, visibility, snippet /* highlighted */, updatedAt }
 CreateDocRequest     = { title: string, body?: string }
 PatchDocRequest      = { title?: string, body?: string }
@@ -261,7 +281,9 @@ The Workspace section is removed. Per-document actions (Write, Publish, Search, 
 
 ### 7.3 Home composition (supersedes design system §9 item 3)
 
-The `Latest from the blog` section is renamed to **`Latest from JeekLee's blog`** and sources only owner-authored public documents (`GET /api/docs/public`, already owner-filtered). Visual treatment (3-column thumbnail grid) is unchanged from §9. Empty-state copy (pre-M2) is unchanged.
+The `Latest from the blog` section is renamed to **`Latest from JeekLee's blog`** and sources only owner-authored public documents (`GET /api/docs/public`, already owner-filtered). Visual treatment (3-column thumbnail grid) is unchanged from §9 except the **card meta row**, which extends to: `· N min · {date} · 👁 {viewCount} · ♥ {likeCount}`. Icon glyphs are placeholders — the frontend-implementer swaps to Lucide `Eye` and `Heart` (matching the spec §3 emoji-to-icon migration rule). Empty-state copy (pre-M2) is unchanged.
+
+On the essay detail page (`/essays/{slug}`), the same view/like counts render directly under the title in `text.muted`; the like control is an inline button (filled `accent` when `likedByMe`, outline otherwise) that toggles the like via `POST` / `DELETE /api/docs/{id}/like`. Anonymous readers see the button in a disabled "sign in to like" state.
 
 ## 8. RAG handoff trace (informational — confirms ADR-09)
 
@@ -313,6 +335,9 @@ If the user later toggles visibility, `docs.document.visibility-changed` re-tags
 - **Observability:** every state transition (create, publish, unpublish, delete, body-edit) emits a structured log line at INFO with `documentId`, `userId`, `event`, and `bodyChecksum` where relevant. Search projector emits separate INFO/WARN on each batch.
 - **Body size cap:** enforced at the API and via DB column constraint or trigger.
 - **Slug stability:** once published, the public URL of an essay must survive unpublish/republish cycles unchanged. Test mandatory.
+- **View dedup correctness:** a single anonymous visitor (same `PLAYGROUND_ANON` cookie) hitting the same slug N times within 24h increments `view_count` exactly once. Integration test required. Authors viewing their own essays are **not** excluded from the count — symmetric treatment, no special-casing in M2.
+- **Like idempotency:** `POST /api/docs/{id}/like` and `DELETE /api/docs/{id}/like` are both idempotent against repeat invocation. Concurrent like/unlike from the same user is serialized at the DB level (PK contention on `(document_id, user_id)`); the final `like_count` must equal `COUNT(*) FROM document_likes WHERE document_id=?`.
+- **Counter drift tolerance:** if `view_count` / `like_count` drift from their source-of-truth queries due to a partial failure, the nightly re-sync job repairs them; max acceptable drift between syncs is informational, not contractual.
 
 ## 11. Open questions for the per-milestone ADR (M2)
 
@@ -328,6 +353,9 @@ These intentionally land in the architect's per-milestone ADR, not here:
 8. **Korean analyzer** — `nori` (built-in) vs `seunjeon`; affects search quality on Korean essays.
 9. **Metadata-only event topic** — do we add a `docs.document.metadata-changed` event for title/visibility-only edits so the search projector can keep title in sync without re-firing `uploaded`? Trade-off vs. accepting stale titles in search.
 10. **Owner resolution path** — cross-schema SELECT from `docs` into `identity.users` (simple, breaks schema isolation) vs. an HTTP call to identity at boot (adds a startup-time dependency). Affects ADR-08 amendment scope.
+11. **View dedup TTL** — 24h is the working default. Should authenticated views dedup against `X-User-Id` (longer TTL, more accurate) instead of the anon cookie? For now: same anon-cookie path regardless of auth state, accepted for simplicity.
+12. **Counter sync strategy** — denormalized column + nightly re-sync (current default) vs. trigger-based maintenance vs. event-sourced rebuild from a `docs.document.engagement-*` topic. The trade-off is correctness vs. read latency; default favors read latency since the home tile is a hot path.
+13. **Anonymous viewer ergonomics** — should the like button render at all for anonymous readers, or should it be hidden entirely? Working default: render disabled with "sign in to like" tooltip. Confirmed during M2 Stage-2 design.
 
 ## 12. Acceptance criteria (refinement of `roadmap.md` M2)
 
@@ -351,6 +379,10 @@ Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens. The or
 - [ ] OpenSearch unavailability returns `503` from search routes but **does not block** writes, reads, or other M2 routes.
 - [ ] The sidebar's Documents row is reachable from logged-out state and lands on `/essays`; from logged-in state it lands on `/docs`.
 - [ ] Home renders the section labeled **"Latest from JeekLee's blog"** sourced from `GET /api/docs/public` (already owner-filtered).
+- [ ] `POST /api/docs/public/{slug}/view` increments `view_count` and the same anon cookie repeating the call within 24h does **not** increment it again. Verified by integration test.
+- [ ] `POST /api/docs/{id}/like` is idempotent; calling it twice from the same user leaves `like_count` at +1, and `DELETE /api/docs/{id}/like` returns it to 0. Verified by integration test.
+- [ ] `GET /api/docs/public/{slug}` returns `viewCount` + `likeCount`; if the caller is authenticated, also returns `likedByMe` reflecting the user's like state.
+- [ ] Home tile cards and the essay detail page both render view + like counts; the like button is disabled with a tooltip when the reader is anonymous.
 - [ ] Manual end-to-end check: as the owner, upload a private document, wait for M3 to embed it (after M3 ships), start a private chat in M4, ask a question grounded in that document — the answer cites it. (Cross-milestone test, captured here for traceability; not a blocker for closing M2 alone.)
 
 ## 13. What this spec deliberately leaves out
