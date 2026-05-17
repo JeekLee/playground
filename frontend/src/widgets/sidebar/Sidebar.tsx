@@ -1,12 +1,4 @@
-import {
-  Home,
-  FileText,
-  MessageSquare,
-  Activity,
-  Lock,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from 'lucide-react';
+import { Home, FileText, MessageSquare, Activity, Lock, PanelLeftClose } from 'lucide-react';
 import { Brand } from '@/shared/ui/brand';
 import { Avatar } from '@/shared/ui/avatar';
 import { cn } from '@/shared/lib/cn';
@@ -24,10 +16,14 @@ import { SignOutButton } from '@/features/sign-out';
  * previews (`Docs M2`, `Chat M4`, `System status M5`). Locked rows are
  * visual-only.
  *
- * Collapse affordance: the toggle button sits next to the brand glyph
- * in both states. Expanded shows {@link PanelLeftClose} (←|), collapsed
- * shows {@link PanelLeftOpen} (|→). Topbar carries no toggle — the
- * sidebar surface is always present, so the action belongs here.
+ * Collapse affordance:
+ * - Expanded → small {@link PanelLeftClose} icon next to the brand
+ *   wordmark; clicking it collapses the rail.
+ * - Collapsed → the brand glyph itself becomes the expand button; no
+ *   separate icon. Clicking the glyph re-expands.
+ * Keeps the rail to a single column with no auxiliary chrome, the way
+ * Obsidian's sidebar reads when narrowed. Topbar carries no toggle —
+ * the sidebar surface is always present, so the action belongs here.
  */
 
 export interface SidebarProps {
@@ -52,9 +48,6 @@ const APPS: AppsRow[] = [
 ];
 
 export function Sidebar({ user, collapsed, onToggleCollapsed }: SidebarProps) {
-  const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
-  const toggleLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
-
   return (
     <aside
       className={cn(
@@ -63,24 +56,32 @@ export function Sidebar({ user, collapsed, onToggleCollapsed }: SidebarProps) {
       )}
       aria-label="Primary navigation"
     >
-      <div
-        className={cn(
-          'flex items-center',
-          collapsed ? 'w-full flex-col gap-sm' : 'w-full justify-between',
-        )}
-      >
-        <Brand compact={collapsed} />
+      {collapsed ? (
         <button
           type="button"
           onClick={onToggleCollapsed}
-          aria-label={toggleLabel}
-          aria-pressed={!collapsed}
-          title={`${toggleLabel} (⌘\\ / Ctrl+\\)`}
-          className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          aria-label="Expand sidebar"
+          aria-pressed={false}
+          title="Expand sidebar (⌘\ / Ctrl+\)"
+          className="rounded-[7px] transition-opacity duration-[140ms] hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent"
         >
-          <ToggleIcon size={15} aria-hidden="true" />
+          <Brand compact />
         </button>
-      </div>
+      ) : (
+        <div className="flex w-full items-center justify-between">
+          <Brand />
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label="Collapse sidebar"
+            aria-pressed={true}
+            title="Collapse sidebar (⌘\ / Ctrl+\)"
+            className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          >
+            <PanelLeftClose size={15} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <nav aria-label="Apps" className="flex w-full flex-col gap-sm">
         {!collapsed && <span className="px-sm text-eyebrow text-text-subtle">Apps</span>}
         <ul className="flex flex-col gap-xs">
