@@ -1,6 +1,5 @@
 import { Home, FileText, MessageSquare, Activity, Lock } from 'lucide-react';
 import { Brand } from '@/shared/ui/brand';
-import { SearchPill } from '@/shared/ui/search-pill';
 import { Avatar } from '@/shared/ui/avatar';
 import { cn } from '@/shared/lib/cn';
 import type { User } from '@/entities/user';
@@ -46,7 +45,6 @@ export function Sidebar({ user }: SidebarProps) {
       aria-label="Primary navigation"
     >
       <Brand />
-      <SearchPill />
       <nav aria-label="Apps" className="flex flex-col gap-sm">
         <span className="px-sm text-eyebrow text-text-subtle">Apps</span>
         <ul className="flex flex-col gap-xs">
