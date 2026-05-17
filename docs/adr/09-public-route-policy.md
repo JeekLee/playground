@@ -73,3 +73,62 @@ None. The allowlist table above is the diagram.
 - Design system spec §2.4, §9, §11
 - Future M2 per-milestone ADR — `visibility` column + migration
 - Future M4 per-milestone ADR — concrete rate-limit algorithm, circuit-breaker library, and `PLAYGROUND_ANON` cookie attributes (domain, SameSite, HttpOnly, generation location)
+
+## Amendment (2026-05-17, ADR-12)
+
+ADR-12 (M2 Docs per-milestone) supersedes the **`/api/docs/public/**`** row in
+the allowlist table above. The M2 spec v5 flattens the docs API namespace —
+the `/public` prefix is **removed**, and per-route visibility gating moves
+into the docs service.
+
+### New public allowlist rows (post-ADR-12)
+
+| Pattern | Class | Reason |
+|---|---|---|
+| `GET /api/docs` | public | Owner-filtered public feed (visibility=public AND user_id=owner). |
+| `GET /api/docs/{id}` | public | Single document; **per-doc visibility-OR-ownership gate enforced at the docs service** — returns 404 for private docs the caller doesn't own (indistinguishable from missing). |
+| `POST /api/docs/{id}/view` | public | View-counter increment; anonymous OK; 24h Redis dedup per `PLAYGROUND_ANON` cookie or `X-Forwarded-For` IP. |
+| `GET /api/docs/search?scope=public` | public | OpenSearch-backed full-text search over the owner-filtered public corpus. |
+| `~~GET /api/docs/public/**~~` | (removed) | Superseded by the four rows above. The `/public` prefix is dropped in M2 spec v5. |
+
+### Per-IP rate limits (anonymous reads)
+
+ADR-09's original §"Rate-limit and cost protection" section pinned numbers
+for **public RAG chat** (M4) but not for **public document reads** (M2).
+ADR-12 §7 fills that gap:
+
+| Route | Cap | Window |
+|---|---|---|
+| `GET /api/docs` (list, anonymous) | 60 requests | per minute |
+| `GET /api/docs/{id}` (detail, anonymous) | 60 requests | per minute |
+| `POST /api/docs/{id}/view` (anonymous) | 30 requests | per minute |
+| `GET /api/docs/search?scope=public` (anonymous) | 10 requests | per minute |
+
+Key: per-IP (`X-Forwarded-For` from Cloudflare Tunnel; fallback to the
+gateway's `RemoteAddr`). The `PLAYGROUND_ANON` cookie is **not** the rate
+key — anonymous cookies are trivially deleted and therefore useless as a
+cap denominator.
+
+If the M4 rate-limit filter (the shared Bucket4j-on-Redis middleware ADR-09
+defers to M4) has not yet shipped at M2 closure, M2 may stub the filter to
+a no-op; M4 retro-fits enforcement on these numbers without re-litigating
+the cap policy.
+
+### Internal route — explicitly NOT in the allowlist
+
+The boot-time owner-lookup route `GET /internal/users/by-google-sub/{sub}`
+on `identity-api` (introduced in ADR-12 §8 / ADR-08 amendment) lives under
+the `/internal/**` prefix and is **not** routable through the gateway. It is
+reachable only on the compose-internal network. The allowlist above
+governs **gateway-exposed** routes only; `/internal/**` is gateway-invisible
+by construction.
+
+### Public retrieval correctness — unchanged
+
+ADR-09's "Public retrieval scoping" rule (public RAG chat retrieves only
+against `visibility='public'` chunks) remains in force. The Docs BC enforces
+the same predicate at every `/api/docs/**` read path; integration tests are
+mandatory per M2 spec §10.
+
+See `docs/adr/12-m2-docs.md` §7 + amendment block for the full
+specification.

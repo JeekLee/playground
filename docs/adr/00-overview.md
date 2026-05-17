@@ -32,6 +32,7 @@ decisions when a milestone justifies it.
 | 09 | `09-public-route-policy.md` | Public route allowlist, anonymous identity, public RAG chat rate limits |
 | 10 | `10-m1-identity.md` | **(per-milestone, M1)** Identity implementation — library versions, gateway filter ordering, `POST /users/bootstrap` mechanics, `PLAYGROUND_ANON` cookie attributes, `identity.users` schema, Spring Modulith Events outbox (inherited by M2+) |
 | 11 | `11-shared-exception-hierarchy.md` | `shared-kernel` exception hierarchy — `AbstractException` + six HTTP-typed subclasses + reflective `ExceptionCreator` + unified `@RestControllerAdvice` |
+| 12 | `12-m2-docs.md` | **(per-milestone, M2)** Docs BC implementation — BlockNote versions + SSR strategy, OpenSearch 2.18 + native client + Nori analyzer, Spring Modulith outbox (inherited from M1), M3 → docs body-fetch HTTP exception, docs → identity owner-lookup HTTP exception, per-IP rate limits for anonymous reads, body size cap 1 MB, view dedup 24h, nightly counter resync via Spring `@Scheduled`. Amends ADR-05, ADR-08, ADR-09. |
 
 ### Module count (post-ADR-01 v2, ADR-02 v2)
 
