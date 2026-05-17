@@ -45,6 +45,8 @@ public class GatewaySecurityConfig {
                 .authorizeExchange(ex -> ex
                         // System routes Spring Security owns.
                         .pathMatchers("/oauth2/**", "/login/**", "/logout").permitAll()
+                        // Actuator probes (compose healthcheck, ops).
+                        .pathMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         // Public SSR routes.
                         .pathMatchers(HttpMethod.GET, "/", "/docs/public/**", "/chat", "/metrics").permitAll()
                         // Public API routes per ADR-09 allowlist.
