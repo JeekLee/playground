@@ -42,7 +42,7 @@ const APPS: AppsRow[] = [
 export function Sidebar({ user }: SidebarProps) {
   return (
     <aside
-      className="flex h-screen w-[232px] flex-shrink-0 flex-col gap-lg border-r border-border bg-surface-soft px-md py-lg"
+      className="sticky top-0 flex h-screen w-[232px] flex-shrink-0 flex-col gap-lg overflow-y-auto border-r border-border bg-surface-soft px-md py-lg"
       aria-label="Primary navigation"
     >
       <Brand />
