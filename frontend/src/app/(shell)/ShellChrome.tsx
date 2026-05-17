@@ -40,13 +40,13 @@ export function ShellChrome({ user, children }: ShellChromeProps) {
 
   return (
     <div className="flex min-h-screen">
-      {sidebarOpen && <Sidebar user={user} />}
+      {sidebarOpen && <Sidebar user={user} onCollapse={toggle} />}
       <div className="flex min-h-screen flex-1 flex-col">
         <Topbar
           breadcrumb="Home"
           user={user}
           sidebarOpen={sidebarOpen}
-          onToggleSidebar={toggle}
+          onExpandSidebar={toggle}
         />
         <main className="flex-1">{children}</main>
       </div>

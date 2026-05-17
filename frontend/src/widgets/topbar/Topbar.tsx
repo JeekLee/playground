@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown, PanelLeftOpen } from 'lucide-react';
 import { Chip } from '@/shared/ui/chip';
 import { Avatar } from '@/shared/ui/avatar';
 import { SearchPill } from '@/shared/ui/search-pill';
@@ -12,7 +12,9 @@ import { userInitials } from '@/entities/user';
  * Topbar — design system §8.2. Slim, lives inside the main column.
  * `padding: 12px 26px`, `border-bottom: 1px solid border`.
  *
- * Left: sidebar toggle + breadcrumb (current page name).
+ * Left: expand-sidebar button (only when sidebar is collapsed) +
+ * breadcrumb. The corresponding collapse button lives inside the
+ * sidebar itself next to the brand, mirroring Notion / Linear / VSCode.
  * Center: search pill (⌘K), hoisted out of the sidebar so it stays
  * reachable even when the sidebar is collapsed.
  * Right: status chip + primary action OR account pill (signed-in).
@@ -22,28 +24,27 @@ export interface TopbarProps {
   breadcrumb: string;
   user: User | null;
   sidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  onExpandSidebar: () => void;
 }
 
-export function Topbar({ breadcrumb, user, sidebarOpen, onToggleSidebar }: TopbarProps) {
-  const Icon = sidebarOpen ? PanelLeftClose : PanelLeftOpen;
-
+export function Topbar({ breadcrumb, user, sidebarOpen, onExpandSidebar }: TopbarProps) {
   return (
     <header
       className="flex items-center gap-md border-b border-border bg-bg px-[26px] py-[12px]"
       aria-label="Page header"
     >
       <div className="flex items-center gap-md">
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          aria-pressed={sidebarOpen}
-          title="Toggle sidebar (⌘\ / Ctrl+\)"
-          className="flex h-[28px] w-[28px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface-soft hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-        >
-          <Icon size={16} aria-hidden="true" />
-        </button>
+        {!sidebarOpen && (
+          <button
+            type="button"
+            onClick={onExpandSidebar}
+            aria-label="Expand sidebar"
+            title="Expand sidebar (⌘\ / Ctrl+\)"
+            className="flex h-[28px] w-[28px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface-soft hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          >
+            <PanelLeftOpen size={16} aria-hidden="true" />
+          </button>
+        )}
         <nav aria-label="Breadcrumb">
           <span className="text-small text-text-muted">{breadcrumb}</span>
         </nav>
