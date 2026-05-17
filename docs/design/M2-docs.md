@@ -2,8 +2,37 @@
 
 > Spec: `docs/superpowers/specs/2026-05-16-m2-docs-bc-design.md`
 > Design system: `docs/superpowers/specs/2026-05-16-playground-design-system.md` (canonical token vocabulary)
-> Figma: https://www.figma.com/design/NOe1YyQ3NxzgcuYlAVeooN/playground-%E2%80%94-M1-Identity (M2 frames added below the M1 row at y ≥ 1000; M1 frames are unchanged)
-> Builds on: `docs/design/M1-identity.md` (sidebar shell, topbar, account pill — all reused verbatim except the `Docs` Apps row, which is unlocked + active on every M2 route)
+> Figma: https://www.figma.com/design/NOe1YyQ3NxzgcuYlAVeooN/playground-%E2%80%94-M1-Identity
+> Builds on: `docs/design/M1-identity.md` (sidebar shell, topbar, account pill — all reused)
+
+> ## ⚠️ Status: v4 design — superseded by spec v5 (2026-05-17). Refresh pending.
+>
+> This document was authored against M2 spec **v4**. The spec was rewritten to **v5** on 2026-05-17 (multi-author authorship, UUID-only URLs, `/docs/public` → `/docs` namespace unification, `publish_meta` table eliminated, Publish modal removed, directory hierarchy P0, OpenGraph share preview, derived excerpt). The 17 Figma frames + the screen sections below still describe the v4 model and **do not match v5**. The implementer MUST read the v5 spec first.
+>
+> **Concrete v4-vs-v5 deltas (use the v5 spec as canonical):**
+> - **URL namespace**: v4 had `/docs/public/...` (anonymous) + `/docs/...` (auth) split. v5 has a single `/docs` namespace + `/docs/mine` for the caller's own list. The `/public` prefix is gone everywhere.
+> - **Identifier**: v4 used a derived kebab `slug` (`/docs/public/building-an-agent-team`). v5 uses the document's UUID directly (`/docs/a3f2b9c1-7e5d-4abc-9def-1234567890ab`). Slug column, `publish_meta` table, and slug-collision logic are all eliminated.
+> - **Authorship**: v4 was single-author (owner only). v5 is multi-author — any signed-in user can create/publish/manage their own docs. `/docs` community feed shows every author's public docs. Author identity (avatar + display name) surfaces on the public list cards, document detail, and search hits.
+> - **Owner-curation**: v4 owner-filtered `/docs/public` AND the home. v5 keeps owner-filter on the home only — `/` `Latest documents` is owner's public docs, but `/docs` shows everyone's.
+> - **Authorization**: v4 had separate public-vs-authenticated route groups. v5 has a single `GET /api/docs/{id}` with per-request authorization (`visibility='public' OR X-User-Id == doc.user_id`).
+> - **Publish modal**: v4 included a Publish modal (slug + excerpt editing). v5 removes it entirely — Publish button = instant publish + toast (`✓ Published as /docs/{id}` + Copy link + View public). The Figma frame `29:816` is therefore obsolete.
+> - **Excerpt**: v4 stored `excerpt` column with manual edit. v5 has no column — derived at every response from `body` (strong-strip Markdown + 160 chars + ellipsis).
+> - **Share preview**: v5 mandates OpenGraph + Twitter Card meta via Next.js `generateMetadata` on `/docs/{id}` pages. Not in v4 design doc.
+> - **Directory tree**: v5 promotes the R3 directory work to P0 explicitly with `path TEXT NOT NULL DEFAULT '/'` on `docs.documents` + `/api/docs/folders` route. The `/docs/mine` Figma frame `37:363` already shows the tree+list layout and remains directionally correct, but the route renames from `/docs` to `/docs/mine`.
+>
+> **Frames affected:**
+> - `31:2` `M2 — Documents (public list)  /docs/public` → must become `/docs` (drop `/public` prefix) + show all-authors content with author rows on cards
+> - `31:66` `M2 — Document detail (public)  /docs/public/{slug}` → must become `/docs/{id}` + show author block + (visually) reflect that the URL is a UUID
+> - `37:363` `M2 — My documents  /docs` → must rename to `/docs/mine`
+> - `36:191` `M2 — New document (editor)  /docs/new` → add folder picker per v5 §4.1 path rules
+> - `36:246` `M2 — Edit document  /docs/{id}` → remove Publish modal trigger; Publish button → instant publish toast
+> - `37:289` `M2 — Search results  /docs/search` → add author column to result rows
+> - `27:704` `M2 — ⌘K search palette` → add author column to result rows
+> - `29:816` `M2 — Publish modal` → **delete** the frame (modal removed)
+> - `29:817`, `29:818` `Unpublish modal` + `Delete modal` → unchanged (kept for friction)
+> - `30:859`, `30:860`, `30:892` (dropdown/drag-drop/account dropdown) → unchanged
+>
+> **Refresh path**: when ready, dispatch `/design M2` (product-designer) again with the v5 spec as input. Agent rebuilds the affected frames + rewrites the screen sections below. The current contents are kept for historical reference until then.
 
 Stage 2 output for the Docs (M2) bounded context. Ten 1440-wide frames: six desktop page screens + one global `⌘K` palette overlay + three modal overlays (Publish, Unpublish, Delete). Built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
 
