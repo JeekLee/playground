@@ -147,3 +147,32 @@ through the gateway vs. direct backend access), and the lifecycle policy.
 ## Related (added)
 - M2 docs-BC design spec — OpenSearch projection contract, MD body storage
 - ADR-08 amendment — Redis lock access for `rag-ingestion`
+
+## Amendment (2026-05-17, ADR-12)
+
+ADR-12 (M2 Docs per-milestone) supersedes parts of the OpenSearch section
+above with the concrete client + analyzer + index pins that were left open
+when ADR-05's amendment was first authored:
+
+- **OpenSearch is the second-tier search store for the Docs BC.** Postgres
+  remains the source of truth; OpenSearch is a projection rebuilt-able from
+  Postgres at any time.
+- **Image:** `opensearchproject/opensearch:2.18.0` (unchanged from above).
+- **Java client:** `org.opensearch.client:opensearch-java:2.10.x` (native
+  low-level client, not Spring Data OpenSearch — Spring Data OpenSearch is
+  not in the Spring Boot 3.3.x BOM and is not pulled in).
+- **Index name:** `docs-v1`. The `-v1` suffix anticipates future blue/green
+  reindex via an alias swap (no alias is configured in M2).
+- **Korean analyzer:** `nori` (built-in `analysis-nori` plugin in the 2.x
+  image — no extra install). Each `title` / `body` field gets a `korean`
+  primary analyzer + an `english` multi-field for Latin-only queries.
+- **Search projector module placement:** `DocsSearchProjector` lives in
+  `docs-app` as a Spring `@Service` bean; Kafka consumer wiring + the
+  OpenSearch adapter live in `docs-infra`. Failures to write to OpenSearch
+  do not block API writes (events retry via Kafka redelivery).
+- **No cross-BC index access.** rag-chat (M4) does not query the docs BC's
+  OpenSearch index directly; cross-BC reads continue to go through Kafka or
+  the explicit `/internal/**` HTTP exception (per ADR-08 amendment).
+
+See `docs/adr/12-m2-docs.md` §5 + §6 for the full specification (compose
+service block, JVM heap, security plugin posture, Nori filter chain).

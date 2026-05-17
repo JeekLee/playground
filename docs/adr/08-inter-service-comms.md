@@ -170,3 +170,53 @@ ingestion idempotency (preventing duplicate embedding work when the same
 | BC -> OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment; per-BC index ownership |
 | gateway -> Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
 | `rag-ingestion` -> Redis (`redis-playground`) | Redis protocol | **Sanctioned (this section)** — distributed locks, namespace `rag-ingestion:lock:*` |
+| `docs-api` -> Redis (`redis-playground`) | Redis protocol | **Sanctioned (ADR-12 amendment)** — view-counter dedup, namespace `view:*` (24h TTL keys) |
+| `docs-api` -> `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | **Sanctioned (ADR-12 amendment)** — boot-time owner resolution, read-only, cached for JVM lifetime |
+
+## Amendment (2026-05-17, ADR-12)
+
+ADR-12 (M2 Docs per-milestone) extends the **"Sanctioned exceptions"**
+section above with two additions; the original "BC-to-BC HTTP is forbidden"
+default and the "cross-schema database access is forbidden" default remain
+in force.
+
+### Exception 3 (additive): `docs-api` → `identity-api` (boot-time owner lookup)
+
+The M3 → docs body-fetch exception (Exception 1 above) is the **first**
+justified BC-to-BC HTTP path; ADR-12 §2 confirms its concrete route pin
+(`GET /internal/docs/public/{id}/body` + `GET /internal/docs/public/{id}`).
+
+ADR-12 §8 introduces a **second** sanctioned BC-to-BC HTTP route, distinct
+from Exception 1:
+
+| Method | Path | Caller | Callee | Purpose |
+|---|---|---|---|---|
+| `GET` | `/internal/users/by-google-sub/{sub}` | `docs-api` | `identity-api` | Resolve the owner user id from the `PLAYGROUND_OWNER_GOOGLE_SUB` env var at docs-api boot. |
+
+Constraints (mirror Exception 1):
+- **Read-only.** docs-api MUST NOT mutate any identity state via this route.
+- **Internal route prefix (`/internal/**`).** Not forwarded by the gateway
+  (ADR-07's route table excludes the prefix).
+- **No user identity propagation** — this is service-to-service traffic.
+- **Reliability:** 2s timeout, 3 retries with backoff, fail-closed (public
+  feed returns empty list if identity is unreachable; lazy retry on first
+  request).
+- **JVM-lifetime cache** — docs-api caches the resolved owner UUID for the
+  process lifetime; operator restarts docs-api after changing the owner.
+
+### Choice rationale (recap from ADR-12 §2 + §8)
+
+For both exceptions, the alternative was a **read-only DB role** on the
+callee BC's schema. That alternative was rejected because it breaks ADR-05's
+schema-per-BC invariant and silently couples the two BCs to the callee's
+SQL layout. HTTP-with-`/internal/`-prefix is the only sanctioned
+cross-BC read mechanism in M2.
+
+### Future-exception discipline
+
+Every future BC-to-BC HTTP path requires a fresh ADR amendment row. ADR-12
+adds Exception 3; the next BC that needs cross-BC HTTP writes its own
+per-milestone ADR amendment to ADR-08.
+
+See `docs/adr/12-m2-docs.md` §2 (M3 body-fetch) and §8 (owner resolution)
+for the full specification.
