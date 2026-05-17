@@ -1,5 +1,4 @@
-import { Sidebar } from '@/widgets/sidebar';
-import { Topbar } from '@/widgets/topbar';
+import { ShellChrome } from './ShellChrome';
 import { loadMe } from '@/features/me';
 import type { User } from '@/entities/user';
 
@@ -8,6 +7,10 @@ import type { User } from '@/entities/user';
  * route group (currently just `/`). Bare-layout routes (`/login`, `/401`)
  * live outside this group and skip the chrome by design (per design
  * context "no sidebar, no topbar" notes).
+ *
+ * This layout is a server component (it awaits `loadMe`). The interactive
+ * sidebar toggle + keyboard shortcut live inside the {@link ShellChrome}
+ * client component below — children are forwarded through unchanged.
  *
  * Auth state hydration:
  *   - 200 from /me → signed-in shell (`user` populated).
@@ -18,13 +21,5 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   const me = await loadMe();
   const user: User | null = me.kind === 'authenticated' ? me.user : null;
 
-  return (
-    <div className="flex min-h-screen">
-      <Sidebar user={user} />
-      <div className="flex min-h-screen flex-1 flex-col">
-        <Topbar breadcrumb="Home" user={user} />
-        <main className="flex-1">{children}</main>
-      </div>
-    </div>
-  );
+  return <ShellChrome user={user}>{children}</ShellChrome>;
 }
