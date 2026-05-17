@@ -380,12 +380,14 @@ These intentionally land in the architect's per-milestone ADR, not here:
 11. **View dedup TTL** — 24h is the working default. Should authenticated views dedup against `X-User-Id` (longer TTL, more accurate) instead of the anon cookie? For now: same anon-cookie path regardless of auth state, accepted for simplicity.
 12. **Counter sync strategy** — denormalized column + nightly re-sync (current default) vs. trigger-based maintenance vs. event-sourced rebuild from a `docs.document.engagement-*` topic. The trade-off is correctness vs. read latency; default favors read latency since the home tile is a hot path.
 13. **Anonymous viewer ergonomics** — should the like button render at all for anonymous readers, or should it be hidden entirely? Working default: render disabled with "sign in to like" tooltip. Confirmed during M2 Stage-2 design.
+14. **Undo-after-delete UX.** The Delete modal's confirmation toast carries an `Undo` link (per design doc M2 modals section). M2 P0 toast appears but the `Undo` link is non-functional (DELETE is committed, the cascade has already run, and reviving the doc + its RAG chunks via `DELETE` reversal is non-trivial). M2.1: add a tombstone column on `docs.documents` so DELETE is soft for 30s and `Undo` actually flips the tombstone before the cascade fires.
 
 ## 12. Acceptance criteria (refinement of `roadmap.md` M2)
 
 Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens. The original five bullets are preserved; new ones expand on what the design system, ADR-09, and this spec promise.
 
 - [ ] Authenticated user can create a document via the in-app editor and via `.md` file upload, both producing a stable document id.
+- [ ] The `.md` upload path is reachable from two affordances on `/docs`: (a) the `+ New document` button's chevron dropdown row `↑ Import .md…` (opens native file picker), and (b) drag-and-drop of a `.md` file onto the viewport (overlay accepts the drop and POSTs multipart). Non-`.md` files dropped are rejected with a `danger` toast.
 - [ ] `GET /api/docs/mine` returns the caller's documents (all visibilities), `GET /api/docs/{id}` returns a single doc — both **404 when the caller is not the owner**.
 - [ ] `GET /api/docs/public` and `GET /api/docs/public/{slug}` work **without an auth header** and only return `visibility='public'` rows.
 - [ ] `GET /api/docs/public` (list) returns **only owner-authored** documents — non-owner public documents are excluded even if they exist. Verified by integration test seeding a non-owner public document and asserting it is absent.

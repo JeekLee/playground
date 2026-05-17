@@ -5,7 +5,7 @@
 > Figma: https://www.figma.com/design/NOe1YyQ3NxzgcuYlAVeooN/playground-%E2%80%94-M1-Identity (M2 frames added below the M1 row at y ≥ 1000; M1 frames are unchanged)
 > Builds on: `docs/design/M1-identity.md` (sidebar shell, topbar, account pill — all reused verbatim except the `Docs` Apps row, which is unlocked + active on every M2 route)
 
-Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wide, built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
+Stage 2 output for the Docs (M2) bounded context. Ten 1440-wide frames: six desktop page screens + one global `⌘K` palette overlay + three modal overlays (Publish, Unpublish, Delete). Built strictly against the design system spec (tokens, layout shell, chip vocabulary) with the M2 spec's §7.1 sidebar override applied: the `Docs` Apps row is **shipped/active** on every M2 route (`accent.soft` bg + `accent` label, weight 600). Chat (M4) and System status (M5) remain locked. Tokens table below is sourced verbatim from the design system spec — frontend-implementer mirrors them into `client/src/shared/ui/tokens/`; no new tokens are introduced by this milestone.
 
 > Terminology note (v4): per M2 spec §0, the user-facing noun is **`Document`** / **`Documents`** everywhere. The previous draft of this design doc used `essay` / `Essays` — those have been migrated. The home section is labeled `Latest documents`, the sidebar entry is `Docs`, the public list lives at `/docs/public`, single document detail lives at `/docs/public/{slug}`. The DTO names in §6.4 of the spec are `PublicDocListItem` and `PublicDocDetail`.
 
@@ -179,6 +179,29 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 └──────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
+### + New document dropdown + .md import affordance
+
+- **Purpose:** two parallel paths to bring content into the system — (a) write from scratch via the BlockNote editor, (b) import an existing `.md` file from disk. Both surface from `/docs` and from any page where a `+ New document` action exists.
+- **Spec trace:** M2 spec §2 P0 (`.md` file upload bullet), §6.2 `POST /api/docs` (multipart variant with `.md` file), §7.2 row `/docs` (the `+ New document` button — now with a dropdown chevron).
+- **Auth state:** authenticated.
+- **Figma frames:** `M2 — + New document dropdown (overlay)  /docs` (node `30:859`) + `M2 — Drag-drop import overlay (active)  /docs` (node `30:860`).
+- **Key elements (dropdown):** The `/docs` page-header `+ New document` button gets a small `▾` chevron immediately to the right of the label (inside the same `accent` button surface — a 1px `accent.hover` divider separates the label from the chevron click target so the two are independently clickable). Clicking the label = default action (Blank document → `/docs/new`). Clicking the chevron opens a 200px dropdown card (`surface` bg, `border` 1px, `radius.md`, `shadow.pop` if available) with two rows: `+ Blank document` (primary path) and `↑ Import .md…` (opens native file picker filtered to `.md`).
+- **Key elements (drag-drop overlay):** Active on `/docs` AND `/docs/new` AND `/docs/{id}`. Triggered on `dragenter` of a file (any file type) anywhere in the viewport. Full-viewport `color.text @ 0.30α` backdrop + centered drop card (400×200, `surface`, dashed `border.strong` 2px, `radius.lg`). Card content: big `↑` accent glyph + title + subtitle. On `/docs/new` and `/docs/{id}` the title swaps to `Drop .md to replace this document's body` (`color.danger` accent glyph instead of `color.accent` — communicates destructive overwrite). The static Figma mock uses a solid 2px stroke because the Talk to Figma plugin's `create_rectangle` does not expose a dashed-stroke setter; the implementer applies `border-style: dashed` from CSS at impl time (see Open questions).
+- **Interactions:**
+  - **Click + New document (label):** navigates to `/docs/new` with the current folder path inherited (as today).
+  - **Click + New document (chevron):** opens the dropdown.
+  - **Click "+ Blank document" in dropdown:** same as clicking the label.
+  - **Click "↑ Import .md…" in dropdown:** opens native file picker filtered to `.md` extension. On select, `POST /api/docs` multipart (file body + `path` set to the current folder) → on success navigates to `/docs/{newId}` (the new doc opens in the editor for review).
+  - **Drag a file over the viewport:** overlay appears within 100ms. Drag-leave with no drop dismisses. Drop on the card uploads via the same multipart path.
+  - **Non-.md file dropped:** the drop is rejected; a `danger`-fg toast appears in the topbar reading `Only .md files are accepted.` for 3s.
+- **Empty / error / loading states:**
+  - **Loading (upload in progress):** drop card swaps to a single line `Uploading <filename>…` with a small spinner.
+  - **Error (413 body too large per spec §6.5):** danger toast `<filename> is too large (>1MB). Trim and try again.`
+  - **Error (multipart parse failure):** danger toast `Couldn't read <filename>. Make sure it's a UTF-8 Markdown file.`
+- **Open questions:**
+  - Chevron click-target separator inside the primary button — using a 1px `accent.hover` divider is borderline visible at this contrast. Implementer may use a wider gap or a darker divider; static mock is illustrative only.
+  - Drag-drop overlay on `/docs/{id}` is destructive (replaces body) — should it require a confirm step? Working default: no confirm, but the overlay copy is explicit ("replace"). M2.1 could add a confirm if this turns out to be a footgun.
+
 ### New document (editor) (`/docs/new`)
 
 - **Purpose:** in-app block editor for creating a brand-new document. Notion-style single-pane: each line is a block (paragraph, h1/h2/h3, list, quote, code, etc.), `/` summons a block-type picker, blocks are reorderable via a drag handle that appears on row hover. The body roundtrips raw MD: on load, MD parses to blocks via `tryParseMarkdownToBlocks`; on save, blocks serialize back via `blockToMarkdownLossy`. The public render at `/docs/public/{slug}` still uses the `unified` + `remark` + `rehype` + `shiki` pipeline against the raw MD body — BlockNote changes the **authoring** UX, not the **reading** pipeline.
@@ -307,6 +330,61 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
 └──────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
+### Publish modal (overlay)
+
+- **Purpose:** confirm the publish-time slug + excerpt before flipping `visibility` to `public`. Opens when the `Publish` button is clicked on `/docs/new` (first-time publish) or `Publish changes` on `/docs/{id}` (when re-publishing after edits).
+- **Spec trace:** M2 spec §6.2 `POST /api/docs/{id}/publish` (`PublishRequest = { slug?, excerpt? }`), §4.3 field rules for `slug` (kebab-case, collision-resolved with `-2`, `-3`, …) and `excerpt` (~140 chars default from body).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — Publish modal  global` (node `29:816`).
+- **Key elements:**
+  - **Backdrop:** full-frame rect, `color.text` (`#2A2C20`) at `0.30` alpha — same scrim treatment as the ⌘K palette overlay (derived value, not a new token).
+  - **Modal card** (centered horizontally, anchored 200px from frame top, 480 wide, `surface` bg + `border` 1px stroke + `radius.lg` 14px, auto-layout VERTICAL with 32px padding + 20px gap). `shadow.pop` is **not** authored in the Figma mock — the Talk to Figma plugin's `create_frame` does not expose a drop-shadow / effect setter; the implementer applies `shadow.pop` from the design system §5.3 at impl time. Flagged in Open questions.
+  - **Title:** `font.h1` 28/700/-0.02em `color.text` — `Publish this document`.
+  - **Body:** `font.body` 15px `color.text.muted` — `Pick a public URL slug and a one-line excerpt. The slug becomes this document's permanent URL — even if you unpublish and re-publish later.`
+  - **Slug field:** label `Public URL slug` (`font.small` 13/600 `color.text`) → input (`surface` bg + `border.strong` 1px stroke + `radius.sm` 6px, `9px 12px` padding) containing a `/docs/public/` prefix in `color.text.subtle` followed by the editable value `building-an-agent-team` in `color.text` (the implementer renders the prefix as a non-editable input slot) → helper `Lowercase, hyphens between words. Existing slugs collide-resolve with -2, -3, …` in `font.small color.text.subtle`.
+  - **Excerpt field:** label `One-line excerpt` → 80px-tall textarea with mock content `Four agents, one human gate. The seams surprised me more than the agents did.` → helper `Shown on /docs/public and as the og:description meta. ~140 chars max.`
+  - **Footer button row** (auto-layout HORIZONTAL, right-aligned `primaryAxisAlignItems=MAX`, 8px gap): **Cancel** secondary (`surface` bg, `color.text` fg, `border.strong` 1px stroke, `radius.md` 10px, padding `8px 14px`, `font.small` weight 500) → **Publish** primary (`color.accent` bg, `#FFFFFF` fg, `color.accent` border, `radius.md`, padding `8px 14px`, `font.small` weight 500).
+- **Interactions:** Enter inside slug/excerpt commits the form; Esc dismisses; clicking the backdrop dismisses; on successful POST the modal closes and the editor toolbar shows `Saved 1s ago · Published`. The `→ View public: …` strip on `/docs/{id}` appears (or updates) after the modal closes.
+- **Empty / error / loading states:**
+  - **Loading:** `Publish` button shows an inline spinner (replaces the label text); both buttons disable.
+  - **409 slug collision** (per spec §6.5 — explicit collision when the user typed a slug already taken; also `400` with `availableSuggestions` per §6.5 when the user left slug blank and the server-derived slug collided): helper text under slug input swaps to `color.danger` with `That slug is taken. Try building-an-agent-team-2.` The first suggestion from the server's `availableSuggestions` is offered inline; clicking the suggestion populates the field.
+  - **413 body too large** (per spec §6.5): inline `color.danger` banner above the footer row `Document body exceeds the size cap. Trim before publishing.`
+  - **4xx/5xx other:** inline `color.danger` banner above the footer row with the server message, retry available via clicking `Publish` again.
+
+### Unpublish modal (overlay)
+
+- **Purpose:** confirm the visibility flip from `public` to `private`. Opens when the `Unpublish` button is clicked on `/docs/{id}`.
+- **Spec trace:** M2 spec §6.2 `POST /api/docs/{id}/unpublish`, §4.4 state machine (re-publish reuses `publish_meta` so slug survives).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — Unpublish modal  global` (node `29:817`).
+- **Key elements:**
+  - **Backdrop:** identical to Publish modal — full-frame `color.text` at `0.30` alpha.
+  - **Modal card:** same shell as Publish (480 wide, centered, `surface` bg + `border` + `radius.lg` 14px, 32px padding, 20px gap, no form fields — body content is shorter so the card hugs to ~220px).
+  - **Title:** `font.h1` — `Unpublish this document?`
+  - **Body:** `font.body color.text.muted` — `It becomes private — only you can see it. The slug is retained, so re-publishing later reuses the same public URL (no broken links).`
+  - **Footer button row** (right-aligned, 8px gap): **Cancel** secondary → **Unpublish** secondary (`surface` bg, `color.text` fg, `border.strong` stroke, `radius.md`). Unpublishing is not destructive enough to warrant `danger` but it is reductive, so `secondary` (not `primary` accent — accent is reserved for affirmative actions per design system §6.1). See Open questions for the alternative reading.
+- **Interactions:** Esc or backdrop click dismisses; on successful POST the modal closes, the editor's `→ View public` link strip disappears, and the `Unpublish` button on the toolbar hides (reverts to just `Publish changes` to re-publish later).
+- **Empty / error / loading states:**
+  - **Loading:** `Unpublish` button shows a spinner; both buttons disable.
+  - **4xx/5xx:** inline `color.danger` banner above the footer row with the server message; retry available via clicking `Unpublish` again.
+
+### Delete modal (overlay)
+
+- **Purpose:** destructive confirmation before `DELETE /api/docs/{id}`. Opens when the `🗑 Delete` ghost button is clicked on `/docs/{id}` or (post-M2) from the `⋯` overflow menu on a `/docs` list row.
+- **Spec trace:** M2 spec §6.2 `DELETE /api/docs/{id}`, §5 events (`docs.document.deleted` emitted on commit), §10 (RAG chunks cascade-removed by M3+ consumers when they ship).
+- **Auth state:** authenticated.
+- **Figma frame:** `M2 — Delete modal  global` (node `29:818`).
+- **Key elements:**
+  - **Backdrop:** identical to the other two modals — `color.text` at `0.30` alpha.
+  - **Modal card:** same shell (480 wide, centered, `surface` bg + `border` + `radius.lg` 14px, 32px padding, 20px gap, body content longer so the card hugs to ~270px).
+  - **Title:** `font.h1` — `Delete this document?`
+  - **Body:** `font.body color.text.muted` — explicit "can't be undone" + public-URL 404 + RAG chunk removal: `This can't be undone. If the document is currently published, its public URL (/docs/public/<slug>) will return 404. Vector chunks created by the RAG pipeline (M3+) are also removed.`
+  - **Footer button row** (right-aligned, 8px gap): **Cancel** secondary → **Delete** `danger` (`color.danger` `#B14B3B` bg, `#FFFFFF` fg, `color.danger` border, `radius.md`, padding `8px 14px`, `font.small` weight 500). Per design system §6.1 danger variant.
+- **Interactions:** Esc or backdrop click dismisses; on successful DELETE the modal closes, the user is navigated to `/docs` (the My documents index), and a `success`-fg toast in the topbar reads `Deleted "<title>".` for 4 seconds with an `Undo` link. **UX caveat:** the `Undo` link is non-functional in M2 P0 — DELETE is committed, the cascade has already run, and reviving the document + its (future M3+) RAG chunks via DELETE reversal is non-trivial. M2.1 adds a 30s tombstone column on `docs.documents` so DELETE is soft and `Undo` actually flips the tombstone before the cascade fires. See spec §11 row 14 (added with this design pass).
+- **Empty / error / loading states:**
+  - **Loading:** `Delete` button shows a spinner; both buttons disable.
+  - **4xx/5xx:** inline `color.danger` banner above the footer row with the server message; retry available via clicking `Delete` again.
+
 ### Search results (`/docs/search`)
 
 - **Purpose:** full-page full-text search against the OpenSearch projection (`GET /api/docs/search?q=…&scope={mine|public}`). Companion to the global ⌘K palette (also M2 P0 — see the new "⌘K search palette" section below). Reached from: (a) the per-page search input on `/docs`, (b) `⌘+Enter` on a query from the ⌘K palette, (c) direct URL with `?q=…&scope=…`.
@@ -415,14 +493,51 @@ Stage 2 output for the Docs (M2) bounded context. Six desktop frames at 1440 wid
               └──────────────────────────────────────────────────────┘
 ```
 
-## Home composition deltas (no new M2 frame; deltas only)
+### Account-pill dropdown (overlay)
 
-M2 spec §7.3 supersedes design system §9 item 3 in two ways. These deltas apply to the **existing M1 home frames** (`14:2` Public Home and `14:135` Signed-in Home) when M2 ships — `frontend-implementer` applies them then; this design pass does NOT modify those M1 frames.
+- **Purpose:** the only menu surface attached to the topbar account pill. Surfaces (a) the signed-in user's identity (name + email — confirms the session is who they expect) and (b) the M2 destinations and account actions accessible from anywhere. Minimal at M2 ship; rows accrete as new surfaces ship (M3 adds `My chats`, M5 adds `System status`, M2.1+ adds `Account settings` once there's something to set).
+- **Spec trace:** M2 spec §7.1 (sidebar Apps row `Docs` shipped → `My documents` becomes a real destination), M1 PRD `POST /logout` semantics (the `Sign out` row triggers logout with `PLAYGROUND_SESSION` revocation), design system §2.4 (single chrome — the pill + menu are the same on every authenticated route).
+- **Auth state:** authenticated (the pill itself is only present on signed-in screens).
+- **Figma frame:** `M2 — Account pill dropdown (overlay)  global` (node `30:892`). Static mock shows the menu in its open state with the `My documents` row in hover-active treatment.
+- **Key elements:**
+  - **Trigger:** clicking the account pill (or pressing Enter when it has keyboard focus). The chevron `▾` rotates to `▴` while the menu is open (the mock shows the open-state `▴`).
+  - **Card geometry:** 220px wide, `surface` bg, `border` 1px stroke, `radius.md` 10px, `shadow.pop` if implementable. Anchored right-edge-aligned to the pill's right edge, 8px below the pill. Auto-layout VERTICAL with 4px top/bottom padding so the inner divider sits flush against the outer card edges.
+  - **Header row** (auto-layout VERTICAL, padding `12px 14px 10px`, gap `2px`): display name `JeekLee` (`font.small` weight 600 `color.text`) + email `jeeklee1120@gmail.com` (10.5px `color.text.muted` — truncates with `…` at the right if it exceeds the card width). No click target; not focusable.
+  - **Divider:** 1px height, `color.border` fill, full width.
+  - **Action rows** (auto-layout HORIZONTAL, padding `8px 14px`, 10px gap, `primaryAxisAlignItems=SPACE_BETWEEN` so optional right-side hints sit flush right):
+    - **`My documents`** (icon `▤` + label, default state: `color.text.muted` icon + `color.text` label; hover-active state shown in the mock: `color.surface.soft` bg + `color.accent` icon + `color.accent` label, weight 500). Right-side kbd-style hint `⌘D` in 10px `color.text.subtle` — **decorative only in M2 P0** (the shortcut is not wired; the slot exists so the implementer has the right pattern for future menu items in M2.1+).
+    - **`Sign out`** (icon `↪` `color.text.muted` + label `Sign out` `color.text`). Default state in the mock (no hover bg). On click triggers `POST /logout` per M1 PRD; on success the topbar account pill is replaced with the public-mode chip + `Sign in with Google` button, and the user lands on `/`. No confirm modal — the action is reversible (just sign in again).
+  - **Footer affordances:** none in M2. Future rows append above the divider for grouping (account-related at the top, app actions below the divider, destructive `Sign out` at the bottom). Working order: Header → Divider → `My documents` → (M3+) `My chats` → (M5+) `System status` → (M2.1+) `Account settings` → `Sign out` at the bottom.
+- **Interactions:**
+  - Open: click pill, Enter on focused pill. (No global keyboard shortcut to open the menu in M2 P0; the `⌘D` hint on `My documents` is decorative.)
+  - Close: Esc, click outside the card, or click any action row (after navigation).
+  - Keyboard nav inside the card: `↑↓` moves the active row, Enter activates, Esc closes. The header row is skipped during keyboard nav.
+  - **`My documents` click:** navigates to `/docs` (always to `/docs` root, even if the user was already on a sub-path like `/docs/{id}` — predictable behavior). The dropdown closes.
+  - **`Sign out` click:** `POST /logout`, then redirect to `/`. The dropdown closes during the POST round-trip.
+- **Empty / error / loading states:**
+  - **Loading (`/me` payload not yet hydrated):** the header row shows skeleton blocks for name + email; action rows remain interactive (they only depend on the session cookie, not on `/me`).
+  - **Error (`/me` returns 401 — session expired):** dropdown closes, page redirects to `/login` (matches the Signed-in Home error behavior documented in M1).
+  - **Sign-out failure (5xx from `/logout`):** danger toast in the topbar `Couldn't sign out — try again.`; session is left intact (no half-state). The dropdown re-opens so the user can retry.
+  - **Avatar URL caching fallback (P1 in M1 PRD):** when the cached avatar URL fails to load, the header row falls back to the khaki initials circle (matches the pill itself).
 
-1. **Section header rename:** the home's documents section is labeled **`Latest documents`** (M2 spec §7.3 — supersedes any prior "Latest from the blog" wording). The data source becomes the owner-filtered `GET /api/docs/public` (already owner-filtered at the API per spec §6.1), so the wording leans into the personal-platform posture (design system §2.4).
-2. **Card meta extension:** the M1 mock currently shows the empty-state card (no real document cards yet). When M2 ships, the empty-state card is replaced by the same 3-column thumbnail grid used in `/docs/public`. The **per-card meta row** extends from `· N min · {date}` to `· N min · {date} · 👁 viewCount · ♥ likeCount` (icon glyphs are placeholders — frontend-implementer swaps to Lucide `Eye` / `Heart` per design system §7 emoji-to-icon migration rule).
+```
+                                              ┌──────────────────────┐
+                                              │ JeekLee              │  ← header
+                                              │ jeeklee1120@gmail.com│
+                                              ├──────────────────────┤
+                                              │ ▤ My documents   ⌘D │  ← hover-active
+                                              │ ↪ Sign out           │  ← default
+                                              └──────────────────────┘
+```
 
-Both deltas are textual + data-source changes; no new layout, no new tokens. The existing card geometry and the existing chip vocabulary cover everything.
+## Home composition deltas (applied to M1 home frames)
+
+M2 spec §7.3 supersedes design system §9 item 3 in two ways. These deltas apply to the **existing M1 home frames** (`14:2` Public Home and `14:135` Signed-in Home) when M2 ships — `frontend-implementer` applies them at code-implementation time. **As of design round 7 (2026-05-17), the deltas have also been applied to the Figma frames themselves** so the canonical visual reference now matches the M2-shipped state. See the corresponding "Note on frame state" added to `docs/design/M1-identity.md` for the same callout from the M1 doc's side.
+
+1. **Section header rename:** the home's documents section is labeled **`Latest documents`** (M2 spec §7.3 — supersedes any prior "Latest from the blog" wording), with the right-aligned link reading **`All documents →`**. The data source becomes the owner-filtered `GET /api/docs/public` (already owner-filtered at the API per spec §6.1), so the wording leans into the personal-platform posture (design system §2.4).
+2. **Card meta extension:** the M1 mock previously showed the empty-state card (no real document cards yet). When M2 ships, the empty-state card is replaced by a 3-column thumbnail-grid card using the same vocabulary as `/docs/public`. The **per-card meta row** extends from `· N min · {date}` to `<tag-chip> · N min · {date} · 👁 viewCount · ♥ likeCount` (icon glyphs are placeholders — frontend-implementer swaps to Lucide `Eye` / `Heart` per design system §7 emoji-to-icon migration rule). The 3 mock entries shown in the home grid intentionally match the documents-list mocks elsewhere in this doc for consistency: (a) `build-log · "Building an agent team for my personal playground" · 3 min · today · 👁 1.2K · ♥ 42`, (b) `architecture · "Why I rebuilt my blog as a microservice mesh" · 6 min · yesterday · 👁 850 · ♥ 28`, (c) `infra · "Spark cluster: 4 workers, 12 cores" · 5 min · this week · 👁 620 · ♥ 15`.
+
+Both deltas are textual + data-source changes; no new layout, no new tokens. The existing card geometry and the existing chip vocabulary cover everything. Card thumbnails use `color.khaki` / `color.surface.soft` / `color.success.soft` for variety — three palette picks from spec §3.1 + §3.3, no new tokens.
 
 ## Traceability matrix
 
@@ -445,17 +560,19 @@ Every M2 spec subsection that has user-facing surface area is mapped to one or m
 | §6.1 — `POST /api/docs/public/{slug}/view` | Document detail (fired on page load; the displayed `viewCount` reflects the post-increment value) |
 | §6.2 — `GET /api/docs/mine` | My documents |
 | §6.2 — `GET /api/docs/search?scope=mine` | Search results (default `Mine` scope in the mock); ⌘K search palette (default `Mine` scope) |
-| §6.2 — `POST /api/docs` (in-app create + `.md` file upload) | New document (editor) — the in-app create path. The `.md` file upload is mentioned in the spec but the upload affordance is M2.1 visual (drag-and-drop or button in the editor) — flagged in Open questions below. |
+| §6.2 — `POST /api/docs` (in-app create) | New document (editor) — the in-app create path (`Blank document` from the dropdown lands here). |
+| §2 P0 — `.md` file upload (multipart variant of `POST /api/docs`) | + New document dropdown (overlay) — the `↑ Import .md…` row triggers the native file picker; Drag-drop import overlay (active) — the drag-and-drop path. Both POST `multipart/form-data` to `POST /api/docs` per spec §6.2. |
 | §6.2 — `GET /api/docs/{id}` | Edit document |
 | §6.2 — `PATCH /api/docs/{id}` | New document + Edit document (the save-state pill is the user-facing artifact) |
-| §6.2 — `POST /api/docs/{id}/publish` | Edit document (Publish-changes button) and New document (Publish button) |
-| §6.2 — `POST /api/docs/{id}/unpublish` | Edit document (Unpublish button) |
-| §6.2 — `DELETE /api/docs/{id}` | Edit document (🗑 Delete ghost button) |
+| §6.2 — `POST /api/docs/{id}/publish` | Edit document (Publish-changes button — opens modal) and New document (Publish button — opens modal); **Publish modal** (slug + excerpt form, footer Publish CTA fires the POST) |
+| §6.2 — `POST /api/docs/{id}/unpublish` | Edit document (Unpublish button — opens modal); **Unpublish modal** (footer Unpublish CTA fires the POST) |
+| §6.2 — `DELETE /api/docs/{id}` | Edit document (🗑 Delete ghost button — opens modal); **Delete modal** (footer Delete `danger` CTA fires the DELETE) |
 | §6.2 — `POST /api/docs/{id}/like` / `DELETE /api/docs/{id}/like` | Document detail (inline like button — disabled for anonymous in the mock, fully active in the authenticated-viewer interaction) |
 | §6.3 — Owner resolution (`PLAYGROUND_OWNER_GOOGLE_SUB`) | N/A — deployment-time concern (the env var resolves before any of these screens render; no in-UI affordance) |
 | §6.4 — DTOs (PublicDocListItem, PublicDocDetail, MyDocListItem, MyDocDetail, SearchHit) | All 6 screens consume one of these shapes — each "Key elements" section above names the data fields actually rendered |
 | §6.5 — Error semantics (400/401/404/409/413/503) | Per-screen "Empty / error / loading states" entries cover the user-visible variants. 401 redirects to `/login` per M1 design. 503 from OpenSearch surfaces only on Search results (per spec, the rest of M2 still works). |
 | §7.1 — Sidebar (Apps section, `Docs` row active/badged when shipped) | All 6 screens (every sidebar mock shows the `Docs` row active with `accent.soft` bg + `accent` label) |
+| §7.1 — Sidebar `Docs` row shipped (→ `My documents` becomes a real destination from the global account-pill menu) + M1 PRD `POST /logout` semantics | **Account-pill dropdown (overlay)** — `My documents` row navigates to `/docs`, `Sign out` row fires the M1 `POST /logout` |
 | §7.2 — Client routes | Each route maps to one screen (1:1, 6 rows = 6 screens) |
 | §7.3 — Home composition deltas (rename + meta extension) | Deltas-only section above (no new M2 frame); applied to existing M1 home frames at implementation time |
 | §8 — RAG handoff trace | N/A — backend-only (the docs BC's responsibility is publishing accurate events; M3 + M4 own the user-facing chat surface) |
@@ -480,7 +597,7 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `color.text.muted` | `#6F6A55` | Hero subtitle, document excerpts, breadcrumb, neutral chip fg, Draft chip fg, all "updated …" meta, blockquote body, save-state pill, hit chip-Draft fg, account email, list-row meta numbers, sidebar wordmark line 2, Sign-in-to-like tooltip hint |
 | `color.text.subtle` | `#8B8670` | Sidebar `APPS` label, sidebar search-pill placeholder, locked Apps row labels and milestone badges (Chat M4, System status M5), editor `Untitled` placeholder, search-bar meta fg in hit-card meta rows |
 | `color.accent` | `#6E7A3A` | All primary CTA fills (`Sign in with Google`, `+ New document`, `Publish`, `Publish changes`), active nav fg (Docs `▤ Docs` active label), active-segment label (All in `/docs`, Mine in `/docs/search`), all `→` and `←` text-links, tag-chip fg, Published-chip fg, hit-Published-chip fg, sidebar `4/12` Docs badge, glyph J fill, `→ View public` link |
-| `color.accent.hover` | `#5C6730` | (Reserved — primary-button hover treatment; not visible at rest in these static mocks but the implementer applies it on hover per spec §6.1) |
+| `color.accent.hover` | `#5C6730` | Primary-button hover treatment (applied at impl time per spec §6.1); also the 1px chevron-divider inside the `+ New document` button on the dropdown-overlay frame (separates the label click target from the chevron click target). |
 | `color.accent.soft` | `#E9E8D1` | Active nav bg (`▤ Docs` active row bg), active-segment bg, tag-chip bg, Published-chip bg, search-result highlight `<mark>` bg |
 | `color.success` | `#4F6B2E` | `● Signed in` topbar chip fg (signed-in screens) |
 | `success` chip bg | `#E5EBD9` | `● Signed in` chip bg; sage thumbnail gradient on document cards (this is the spec's `success` chip bg from §6.3, reused for the sage decorative gradient — same value, no new token) |
@@ -498,12 +615,14 @@ Every value below is sourced verbatim from `docs/superpowers/specs/2026-05-16-pl
 | `spacing.xl` | 40px | Editor surface padding-y (`40px 0`); topbar → editor-toolbar offset |
 | `radius.sm` | 6px | Inline code rounded background; search input (`/docs` per-page narrow search); kbd pill |
 | `radius.md` | 10px | Buttons (primary + secondary + outline + ghost), cards, list card, segment-switcher container, fenced code blocks, sidebar nav-item active bg, account footer card |
-| `radius.lg` | 14px | (Reserved — for modals like the Publish modal and the Delete confirm; no static modal mocked in these frames but the implementer reserves this radius) |
+| `radius.lg` | 14px | Modal card corner radius on all three M2 modal frames (Publish, Unpublish, Delete). Was reserved in v4; now in active use. |
+| `color.danger` | `#B14B3B` | Delete button bg on the Delete modal (`danger` variant per design system §6.1); reserved for the `color.danger`-fg inline banners on all three modals' 4xx/5xx error states (rendered in implementation, not visible at rest in the mocks). |
+| `color.text` @ 0.30α (derived, not a new token) | `rgba(42,44,32,.30)` | Backdrop / scrim behind the Publish, Unpublish, and Delete modal cards. Same derivation already used by the ⌘K palette overlay — no new token introduced. |
 | `radius.pill` | 999px | Sidebar search pill, all chips, account pill, avatars, like button, large search bar in `/docs/search`, scope-toggle active segment |
 | `shadow.card` | `0 4px 14px rgba(60,50,20,.05)` | All cards at rest (document thumbnail cards, list card, account footer) |
-| `shadow.pop` | `0 10px 30px rgba(60,50,20,.10)` | (Reserved — hover-as-link card lift per spec §6.4; not visible at rest, applied on hover by the implementer) |
+| `shadow.pop` | `0 10px 30px rgba(60,50,20,.10)` | Hover-as-link card lift per spec §6.4 (applied on hover by the implementer); also the modal card elevation on all three M2 modals (Publish, Unpublish, Delete) — not authored in the Figma mock because the Talk to Figma plugin's `create_frame` doesn't expose a drop-shadow / effect setter (see Open questions); the implementer applies it from tokens. |
 
-**Verification note:** every hex value above appears in the design system spec at §3.1 / §3.2 / §3.3 / §6.3 or in §5.3 elevation. No new tokens. The thumbnail gradients explicitly reuse `khaki`, `surface.soft`, and the spec §6.3 `success` chip bg `#E5EBD9` — no fourth thumbnail color is introduced.
+**Verification note:** every hex value above appears in the design system spec at §3.1 / §3.2 / §3.3 / §6.3 or in §5.3 elevation. No new tokens. The thumbnail gradients explicitly reuse `khaki`, `surface.soft`, and the spec §6.3 `success` chip bg `#E5EBD9` — no fourth thumbnail color is introduced. The modal scrim is `color.text` at 0.30 alpha — a derived value, not a new token (same derivation already in use on the ⌘K palette overlay).
 
 ## Out of scope (this milestone)
 
@@ -521,7 +640,7 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 - **Multi-author** — P2 (the site stays single-author; owner resolution is configured at deploy time per spec §6.3).
 - **Engagement-driven ranking** — P2 (view/like counters are stored, not yet used to re-order the public feed).
 - **Slug rename action** — spec §11 row 5 deferred to M2.1+. No "rename slug" affordance in the Edit document toolbar.
-- **Account-pill dropdown contents** — carried over from M1 Open questions. The chevron is visible on the JL pill but the menu contents (likely `My documents` / `Sign out`) are still deferred.
+- **Sign-out keyboard shortcut + `My documents` shortcut wiring** — the dropdown shows a decorative `⌘D` kbd hint on the `My documents` row to establish the pattern for future menu items, but the shortcut is NOT wired in M2 P0. (The dropdown contents themselves are no longer deferred — see the "Account-pill dropdown (overlay)" section above.)
 - **Mobile / responsive layouts** — desktop 1440 only. Sidebar collapse modes (768-1023 icon rail, <768 hamburger drawer) are specified in design system §8.1 but visual mocks are deferred to M4 (the first read-on-the-phone use case).
 - **Dark mode** — token names are reserved per design system §3.4.
 
@@ -529,21 +648,26 @@ Items the M2 spec defers to M2.1, plus the P2 list:
 
 - **Figma frame `name` field still stale on two M2 frames.** The Talk to Figma plugin allowlist exposes `set_text_content` for TEXT nodes but no node-rename tool, so frames `14:258` and `14:342` still carry the v3 names `M2 — Essays (public list)  /essays` and `M2 — Essay detail (public)  /essays/{slug}` even though all their internal text was migrated to the new vocabulary. The four other M2 frames (`14:388`, `14:463`, `14:508`, `14:563`) already had v4-compliant names. Action: the human reviewer can rename the two frames in Figma directly (right-click → Rename) to `M2 — Documents (public list)  /docs/public` and `M2 — Document detail (public)  /docs/public/{slug}` before exporting PNG assets, OR the cursor-talk-to-figma maintainer can extend the plugin to expose `set_node_name`. Cost is minimal either way.
 
-- **`.md` upload affordance.** Spec §6.2 says `POST /api/docs` accepts `multipart/form-data` with a `.md` file plus optional `title`. The mock does NOT include an upload entry point in the editor toolbar. Two options:
-  1. Add a small `↑ Upload .md` ghost button to the `/docs/new` toolbar (left of `Publish`). Ships with M2 with no schema or API change required.
-  2. Defer to M2.1 alongside image upload — both upload paths land together with a single drag-and-drop zone in the editor body. Cleaner UX but the API is sitting unused for one release.
-  Recommendation: option 1, since the API ships either way and a 32×32 ghost button is trivial. Flagging for the implementer to confirm during Stage 3.
+- **`.md` upload affordance — RESOLVED in this design round.** Spec §6.2 says `POST /api/docs` accepts `multipart/form-data` with a `.md` file plus optional `title`. Two affordances ship in M2 P0 (see the new "+ New document dropdown + .md import affordance" section above): (a) the `+ New document` button's chevron dropdown row `↑ Import .md…` (opens native file picker), and (b) drag-and-drop of a `.md` file onto the viewport (overlay accepts the drop and POSTs multipart). The earlier "add an upload button to the editor toolbar" suggestion is replaced — keeping the import path off the editor toolbar reduces toolbar clutter and groups both create paths under one entry point (the page-header `+ New document` button). M2 spec §12 acceptance criteria amended to make both affordances explicit.
 
-- **Publish modal visual.** Spec §6.2 defines `PublishRequest { slug?, excerpt? }` and §10 mandates slug-stability tests, but the modal that surfaces the slug + excerpt fields at publish-time has no mock here. M2 should ship one. Pattern recommendation: a `radius.lg` 14px modal centered on a 50% `bg` scrim, 480×420, with two `font.body` text inputs (`Slug` and `Excerpt`), a `Cancel` (secondary) + `Publish` (primary, accent) button row at the bottom. Same modal is reused for `Publish changes` (pre-populated with current values).
+- **Dashed border on drop card not authored in Figma.** The Talk to Figma plugin's `create_rectangle` doesn't expose a stroke-style setter (solid / dashed / dotted), so the 400×200 drop card in `M2 — Drag-drop import overlay (active)  /docs` uses a solid 2px `border.strong` stroke instead of dashed. The implementer applies `border-style: dashed` (CSS) at impl time — the dashed treatment is the standard "drop here" affordance and reads more clearly than solid. Same plugin limitation already noted for `shadow.pop` on modal cards; the maintainer could extend the bridge to expose `setStrokeStyle` if this becomes a recurring need.
 
-- **Delete confirm modal visual.** Same structure as the publish modal but with `danger`-bg `Delete` primary (spec §6.1 danger variant). Working default: `Cancel` (secondary) + `Delete document` (danger, white text). Open: does the modal require typing the document title to confirm (GitHub-style)? For a single-author personal site that's probably overkill; flagging anyway.
+- **Publish modal visual — RESOLVED in this design round.** The Publish modal frame (node `29:816`) now exists with the slug + excerpt form fields, helper text per spec §4.3 field rules, and primary/secondary footer button row per design system §6.1. The same modal is reused for `Publish changes` (pre-populated with the document's current `publish_meta.slug` and `publish_meta.excerpt`). Carried-forward sub-question: should the slug helper text live above or below the input? Working default: below (matches Material / shadcn / most form libraries). The mock shows below.
 
-- **Account pill dropdown contents.** Same open question as M1's design doc — gets answered here at M2 since `My documents` is now a second item the menu can carry. Recommendation: `My documents` (links to `/docs`), divider, `Sign out` (calls `/logout` per ADR-07). Frontend-implementer can ship this as an M2 visual at no extra cost since the chevron is already mocked.
+- **Delete confirm modal visual — RESOLVED in this design round.** The Delete modal frame (node `29:818`) now exists with `Cancel` (secondary) + `Delete` (`danger` per §6.1) footer. Body copy explicitly names the 404 + RAG-chunk-removal consequences. Sub-question resolved: the modal does **not** require typing the document title to confirm (GitHub-style). For a single-author personal site that's overkill; the `Cancel` button + the explicit "can't be undone" copy are sufficient friction. The implementer can revisit if user testing shows accidental deletes.
+
+- **Unpublish-button variant — `secondary` vs. `primary` accent.** The Unpublish modal's CTA is rendered as `secondary` per design system §6.1 (`surface` bg, `color.text` fg, `border.strong` stroke) on the grounds that (a) unpublishing is reductive, not affirmative, and (b) `color.accent` is reserved for affirmative actions per spec §3.2. The alternative reading: it's still the modal's primary CTA and the user expects it to look "primary" — in which case use `color.accent` to draw the eye even though the action is reductive. Working default: `secondary` (current mock). Flagging for the reviewer in case the design system author disagrees; the swap is a one-line token change for the implementer either way.
+
+- **Modal `shadow.pop` not authored in Figma.** The Talk to Figma plugin's `create_frame` doesn't expose a drop-shadow / effect setter, so the three modal cards (Publish, Unpublish, Delete) lack the `shadow.pop` elevation in the static mock — the cards sit on the scrim with only their `border` stroke for separation. The implementer applies `shadow.pop` (`0 10px 30px rgba(60,50,20,.10)` per design system §5.3) at impl time. The Talk to Figma plugin maintainer could extend the bridge to expose `setEffects` if this becomes a recurring need (the ⌘K palette frame `27:704` has the same gap).
+
+- **Delete `Undo` toast — non-functional in M2 P0.** The Delete modal's success toast carries an `Undo` link but in M2 P0 the link does nothing — DELETE is committed at the SQL level and the cascade has already run. M2.1 adds a 30s tombstone column on `docs.documents` so DELETE is soft and `Undo` flips the tombstone before the cascade fires. Tracked in M2 spec §11 row 14 (added with this design pass). Working default for M2 P0: render the toast and the `Undo` link as visual affordance, but make the `Undo` click a no-op with a small `Couldn't undo — that's an M2.1 feature.` follow-up toast. Flagging for the implementer to confirm during Stage 3 — the alternative is to hide the `Undo` link entirely in M2 P0 (cleaner but breaks the visual contract with M2.1).
+
+- **Account pill dropdown contents — RESOLVED in this design round.** The menu now exists as a dedicated Figma frame (`M2 — Account pill dropdown (overlay)  global`, node `30:892`) and as a dedicated section above ("Account-pill dropdown (overlay)"). Three rows: identity header (name + email, non-interactive), `My documents` → `/docs`, `Sign out` → `POST /logout` per M1 PRD. Future rows append above the divider as new surfaces ship (M3 `My chats`, M5 `System status`, M2.1+ `Account settings`). The M1 design doc's matching open question + out-of-scope entry are also marked resolved with cross-references to this section.
 
 - **Empty-state CTA wording in `/docs`.** When the user has zero documents, the empty-state card says `No documents yet. Start writing.` with a `+ New document` button. Open: should the empty state also surface the `.md` file upload affordance (if Open question 1 lands) so first-time users can either type fresh or import? Working default: yes, with a small "or upload a .md file" secondary link below the primary button. Flagging for the implementer.
 
 - **Search-result row click target — full row vs. title only.** The list rows in `/docs` are hover-as-link on the whole row. The search hits in `/docs/search` look similar but the meta chip + slug span feel like they could be separate targets. Working default: whole hit-block is the click target (matches the `/docs` pattern); the slug `/docs/{id-prefix}` text in the meta is non-interactive copy. Flagging in case the implementer disagrees.
 
-- **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 7 frames into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results,kbd-search-palette}.png` when the human reviewer wants them inlined here.
+- **Inline PNG capture.** Same Figma MCP base64-intercept blocker as M1 — the Figma file is canonical, ASCII wireframes are the inline reference. Manual one-call-per-frame export from Figma (`File → Export selected → PNG @ 2x`) drops the 10 M2 frames (6 page screens + ⌘K palette + 3 modals) into `assets/M2/{documents-list,document-detail,my-documents,new-document,edit-document,search-results,kbd-search-palette,publish-modal,unpublish-modal,delete-modal}.png` when the human reviewer wants them inlined here.
 
 - **⌘K palette inline `<mark>` highlight simplification.** The static Figma mock for the ⌘K palette renders the active row's title in full `accent` (weight 600) instead of wrapping just the matched substring in an `accent.soft` `<mark>` span — the Talk to Figma plugin's TEXT node primitives don't support per-character background fills, so the inline highlight can't be authored declaratively in Figma here. The implementer reinstates the `<mark>` treatment at impl time using the same convention used on `/docs/search` (search result snippets already use the inline span), so there's no new rule to invent. The `accent`-on-title fallback in the mock is intentionally close enough that an at-a-glance design review still reads as "this is the active row with matched highlights." Resolution: implementer ships the proper inline `<mark>` span; the static mock retains the simplification. No spec change.
