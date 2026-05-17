@@ -1,6 +1,4 @@
-'use client';
-
-import { ChevronDown, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Chip } from '@/shared/ui/chip';
 import { Avatar } from '@/shared/ui/avatar';
 import { SearchPill } from '@/shared/ui/search-pill';
@@ -12,43 +10,28 @@ import { userInitials } from '@/entities/user';
  * Topbar — design system §8.2. Slim, lives inside the main column.
  * `padding: 12px 26px`, `border-bottom: 1px solid border`.
  *
- * Left: expand-sidebar button (only when sidebar is collapsed) +
- * breadcrumb. The corresponding collapse button lives inside the
- * sidebar itself next to the brand, mirroring Notion / Linear / VSCode.
+ * Left: breadcrumb (current page name). The sidebar collapse/expand
+ * toggle lives inside the sidebar itself (which is always visible, in
+ * either expanded or icon-rail mode) — Obsidian / VSCode pattern.
  * Center: search pill (⌘K), hoisted out of the sidebar so it stays
- * reachable even when the sidebar is collapsed.
+ * reachable from the topbar in either sidebar mode.
  * Right: status chip + primary action OR account pill (signed-in).
  */
 
 export interface TopbarProps {
   breadcrumb: string;
   user: User | null;
-  sidebarOpen: boolean;
-  onExpandSidebar: () => void;
 }
 
-export function Topbar({ breadcrumb, user, sidebarOpen, onExpandSidebar }: TopbarProps) {
+export function Topbar({ breadcrumb, user }: TopbarProps) {
   return (
     <header
       className="flex items-center gap-md border-b border-border bg-bg px-[26px] py-[12px]"
       aria-label="Page header"
     >
-      <div className="flex items-center gap-md">
-        {!sidebarOpen && (
-          <button
-            type="button"
-            onClick={onExpandSidebar}
-            aria-label="Expand sidebar"
-            title="Expand sidebar (⌘\ / Ctrl+\)"
-            className="flex h-[28px] w-[28px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface-soft hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-          >
-            <PanelLeftOpen size={16} aria-hidden="true" />
-          </button>
-        )}
-        <nav aria-label="Breadcrumb">
-          <span className="text-small text-text-muted">{breadcrumb}</span>
-        </nav>
-      </div>
+      <nav aria-label="Breadcrumb">
+        <span className="text-small text-text-muted">{breadcrumb}</span>
+      </nav>
       <div className="hidden min-w-0 flex-1 justify-center md:flex">
         <div className="w-full max-w-[360px]">
           <SearchPill />

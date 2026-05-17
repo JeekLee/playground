@@ -1,4 +1,12 @@
-import { Home, FileText, MessageSquare, Activity, Lock, PanelLeftClose } from 'lucide-react';
+import {
+  Home,
+  FileText,
+  MessageSquare,
+  Activity,
+  Lock,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-react';
 import { Brand } from '@/shared/ui/brand';
 import { Avatar } from '@/shared/ui/avatar';
 import { cn } from '@/shared/lib/cn';
@@ -7,28 +15,25 @@ import { userInitials } from '@/entities/user';
 import { SignOutButton } from '@/features/sign-out';
 
 /**
- * Sidebar — 232px fixed column on the left.
+ * Sidebar — left column that always renders, but flips between a wide
+ * 232px "expanded" mode and a narrow 64px icon-only "rail" mode, the
+ * way Obsidian / VSCode handle their primary sidebars.
  *
  * Per design system §8.1 (superseded by M2 docs BC spec §7.1) the Apps
  * section ships with one shipped row (`Home`, active) and three locked
- * previews (`Docs M2`, `Chat M4`, `System status M5`). The locked rows
- * are visually present but non-actionable per PRD "Sidebar locked rows
- * are visual-only".
+ * previews (`Docs M2`, `Chat M4`, `System status M5`). Locked rows are
+ * visual-only.
  *
- * The account footer flips between the public "Not signed in" copy and
- * the signed-in identity card based on the `user` prop.
+ * Collapse affordance: the toggle button sits next to the brand glyph
+ * in both states. Expanded shows {@link PanelLeftClose} (←|), collapsed
+ * shows {@link PanelLeftOpen} (|→). Topbar carries no toggle — the
+ * sidebar surface is always present, so the action belongs here.
  */
 
 export interface SidebarProps {
   user: User | null;
-  /**
-   * Optional collapse handler. When provided, a chevron-style button
-   * appears next to the brand wordmark so the user can hide the sidebar
-   * from within its own surface (standard Notion/Linear/VSCode UX).
-   * Omit to render the sidebar without a collapse affordance (used by
-   * routes that never offer the toggle).
-   */
-  onCollapse?: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 interface AppsRow {
@@ -46,49 +51,73 @@ const APPS: AppsRow[] = [
   { label: 'System status', icon: Activity, locked: true, milestone: 'M5' },
 ];
 
-export function Sidebar({ user, onCollapse }: SidebarProps) {
+export function Sidebar({ user, collapsed, onToggleCollapsed }: SidebarProps) {
+  const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
+  const toggleLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+
   return (
     <aside
-      className="sticky top-0 flex h-screen w-[232px] flex-shrink-0 flex-col gap-lg overflow-y-auto border-r border-border bg-surface-soft px-md py-lg"
+      className={cn(
+        'sticky top-0 flex h-screen flex-shrink-0 flex-col gap-lg overflow-y-auto border-r border-border bg-surface-soft py-lg transition-[width] duration-[180ms]',
+        collapsed ? 'w-[64px] items-center px-xs' : 'w-[232px] px-md',
+      )}
       aria-label="Primary navigation"
     >
-      <div className="flex items-center justify-between">
-        <Brand />
-        {onCollapse && (
-          <button
-            type="button"
-            onClick={onCollapse}
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar (⌘\ / Ctrl+\)"
-            className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-          >
-            <PanelLeftClose size={15} aria-hidden="true" />
-          </button>
+      <div
+        className={cn(
+          'flex items-center',
+          collapsed ? 'w-full flex-col gap-sm' : 'w-full justify-between',
         )}
+      >
+        <Brand compact={collapsed} />
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label={toggleLabel}
+          aria-pressed={!collapsed}
+          title={`${toggleLabel} (⌘\\ / Ctrl+\\)`}
+          className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+        >
+          <ToggleIcon size={15} aria-hidden="true" />
+        </button>
       </div>
-      <nav aria-label="Apps" className="flex flex-col gap-sm">
-        <span className="px-sm text-eyebrow text-text-subtle">Apps</span>
+      <nav aria-label="Apps" className="flex w-full flex-col gap-sm">
+        {!collapsed && <span className="px-sm text-eyebrow text-text-subtle">Apps</span>}
         <ul className="flex flex-col gap-xs">
           {APPS.map((row) => (
-            <AppsRowItem key={row.label} {...row} />
+            <AppsRowItem key={row.label} collapsed={collapsed} {...row} />
           ))}
         </ul>
       </nav>
       <div className="flex-1" />
-      {user ? <SignedInFooter user={user} /> : <SignedOutFooter />}
+      {user ? (
+        <SignedInFooter user={user} collapsed={collapsed} />
+      ) : (
+        <SignedOutFooter collapsed={collapsed} />
+      )}
     </aside>
   );
 }
 
-function AppsRowItem({ label, icon: Icon, active, locked, milestone }: AppsRow) {
+function AppsRowItem({
+  label,
+  icon: Icon,
+  active,
+  locked,
+  milestone,
+  collapsed,
+}: AppsRow & { collapsed: boolean }) {
   const className = cn(
-    'flex items-center justify-between rounded-md px-sm py-[6px] text-small',
+    'flex items-center rounded-md py-[6px] text-small',
+    collapsed ? 'h-[32px] w-[32px] justify-center' : 'justify-between px-sm',
     active && 'bg-accent-soft font-semibold text-accent',
     !active && !locked && 'text-text hover:bg-surface',
     locked && 'cursor-default text-text-subtle opacity-[0.72]',
   );
 
-  const content = (
+  const content = collapsed ? (
+    <Icon size={16} aria-hidden="true" />
+  ) : (
     <>
       <span className="flex items-center gap-sm">
         <Icon size={16} aria-hidden="true" />
@@ -104,27 +133,26 @@ function AppsRowItem({ label, icon: Icon, active, locked, milestone }: AppsRow) 
     </>
   );
 
+  const title = collapsed
+    ? locked
+      ? `${label} — available when ${milestone} ships`
+      : label
+    : locked
+      ? `Available when ${milestone} ships`
+      : undefined;
+
   return (
-    <li>
+    <li className={collapsed ? 'flex justify-center' : ''}>
       {locked ? (
-        <div
-          role="link"
-          aria-disabled="true"
-          tabIndex={-1}
-          title={`Available when ${milestone} ships`}
-          className={className}
-        >
+        <div role="link" aria-disabled="true" tabIndex={-1} title={title} className={className}>
           {content}
         </div>
       ) : active ? (
-        <div
-          aria-current="page"
-          className={className}
-        >
+        <div aria-current="page" title={title} className={className}>
           {content}
         </div>
       ) : (
-        <a href={`/${label.toLowerCase()}`} className={className}>
+        <a href={`/${label.toLowerCase()}`} title={title} className={className}>
           {content}
         </a>
       )}
@@ -132,7 +160,12 @@ function AppsRowItem({ label, icon: Icon, active, locked, milestone }: AppsRow) 
   );
 }
 
-function SignedOutFooter() {
+function SignedOutFooter({ collapsed }: { collapsed: boolean }) {
+  if (collapsed) {
+    // Rail mode: drop the prose footer entirely. The sign-in CTA still
+    // lives in the topbar's right slot, so we are not hiding the action.
+    return null;
+  }
   return (
     <div className="rounded-md border border-border bg-surface p-md text-small leading-snug">
       <div className="font-semibold text-text">Not signed in</div>
@@ -141,7 +174,14 @@ function SignedOutFooter() {
   );
 }
 
-function SignedInFooter({ user }: { user: User }) {
+function SignedInFooter({ user, collapsed }: { user: User; collapsed: boolean }) {
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-xs" title={`Signed in as ${user.email}`}>
+        <Avatar initials={userInitials(user)} size="md" />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-sm rounded-md border border-border bg-surface p-md">
       <div className="flex items-center gap-sm">
