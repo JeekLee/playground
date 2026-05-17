@@ -1,4 +1,4 @@
-import { Home, FileText, MessageSquare, Activity, Lock } from 'lucide-react';
+import { Home, FileText, MessageSquare, Activity, Lock, PanelLeftClose } from 'lucide-react';
 import { Brand } from '@/shared/ui/brand';
 import { Avatar } from '@/shared/ui/avatar';
 import { cn } from '@/shared/lib/cn';
@@ -21,6 +21,14 @@ import { SignOutButton } from '@/features/sign-out';
 
 export interface SidebarProps {
   user: User | null;
+  /**
+   * Optional collapse handler. When provided, a chevron-style button
+   * appears next to the brand wordmark so the user can hide the sidebar
+   * from within its own surface (standard Notion/Linear/VSCode UX).
+   * Omit to render the sidebar without a collapse affordance (used by
+   * routes that never offer the toggle).
+   */
+  onCollapse?: () => void;
 }
 
 interface AppsRow {
@@ -38,13 +46,26 @@ const APPS: AppsRow[] = [
   { label: 'System status', icon: Activity, locked: true, milestone: 'M5' },
 ];
 
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, onCollapse }: SidebarProps) {
   return (
     <aside
       className="sticky top-0 flex h-screen w-[232px] flex-shrink-0 flex-col gap-lg overflow-y-auto border-r border-border bg-surface-soft px-md py-lg"
       aria-label="Primary navigation"
     >
-      <Brand />
+      <div className="flex items-center justify-between">
+        <Brand />
+        {onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar (⌘\ / Ctrl+\)"
+            className="flex h-[26px] w-[26px] items-center justify-center rounded-md text-text-muted transition-colors duration-[140ms] hover:bg-surface hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          >
+            <PanelLeftClose size={15} aria-hidden="true" />
+          </button>
+        )}
+      </div>
       <nav aria-label="Apps" className="flex flex-col gap-sm">
         <span className="px-sm text-eyebrow text-text-subtle">Apps</span>
         <ul className="flex flex-col gap-xs">
