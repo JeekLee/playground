@@ -1,41 +1,72 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Copy, Eye, Heart } from 'lucide-react';
+import { Copy, Eye } from 'lucide-react';
 import { Avatar } from '@/shared/ui/avatar';
 import { Chip } from '@/shared/ui/chip';
 import { MarkdownReader } from '@/features/docs-reader';
+import { LikeButton } from '@/features/doc-like';
 import { formatRelative } from '@/entities/document';
+import { incrementView } from '@/shared/api/docs';
 import type { Document } from '@/entities/document';
 
 /**
  * DocReader — read-only surface for `/docs/{id}` when the caller is NOT
- * the document's author. Per design doc §"Document (/docs/{id})":
+ * the document's author. Per design doc M2-docs.md §"Document
+ * (/docs/{id})":
  *  - title (h1)
  *  - author block: 32px avatar + display name + relative published date
  *  - URL pill (copy-link affordance) right-aligned to the author row
- *  - meta row: view count + like button (S1: disabled — like is S2)
+ *  - meta row: 👁 viewCount + ♥ like button
  *  - markdown body via the reader pipeline
  *
- * S1 omits: like toggling (button rendered visually but inert),
- * view-counter beacon (omitted per dispatch).
+ * S3 additions:
+ *  - LikeButton — optimistic toggle for authenticated viewers; anonymous
+ *    viewers get a click-to-reveal "Sign in to like" CTA per design doc
+ *    §7.3.
+ *  - View-counter beacon — `POST /api/docs/{id}/view` fires on first
+ *    render (anonymous-OK; backend dedups via the `PLAYGROUND_ANON`
+ *    cookie). Strict-Mode double-mount is guarded by a ref so dev mode
+ *    doesn't fire two beacons.
  */
 
 export interface DocReaderProps {
   doc: Document;
+  /** Caller's authenticated status; drives the LikeButton's branch. */
+  isAuthenticated: boolean;
 }
 
-export function DocReader({ doc }: DocReaderProps) {
+export function DocReader({ doc, isAuthenticated }: DocReaderProps) {
   const [copied, setCopied] = useState(false);
   const url =
-    typeof window === 'undefined' ? `/docs/${doc.id}` : `${window.location.origin}/docs/${doc.id}`;
-  const authorInitials = doc.author.displayName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0]?.toUpperCase() ?? '')
-    .join('') || '?';
+    typeof window === 'undefined'
+      ? `/docs/${doc.id}`
+      : `${window.location.origin}/docs/${doc.id}`;
+  const authorInitials =
+    doc.author.displayName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? '')
+      .join('') || '?';
+
+  // Fire-and-forget view beacon — public docs only (the API no-ops
+  // private docs but we still skip the round-trip when the SSR'd
+  // visibility says private).
+  useEffect(() => {
+    if (doc.visibility !== 'public') return;
+    // Guard against React strict-mode double-mount in dev.
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      if (cancelled) return;
+      void incrementView(doc.id);
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [doc.id, doc.visibility]);
 
   const copyLink = async () => {
     try {
@@ -75,19 +106,18 @@ export function DocReader({ doc }: DocReaderProps) {
             <span>/docs/{doc.id}</span>
           </button>
         </div>
-        <div className="flex items-center gap-md">
+        <div className="flex flex-wrap items-center gap-md">
           <span className="inline-flex items-center gap-xs text-small text-text-muted">
             <Eye size={13} aria-hidden="true" />
-            {doc.viewCount} {doc.viewCount === 1 ? 'view' : 'views'}
+            <span className="font-mono text-[12px]">{doc.viewCount}</span>
+            <span>{doc.viewCount === 1 ? 'view' : 'views'}</span>
           </span>
-          <span
-            aria-disabled="true"
-            className="inline-flex items-center gap-xs rounded-pill border border-border-strong px-sm py-[3px] text-small text-text-muted"
-            title="Sign in to like (coming in S2)"
-          >
-            <Heart size={13} aria-hidden="true" />
-            {doc.likeCount}
-          </span>
+          <LikeButton
+            documentId={doc.id}
+            initialLikedByMe={doc.likedByMe}
+            initialLikeCount={doc.likeCount}
+            isAnonymous={!isAuthenticated}
+          />
           {copied && <Chip variant="success">Link copied</Chip>}
         </div>
       </header>
@@ -96,10 +126,10 @@ export function DocReader({ doc }: DocReaderProps) {
 
       <footer className="border-t border-border pt-md">
         <Link
-          href="/docs/mine"
+          href="/docs"
           className="text-small font-medium text-accent hover:text-accent-hover"
         >
-          &larr; Back to my documents
+          &larr; All documents
         </Link>
       </footer>
     </article>

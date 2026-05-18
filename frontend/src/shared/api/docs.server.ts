@@ -5,6 +5,7 @@ import {
   type DocDetailDto,
   type DocListResponse,
   type DocsResult,
+  type FolderListResponse,
   type MyDocListResponse,
   type OwnerInfoDto,
   type SearchResponseDto,
@@ -54,10 +55,24 @@ async function serverFetch<T>(path: string): Promise<DocsResult<T>> {
 /**
  * Fetch the caller's own documents (server-side; cookie forwarded).
  * Returns `unauthorized` if `/me` says anonymous — caller decides whether
- * to redirect to `/login`.
+ * to redirect to `/login`. Optional `path` narrows the list to a folder
+ * (spec §6.1 `?scope=mine&path={folder}`).
  */
-export async function fetchMyDocsServerSide(): Promise<DocsResult<MyDocListResponse>> {
-  return serverFetch<MyDocListResponse>('/api/docs?scope=mine');
+export async function fetchMyDocsServerSide(options?: {
+  path?: string;
+}): Promise<DocsResult<MyDocListResponse>> {
+  const qs = new URLSearchParams({ scope: 'mine' });
+  if (options?.path) qs.set('path', options.path);
+  return serverFetch<MyDocListResponse>(`/api/docs?${qs.toString()}`);
+}
+
+/**
+ * Fetch the caller's folder tree (server-side; cookie forwarded). Used
+ * by `/docs/mine` to render the left tree pane and by `/docs/new` to
+ * preload the folder picker with the caller's existing folders.
+ */
+export async function fetchFoldersServerSide(): Promise<DocsResult<FolderListResponse>> {
+  return serverFetch<FolderListResponse>('/api/docs/folders');
 }
 
 /**

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Folder, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { BlockNoteEditor } from '@/features/docs-editor';
+import { FolderPicker } from '@/features/folder-picker';
 import { ConfirmModal } from '@/widgets/confirm-modal';
 import {
   bodyByteSize,
@@ -281,7 +282,15 @@ function EditorToolbar({
   return (
     <div className="flex flex-wrap items-center justify-between gap-md border-b border-border bg-surface-soft px-[28px] py-md">
       <SaveStatePill state={saveState} visibility={visibility} />
-      <FolderPickerPill folderPath={folderPath} />
+      <FolderPicker
+        value={folderPath}
+        // Read-only on edit per ADR-12 §14 + spec §6.1 — PATCH carries
+        // only `title?` + `body?`. The Move action ships in M2.1.
+        readOnly
+        onChange={() => {
+          /* no-op — read-only */
+        }}
+      />
       <div className="flex items-center gap-sm">
         <Button variant="ghost" onClick={onOpenDelete} aria-label="Delete document">
           <Trash2 size={14} aria-hidden="true" />
@@ -336,16 +345,3 @@ function SaveStatePill({
   );
 }
 
-function FolderPickerPill({ folderPath }: { folderPath: string }) {
-  const label = folderPath === '/' ? '/' : folderPath;
-  return (
-    <span
-      aria-disabled="true"
-      className="inline-flex items-center gap-sm rounded-pill border border-border bg-surface px-md py-[6px] text-small text-text-subtle"
-      title="Folder picker is read-only in S1"
-    >
-      <Folder size={13} aria-hidden="true" />
-      <span>{label}</span>
-    </span>
-  );
-}

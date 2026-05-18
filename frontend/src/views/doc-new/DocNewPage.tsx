@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Folder } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
 import { BlockNoteEditor } from '@/features/docs-editor';
+import { FolderPicker } from '@/features/folder-picker';
 import {
   bodyByteSize,
   createDocument,
@@ -13,6 +13,7 @@ import {
   patchDocument,
   publishDocument,
 } from '@/shared/api/docs';
+import { normalizeFolderPath } from '@/entities/document';
 
 /**
  * `/docs/new` — new-document editor per design doc §"New document
@@ -50,11 +51,15 @@ const SAVE_DEBOUNCE_MS = 1500;
 export function DocNewPage() {
   const router = useRouter();
   const search = useSearchParams();
-  const initialPath = search?.get('path') ?? '/';
+  const initialPath = normalizeFolderPath(search?.get('path'));
 
   const [docId, setDocId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  // Folder path is mutable until the first save materializes the doc.
+  // After that, the picker switches to read-only (PATCH is title+body
+  // only per spec §6.1 + ADR-12 §14 — the move action lands in M2.1).
+  const [folderPath, setFolderPath] = useState<string>(initialPath);
   const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' });
   const [publishing, setPublishing] = useState(false);
 
@@ -80,7 +85,7 @@ export function DocNewPage() {
         const created = await createDocument({
           title: nextTitle.trim().length > 0 ? nextTitle.trim() : 'Untitled',
           body: nextBody,
-          path: initialPath,
+          path: folderPath,
         });
         setCreating(false);
         if (created.kind === 'ok') {
@@ -116,7 +121,7 @@ export function DocNewPage() {
       }
       return currentId;
     },
-    [creating, initialPath, router],
+    [creating, folderPath, router],
   );
 
   // Debounced save loop.
@@ -140,7 +145,7 @@ export function DocNewPage() {
       const created = await createDocument({
         title: title.trim().length > 0 ? title.trim() : 'Untitled',
         body,
-        path: initialPath,
+        path: folderPath,
       });
       if (created.kind !== 'ok') {
         setPublishing(false);
@@ -159,18 +164,24 @@ export function DocNewPage() {
     } else {
       setSaveState({ kind: 'error', message: 'Publish failed — retry' });
     }
-  }, [body, docId, initialPath, publishing, router, title]);
+  }, [body, docId, folderPath, publishing, router, title]);
 
   const canPublish =
     !publishing &&
     (title.trim().length > 0 || body.trim().length > 0) &&
     saveState.kind !== 'too-large';
 
+  // Once the doc is materialized, path is committed and the picker is
+  // read-only (PATCH carries only `title?` + `body?` per spec §6.1).
+  const pickerReadOnly = docId !== null;
+
   return (
     <div className="flex h-full flex-col">
       <EditorToolbar
         saveState={saveState}
-        folderPath={initialPath}
+        folderPath={folderPath}
+        pickerReadOnly={pickerReadOnly}
+        onChangeFolderPath={setFolderPath}
         onPublish={onPublish}
         canPublish={canPublish}
         publishing={publishing}
@@ -197,20 +208,28 @@ export function DocNewPage() {
 function EditorToolbar({
   saveState,
   folderPath,
+  pickerReadOnly,
+  onChangeFolderPath,
   onPublish,
   canPublish,
   publishing,
 }: {
   saveState: SaveState;
   folderPath: string;
+  pickerReadOnly: boolean;
+  onChangeFolderPath: (path: string) => void;
   onPublish: () => void;
   canPublish: boolean;
   publishing: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-md border-b border-border bg-surface-soft px-[28px] py-md">
+    <div className="flex flex-wrap items-center justify-between gap-md border-b border-border bg-surface-soft px-[28px] py-md">
       <SaveStatePill state={saveState} />
-      <FolderPickerPill folderPath={folderPath} readOnly />
+      <FolderPicker
+        value={folderPath}
+        onChange={onChangeFolderPath}
+        readOnly={pickerReadOnly}
+      />
       <Button variant="primary" onClick={onPublish} disabled={!canPublish}>
         {publishing ? 'Publishing…' : 'Publish'}
       </Button>
@@ -240,31 +259,4 @@ function SaveStatePill({ state }: { state: SaveState }) {
     );
   }
   return <Chip variant="danger">{state.message}</Chip>;
-}
-
-function FolderPickerPill({
-  folderPath,
-  readOnly,
-}: {
-  folderPath: string;
-  readOnly: boolean;
-}) {
-  const label = folderPath === '/' ? '/' : folderPath.replace(/\/$/, '').replace(/^\//, '');
-  return (
-    <button
-      type="button"
-      aria-disabled={readOnly}
-      tabIndex={readOnly ? -1 : 0}
-      className={
-        'inline-flex items-center gap-sm rounded-pill border border-border bg-surface px-md py-[6px] text-small ' +
-        (readOnly
-          ? 'cursor-default text-text-subtle'
-          : 'text-text-muted hover:bg-surface-soft')
-      }
-      title={readOnly ? 'Folder picker is read-only in S1' : 'Choose folder'}
-    >
-      <Folder size={13} aria-hidden="true" />
-      <span>{label}</span>
-    </button>
-  );
 }

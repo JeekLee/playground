@@ -113,6 +113,22 @@ export interface OwnerInfoDto {
   ownerUserId: string | null;
 }
 
+/**
+ * Folder listing — spec §6.1 / §6.4. One row per distinct `path` the
+ * caller owns; `count` is the number of docs at that exact path. Roots
+ * implied by deeper paths (e.g. `/agents/` from `/agents/build-log/`)
+ * may or may not appear in the backend response — the tree widget
+ * derives the parent layer client-side either way.
+ */
+export interface FolderListItemDto {
+  path: string;
+  count: number;
+}
+
+export interface FolderListResponse {
+  items: FolderListItemDto[];
+}
+
 // -------------------- Result type -----------------------------------------
 
 export type DocsResult<T> =
@@ -242,15 +258,78 @@ export async function deleteDocument(id: string): Promise<DocsResult<void>> {
 
 /**
  * Client-side fetch of the caller's documents (used by `/docs/mine` for
- * post-create / post-delete refresh). Same `?scope=mine` shape.
+ * post-create / post-delete refresh). Optional `path` narrows to a folder
+ * per spec §6.1 (`GET /api/docs?scope=mine&path={folder}`).
  */
-export async function fetchMyDocs(): Promise<DocsResult<MyDocListResponse>> {
-  const res = await fetch('/api/docs?scope=mine', {
+export async function fetchMyDocs(options?: {
+  path?: string;
+}): Promise<DocsResult<MyDocListResponse>> {
+  const qs = new URLSearchParams({ scope: 'mine' });
+  if (options?.path) qs.set('path', options.path);
+  const res = await fetch(`/api/docs?${qs.toString()}`, {
     method: 'GET',
     credentials: 'same-origin',
     headers: browserHeaders(),
   });
   return parseResult<MyDocListResponse>(res);
+}
+
+/**
+ * Caller's folder tree — `GET /api/docs/folders` per spec §6.1.
+ * Authenticated; surfaces 401 / network errors via the standard
+ * `DocsResult` shape.
+ */
+export async function fetchFolders(): Promise<DocsResult<FolderListResponse>> {
+  const res = await fetch('/api/docs/folders', {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: browserHeaders(),
+  });
+  return parseResult<FolderListResponse>(res);
+}
+
+/**
+ * Like / unlike toggle — `POST` / `DELETE /api/docs/{id}/like` per spec
+ * §6.1. Both verbs return 204 on success; both are idempotent at the
+ * server. The caller (LikeButton) keeps optimistic count + likedByMe
+ * state and rolls back on non-`ok` results.
+ */
+export async function likeDocument(id: string): Promise<DocsResult<void>> {
+  const res = await fetch(`/api/docs/${encodeURIComponent(id)}/like`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: browserHeaders(),
+  });
+  return parseResult<void>(res);
+}
+
+export async function unlikeDocument(id: string): Promise<DocsResult<void>> {
+  const res = await fetch(`/api/docs/${encodeURIComponent(id)}/like`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: browserHeaders(),
+  });
+  return parseResult<void>(res);
+}
+
+/**
+ * Fire-and-forget view increment — `POST /api/docs/{id}/view` per spec
+ * §6.1. Anonymous-OK; backend dedups via the `PLAYGROUND_ANON` cookie
+ * (24h TTL per ADR-12 §10). Returns 204 regardless of outcome; we don't
+ * surface errors to the reader.
+ */
+export async function incrementView(id: string): Promise<void> {
+  try {
+    await fetch(`/api/docs/${encodeURIComponent(id)}/view`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: browserHeaders(),
+      keepalive: true,
+    });
+  } catch {
+    // Intentional swallow — view-counter failures must not surface to
+    // the reader (spec §10.1 robustness rule).
+  }
 }
 
 /**
