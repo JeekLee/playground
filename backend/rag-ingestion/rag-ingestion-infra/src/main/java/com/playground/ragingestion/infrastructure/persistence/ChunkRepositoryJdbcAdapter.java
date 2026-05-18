@@ -6,8 +6,6 @@ import com.playground.ragingestion.domain.enums.Visibility;
 import com.playground.ragingestion.domain.model.DocumentChunk;
 import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.domain.model.vo.BodyChecksum;
-import java.sql.Types;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -63,10 +61,14 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
                 "DELETE FROM rag.document_chunks WHERE document_id = ?",
                 documentId.value());
 
+        // created_at / updated_at use the column DEFAULT now() — keeps the
+        // INSERT out of the JDBC driver's Instant → TIMESTAMP WITH TIME ZONE
+        // conversion path (pgjdbc rejects Instant directly) and matches the
+        // updateVisibility path below which also relies on `now()`.
         jdbc.batchUpdate(
                 "INSERT INTO rag.document_chunks "
-                        + "(document_id, chunk_index, user_id, visibility, embedding, text, body_checksum, created_at, updated_at) "
-                        + "VALUES (?, ?, ?, ?, ?::vector, ?, ?, ?, ?)",
+                        + "(document_id, chunk_index, user_id, visibility, embedding, text, body_checksum) "
+                        + "VALUES (?, ?, ?, ?, ?::vector, ?, ?)",
                 new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(java.sql.PreparedStatement ps, int i) throws java.sql.SQLException {
@@ -81,8 +83,6 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
                         ps.setString(5, new PGvector(chunk.embedding().values()).toString());
                         ps.setString(6, chunk.text().value());
                         ps.setString(7, chunk.bodyChecksum().value());
-                        ps.setObject(8, Instant.now(), Types.TIMESTAMP_WITH_TIMEZONE);
-                        ps.setObject(9, Instant.now(), Types.TIMESTAMP_WITH_TIMEZONE);
                     }
 
                     @Override
