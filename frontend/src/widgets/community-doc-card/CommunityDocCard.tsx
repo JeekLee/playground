@@ -52,22 +52,12 @@ export interface CommunityDocCardProps {
   /** Index in the parent grid; drives the thumbnail variant. */
   index: number;
   className?: string;
-  /**
-   * Append `?as=reader` to the doc link. Used on the Home's owner-
-   * curated section so the signed-in owner clicking their own card
-   * lands on the public reader preview, not their editor surface.
-   * Defaults to false — community feed (/docs) keeps the standard
-   * link behavior (owner clicks own card → editor; non-owners →
-   * reader, gated by docs-api per spec §6.1).
-   */
-  forceReader?: boolean;
 }
 
 export function CommunityDocCard({
   doc,
   index,
   className,
-  forceReader = false,
 }: CommunityDocCardProps) {
   const variant = THUMB_VARIANTS[index % THUMB_VARIANTS.length] ?? THUMB_VARIANTS[0];
   // Tag chips are display-only in M2 per design doc "Out of scope" — we
@@ -75,11 +65,10 @@ export function CommunityDocCard({
   // look identical, but no value persists or filters anything.
   const tagHint = deriveTagHint(doc, index);
   const readMinutes = estimateReadMinutes(doc.excerpt);
-  const href = forceReader ? `/docs/${doc.id}?as=reader` : `/docs/${doc.id}`;
 
   return (
     <Link
-      href={href}
+      href={`/docs/${doc.id}`}
       className={cn(
         'group flex flex-col overflow-hidden rounded-md border border-border bg-surface shadow-card transition-all duration-[140ms] ease-out',
         'hover:-translate-y-[2px] hover:border-accent hover:shadow-pop',
