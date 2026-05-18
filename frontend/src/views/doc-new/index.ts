@@ -1,0 +1,1 @@
+export { DocNewPage } from './DocNewPage';

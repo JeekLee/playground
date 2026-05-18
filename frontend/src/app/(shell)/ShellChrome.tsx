@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/widgets/sidebar';
 import { Topbar } from '@/widgets/topbar';
 import type { User } from '@/entities/user';
@@ -28,6 +29,7 @@ export interface ShellChromeProps {
 
 export function ShellChrome({ user, children }: ShellChromeProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const pathname = usePathname() ?? '/';
 
   const toggle = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
 
@@ -42,11 +44,29 @@ export function ShellChrome({ user, children }: ShellChromeProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [toggle]);
 
+  // Topbar breadcrumb adapts to the current route. Top-level destinations
+  // pin a short label; the (shell) group's nested routes (`/docs/*`)
+  // carry their own breadcrumb logic at the view layer, but the topbar
+  // surface itself reads a friendly default so SSR stays stable.
+  const breadcrumb = useMemo(() => {
+    if (pathname === '/') return 'Home';
+    if (pathname === '/docs/mine') return 'My documents';
+    if (pathname === '/docs/new') return 'Documents / New';
+    if (pathname.startsWith('/docs/')) return 'Documents';
+    if (pathname === '/docs') return 'Documents';
+    return 'Home';
+  }, [pathname]);
+
   return (
     <div className="flex min-h-screen">
-      <Sidebar user={user} collapsed={sidebarCollapsed} onToggleCollapsed={toggle} />
+      <Sidebar
+        user={user}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggle}
+        pathname={pathname}
+      />
       <div className="flex min-h-screen flex-1 flex-col">
-        <Topbar breadcrumb="Home" user={user} />
+        <Topbar breadcrumb={breadcrumb} user={user} />
         <main className="flex-1">{children}</main>
       </div>
     </div>
