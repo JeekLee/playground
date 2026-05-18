@@ -208,3 +208,97 @@ the table lives in
 
 See `docs/adr/13-m3-rag-ingestion.md` §9 + §F + amendment block §G.2 for
 the full specification.
+
+## Amendment (2026-05-18, ADR-14) — `chat` schema + cross-schema SELECT exception
+
+ADR-14 (M4 RAG-Chat per-milestone) adds the **`chat` schema** — the fifth
+top-level schema, after `identity`, `docs`, `rag`, and `metrics`. The
+schema-per-BC invariant is preserved; `chat` is owned exclusively by
+`rag-chat-api`.
+
+### `chat` schema DDL (excerpt — full DDL in ADR-14 §F)
+
+```sql
+CREATE SCHEMA IF NOT EXISTS chat;
+
+CREATE TABLE chat.sessions (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID         NOT NULL,            -- app-level FK to identity.users.id
+  title       TEXT         NOT NULL DEFAULT 'New chat',
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX chat_sessions_by_user
+  ON chat.sessions (user_id, updated_at DESC);
+
+CREATE TABLE chat.messages (
+  id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id   UUID         NOT NULL REFERENCES chat.sessions(id) ON DELETE CASCADE,
+  user_id      UUID         NOT NULL,                   -- denormalized tenant key
+  role         TEXT         NOT NULL CHECK (role IN ('user','assistant')),
+  content      TEXT         NOT NULL,
+  tokens_in    INT,
+  tokens_out   INT,
+  retrieval_k  INT,
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX chat_messages_by_session
+  ON chat.messages (session_id, created_at);
+
+CREATE TABLE chat.message_citations (
+  message_id   UUID  NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+  position     INT   NOT NULL,
+  document_id  UUID  NOT NULL,             -- app-level FK to docs.documents.id
+  chunk_index  INT   NOT NULL,             -- app-level FK to rag.document_chunks.chunk_index
+  PRIMARY KEY (message_id, position)
+);
+CREATE INDEX chat_message_citations_by_document
+  ON chat.message_citations (document_id);
+```
+
+A trigger bumps `chat.sessions.updated_at` on every `chat.messages`
+insert (so the top-tab strip's "most-recent" sort matches the actual
+last-activity timestamp). Full trigger DDL in ADR-14 §F.
+
+### Cross-schema SELECT exception — first of its kind
+
+ADR-05's original "Cross-schema queries are *technically* possible —
+discipline (enforced by code review) is the only barrier" framing is
+**relaxed for the rag-chat BC** to allow three specific read predicates:
+
+| Caller | Schema | Predicate | Why cross-schema, not HTTP |
+|---|---|---|---|
+| `rag-chat-api` | `rag.document_chunks` | `ORDER BY embedding <=> :q LIMIT :k` with `WHERE visibility='public' OR (user_id=? AND visibility='private')` | Per-turn vector retrieval. An HTTP RPC would defeat pgvector's HNSW sub-millisecond primitive. Already framed as M4-owned by ADR-13 §G.4. |
+| `rag-chat-api` | `docs.documents` | `SELECT id, title, visibility FROM docs.documents WHERE id IN (...)` | Citation enrichment, inside the TTFT P95 ≤ 2.0s budget. Batched single-query SELECT is sub-millisecond vs ~30ms HTTP fan-out. |
+| `rag-chat-api` | `identity.users` | `SELECT display_name, avatar_url FROM identity.users WHERE id = ?` | Chat header display. Identity-api does not currently expose a `/internal/users/by-id/{id}` HTTP route (only `by-google-sub`); SELECT is the lower-coupling choice. |
+
+**Cross-schema writes remain forbidden.** rag-chat writes only to the
+`chat` schema. The two existing HTTP exceptions in ADR-08 (M3→docs
+body-fetch, docs→identity owner-lookup) are NOT extended — M4's
+cross-schema reads stay at the SQL layer.
+
+### Hikari connection — search_path covers four schemas
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      connection-init-sql: "SET search_path TO chat,docs,rag,identity,public"
+  jpa:
+    properties:
+      hibernate:
+        default_schema: chat
+```
+
+`default_schema: chat` ensures Hibernate `@Entity` writes land in `chat`
+(no accidental writes to `rag` / `docs` / `identity`); the cross-schema
+read adapters use fully-qualified table names regardless (`rag.document_chunks`,
+`docs.documents`, `identity.users`). The search_path is belt-and-suspenders.
+
+### Forward note
+
+A future BC that wants to reach into `chat.*` via cross-schema SELECT
+needs another ADR-05 amendment row. The exception is bounded to the three
+predicates above; the discipline does not relax beyond what is enumerated.
+
+See `docs/adr/14-m4-rag-chat.md` §3 + §F for the full specification.

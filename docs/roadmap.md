@@ -86,24 +86,23 @@
 
 ## M4 — RAG-Chat
 
-**Goal:** Give any visitor — anonymous or signed-in — a chatbot whose answers are grounded in documents the caller is allowed to read (all community-wide public documents, plus the caller's own private documents when signed in).
+**Goal:** Give an authenticated visitor a chatbot whose answers are grounded in the playground corpus the caller is allowed to read (all community-wide public documents from every author, plus the caller's own private documents).
 
 **Acceptance:**
-- [ ] Frontend chat UI lets any visitor (anonymous or authenticated) start a conversation, send a message, and stream back a model response
+- [ ] Frontend chat UI lets an authenticated visitor start a conversation, send a message, and stream back a model response
 - [ ] On each user turn, the backend embeds the query (BGE-M3), retrieves top-K chunks from pgvector per the M4 retrieval contract below, and constructs a prompt for Qwen3-32B
-- [ ] Generation runs against `spark-inference-gateway` (Qwen3-32B) using Spring AI; responses stream to the client
-- [ ] Conversation history is persisted server-side and reloadable across sessions when the caller is authenticated; anonymous sessions are ephemeral (browser-local at best)
-- [ ] Responses cite which document(s) / chunk(s) backed the answer (id + title at minimum)
+- [ ] Generation runs against `spark-inference-gateway` (Qwen3-32B) using Spring AI; responses stream to the client as Server-Sent Events
+- [ ] Conversation history is persisted server-side and reloadable across browser sessions for the authenticated caller
+- [ ] Responses cite which document(s) / chunk(s) backed the answer (id + title at minimum) with inline `[N]` markers and an expandable accordion
 
 **Dependencies:** M0, M1, M2, M3.
 
-**Notes:** Retrieval scope is governed by the M4 retrieval contract (see `docs/superpowers/specs/2026-05-16-m2-docs-bc-design.md` §8 + `docs/prd/M3-rag-ingestion.md` §"M4 retrieval contract"): every public chunk is in scope for everyone; private chunks are in scope only for their author when that author is the caller (matched by `X-User-Id`). No caller can ever retrieve another user's private chunks. This is the first milestone that exercises both LLM endpoints of `spark-inference-gateway` end-to-end.
+**Notes:** Retrieval scope is governed by the M4 retrieval contract (see `docs/superpowers/specs/2026-05-16-m2-docs-bc-design.md` §8 + `docs/prd/M3-rag-ingestion.md` §"M4 retrieval contract" + ADR-14): every public chunk is in scope for every authenticated caller; private chunks are in scope only for their author when that author is the caller (matched by `X-User-Id`). No caller can ever retrieve another user's private chunks. This is the first milestone that exercises both LLM endpoints of `spark-inference-gateway` end-to-end. The auth-only invariant is the controlling supersession of the previous "anonymous or signed-in" framing — anonymous chat is a permanent non-goal (P2).
 
-**Public surface (per ADR-09 / design system spec §11):** This milestone ships **one** chat endpoint: `POST /api/rag/chat`. The retrieval corpus is switched server-side by the presence of `X-User-Id`:
-- Anonymous (`X-User-Id` absent): `WHERE visibility = 'public'`; tighter limits (`max_tokens=512`, K=1, 10 completions/5min/IP + 30 completions/day/anon-cookie).
-- Authenticated (`X-User-Id` present): `WHERE visibility = 'public' OR (user_id = X-User-Id AND visibility = 'private')`; full limits.
+**Public surface (per ADR-09 amendment in ADR-14):** This milestone ships **one** chat endpoint: `POST /api/rag/chat`, **authenticated-only**. Gateway returns 401 on missing `X-User-Id`. The retrieval corpus is fixed per-caller:
+- Authenticated (`X-User-Id` present): `WHERE visibility = 'public' OR (user_id = X-User-Id AND visibility = 'private')`.
 
-A circuit breaker on `spark-inference-gateway` 5xx rate must be implemented; concrete algorithm, library, and ADR-09 amendment land in the M4 per-milestone ADR.
+Per-user token bucket (60/hour, 200/day), `max_tokens=4000`, K=6 retrieved chunks, Resilience4j circuit breaker on `spark-inference-gateway` 5xx > 50% in 60s. Concrete numbers and the ADR-09 amendment land in ADR-14.
 
 ---
 

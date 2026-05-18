@@ -22,10 +22,9 @@ The gateway maintains a single allowlist of **public** route patterns. Everythin
 | Pattern | Class | Reason |
 |---|---|---|
 | `/` and any non-`/api` SSR route the client serves as a public page | public | The home, documents index, individual document pages, public chat page, and metrics page are reachable without sign-in. |
-| `GET /api/docs/public/**` | public | Read-only access to documents the author marked public. |
-| `POST /api/rag/chat/public` | public | Anonymous RAG chat against the public corpus only. |
+| `GET /api/docs/public/**` | public | Read-only access to documents the author marked public. (Note: superseded by ADR-12 amendment — namespace flattened to `/api/docs/**`.) |
 | `GET /api/metrics/**` | public | Read-only system status. Polling endpoint; no mutation. |
-| `/api/identity/**`, `/api/docs/mine/**`, `/api/docs/{id}` (write methods), `/api/rag/chat/private`, `/api/users/me`, `POST/PUT/DELETE /api/docs/**` | **authenticated** | Default. Anything that mutates user-owned data or reveals private content. |
+| `/api/identity/**`, `/api/docs/mine/**`, `/api/docs/{id}` (write methods), `/api/users/me`, `POST/PUT/DELETE /api/docs/**`, `POST /api/rag/chat`, `/api/rag/chat/sessions/**`, `GET /api/rag/chat/sessions/*/messages` | **authenticated** | Default. Anything that mutates user-owned data, reveals private content, OR streams LLM completions. RAG chat (the M4 single endpoint + session CRUD) is auth-only per ADR-14 amendment; anonymous callers receive 401. |
 | `/oauth2/**`, `/login/**`, `/logout` | system | Owned by Spring Security; not classified. |
 
 The allowlist lives in the gateway's `SecurityWebFilterChain` config. Adding a public route is an explicit ADR change, not a code-only change — write a superseding ADR or a per-milestone ADR that supersedes the relevant row.
@@ -38,24 +37,31 @@ Public routes receive an **absent** `X-User-Id` header — the gateway does not 
 
 Backends needing rate-limit keys for anonymous traffic use the gateway-injected `X-Forwarded-For` IP (already present from Spring Cloud Gateway's default forwarding) plus, for browser sessions, an anonymous cookie `PLAYGROUND_ANON` (UUID, set on first public-page visit, no PII, 30-day rolling expiry, `HttpOnly`, `Secure=true`, `SameSite=Lax`). The `Secure=true` setting matches ADR-07 §"Hosting model" — the public surface is HTTPS through Cloudflare Tunnel; `Secure` cookies still flow on localhost in modern browsers for operator debugging.
 
-### Rate-limit and cost protection (public RAG chat)
+### Rate-limit and cost protection (RAG chat — authenticated)
 
-Public RAG chat dispatches against `spark-inference-gateway` (Qwen3-32B generation + BGE-M3 retrieval), which is real compute. The gateway enforces:
+> **Re-scoped 2026-05-18 by ADR-14.** Originally this section governed anonymous public RAG chat with per-IP + per-anon-cookie caps and a `max_tokens=512` ceiling. The anonymous chat surface is permanently removed (the `POST /api/rag/chat/public` allowlist row is deleted; chat is auth-only). Rate-limit numbers below are per-authenticated-user, not per-IP.
 
-- **Per-IP burst limit:** 10 chat completions / 5 minutes, then 429.
-- **Per-anon-cookie burst limit:** 30 chat completions / day, then 429.
-- **Global circuit breaker:** if `spark-inference-gateway` returns 5xx on >50% of public-chat requests in the last 60 seconds, public chat returns a 503 with a friendly "the model is resting — try a logged-in chat" message; logged-in chat keeps working until the breaker opens for it too.
-- **Token cap per completion:** public chat is capped at `max_tokens=512` and one retrieved chunk window (no multi-turn context for anonymous sessions). Logged-in chat has higher limits.
+RAG chat dispatches against `spark-inference-gateway` (Qwen3-32B generation + BGE-M3 retrieval), which is real compute. The cost protection enforced by `rag-chat-api` (not the gateway — the gateway only sees the auth header; the bucket is per-user) is:
 
-Exact algorithm (token bucket vs sliding window) and the breaker library belong to M4's per-milestone ADR. This ADR fixes only the numbers and the principle.
+- **Per-user token bucket:** 60 chat completions / hour / user AND 200 chat completions / day / user. Both buckets must have capacity for the turn to proceed; whichever depletes first → 429 with `Retry-After` set to the smaller refill ETA. Backing: Redisson `RRateLimiter`, key `rag-chat:bucket:user:{userId}:{hourly|daily}` (per ADR-14 §5).
+- **Per-completion token cap:** Spring AI option `max_tokens=4000` (per ADR-14 §8). The retrieval slice is K=6 chunks (per ADR-14 §7).
+- **Global circuit breaker:** Resilience4j 2.2.x `CircuitBreaker` named `spark-gateway`, shared by the `ChatClient` and `EmbeddingModel` adapters. Failure rate threshold 50% over a 60-second sliding window, minimum 10 calls, OPEN duration 30s, 1 HALF_OPEN probe (per ADR-14 §4). When OPEN, chat returns a 503 with a friendly "AI service is currently unavailable" body and `retryAfterSeconds: 30`.
+- **Per-user concurrent stream cap:** 1. A second concurrent `POST /api/rag/chat` from the same user aborts the first (latest-wins) via a Redisson `RLock` keyed `rag-chat:lock:user:{userId}` with 35s TTL (per ADR-14 §G).
+- **No per-IP rate limit** for authenticated chat — the per-user bucket is the relevant denominator. The M2 per-IP rate limits (ADR-12 §7's anonymous-read caps) remain in force for their own public surfaces (`GET /api/docs`, `GET /api/docs/search`, etc.).
+
+Exact library / algorithm pins are in ADR-14 (Resilience4j 2.2 + Redisson 3.34). This section fixes the numbers, the principle, and the supersession of the original anonymous-chat framing.
 
 ### Public retrieval scoping
 
-Public RAG chat retrieves **only** against `docs.documents` rows where `visibility = 'public'`. Private documents are stored in the same pgvector table but their chunks are excluded by a `WHERE visibility = 'public'` predicate added to every public-route retrieval query.
+> **Re-scoped 2026-05-18 by ADR-14.** This section originally described an anonymous public RAG chat retrieving against `visibility='public'` chunks. With chat being auth-only post-M4, the scoping rule moves to the authenticated path:
+>
+> Authenticated RAG chat retrieves against `docs.documents` rows where `visibility = 'public' OR (user_id = X-User-Id AND visibility = 'private')`. Other users' private docs are never visible to any caller.
 
 The `visibility` column is owned by **M2 (the Docs BC)** and lives in the `docs` schema. The `rag-ingestion` service (M3) does not own the column; it consumes the `docs.document.visibility-changed` Kafka event and re-tags its chunks accordingly. Chunks inherit the parent document's visibility at ingestion time.
 
 Default visibility on document creation is `private`. The author publishes by an explicit toggle.
+
+The same `visibility = 'public'` predicate is still applied at the M2 public-read paths (`GET /api/docs`, `GET /api/docs/{id}`, `GET /api/docs/search?scope=public`) and at the M2 OpenSearch projector — those surfaces remain anonymous-OK per ADR-12 amendment.
 
 ## Consequences
 - Positive: Backends keep ADR-07's "trust the header" simplicity for authenticated routes; the only new contract is "header may be absent, handle it."
@@ -132,3 +138,60 @@ mandatory per M2 spec §10.
 
 See `docs/adr/12-m2-docs.md` §7 + amendment block for the full
 specification.
+
+## Amendment (2026-05-18, ADR-14)
+
+ADR-14 (M4 RAG-Chat per-milestone) narrows the chat surface to
+**authenticated callers only**. This amendment composes with the prior
+ADR-12 amendment additively — the M2 `/api/docs/**` allowlist rows and
+the per-IP read caps remain in force; only the chat-related rows are
+changed.
+
+### Route classification — revised (post-ADR-14)
+
+The row `| POST /api/rag/chat/public | public | Anonymous RAG chat against the public corpus only. |` is **removed permanently**. The single `POST /api/rag/chat` endpoint moves to the authenticated section:
+
+| Pattern | Class | Reason |
+|---|---|---|
+| `POST /api/rag/chat`, `/api/rag/chat/sessions/**`, `GET /api/rag/chat/sessions/*/messages` | **authenticated** | RAG chat (single streaming endpoint + session CRUD). Anonymous callers receive 401 at the gateway. Per spec §5.1 + §5.3 and ADR-14 §C. |
+
+### Rate-limit and cost protection — re-scoped (post-ADR-14)
+
+The §"Rate-limit and cost protection" section above (renamed from "(public RAG chat)" to "(RAG chat — authenticated)") is the canonical statement. Summary of the new numbers:
+
+- Per-user token bucket: 60/hour + 200/day (Redisson `RRateLimiter`, key `rag-chat:bucket:user:{userId}:{hourly|daily}`).
+- Per-completion cap: `max_tokens=4000`, K=6.
+- Circuit breaker: Resilience4j 2.2, name `spark-gateway`, 50% failure rate over 60s sliding window, OPEN 30s.
+- Per-user concurrent stream cap: 1 (Redisson `RLock`, key `rag-chat:lock:user:{userId}`, 35s TTL, latest-wins).
+
+The original anonymous-chat numbers (per-IP 10/5min, per-anon-cookie 30/day, `max_tokens=512`, K=1) are **permanently deleted** — no anonymous chat surface exists.
+
+### Auth-lock vs milestone-lock badge convention
+
+The sidebar `Apps` rows render with three distinct lock states. ADR-14 introduces the third (auth-lock) badge; the existing two are documented here for completeness so the frontend has a single canonical reference.
+
+| Badge | When | Click behavior | Visual |
+|---|---|---|---|
+| (none) | The corresponding milestone has shipped AND the route is reachable for the current session | Navigates to the route | Active text, no badge |
+| `🔒 Mx` (milestone-lock) | The milestone has NOT yet shipped (e.g., `🔒 M5` for Metrics before M5 ships) | No-op — click does nothing; hover tooltip "Coming in Mx" | Muted text |
+| **`🔒 Sign in` (auth-lock)** | The milestone has shipped BUT the current session is anonymous AND the route is auth-only | Navigates to `/login?return=<target>` | Muted text + sign-in badge |
+
+The two lock states are **mutually exclusive per row at any moment**:
+
+- **Milestone-lock** = "no route exists" (the BC has not deployed yet — the click is a no-op because there is nothing to route to).
+- **Auth-lock** = "route exists but you're anonymous" (the BC has deployed but only serves authenticated callers — the click goes to `/login` to lift the auth barrier).
+- A fully-accessible route (shipped + reachable) shows no badge.
+
+The frontend sidebar component derives the state from `(milestone shipped?, session authenticated?, route auth-required?)`. M4 ships the auth-lock visual for the `Chat` row in two states (`🔒 Sign in` when anon, no badge when signed in); future auth-only routes (e.g., M6+ Agents) reuse the same badge.
+
+**Forward note — M5 Metrics is unaffected.** M5's `GET /api/metrics/**` remains in the public allowlist; the auth-lock convention does not apply to it. The convention is route-by-route, not row-by-row.
+
+### Internal route — unchanged
+
+The boot-time owner-lookup route on `identity-api` (`/internal/users/by-google-sub/{sub}` per ADR-12 §8 / ADR-08 amendment) is unaffected — still `/internal/**`, still gateway-invisible.
+
+### Anonymous identity contract — narrowed, not removed
+
+The `PLAYGROUND_ANON` cookie + per-IP fallback for anonymous identity (ADR-09 original §"Anonymous identity contract") still governs the remaining public routes: `/`, `GET /api/docs`, `GET /api/docs/{id}`, `POST /api/docs/{id}/view`, `GET /api/docs/search?scope=public`, `GET /api/metrics/**` when shipped. Chat is the only route where anonymous = 401; everything else still treats `X-User-Id` as optionally absent.
+
+See `docs/adr/14-m4-rag-chat.md` §C + §G.4 and `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md` §7.6 + §8 for the full specification.
