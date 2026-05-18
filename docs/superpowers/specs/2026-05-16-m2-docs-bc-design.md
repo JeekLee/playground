@@ -431,7 +431,9 @@ Server-side rendering required — unfurlers (Slack, KakaoTalk, X, Discord) don'
 
 ## 8. RAG handoff trace (informational — confirms ADR-09)
 
-M2's only RAG responsibility is publishing accurate `docs.document.*` events. The downstream chain that gives the user a chat grounded in their own documents:
+> **Amended 2026-05-18 (M3 PRD cycle):** earlier draft described M4 with two endpoints (`/api/rag/chat/public` + `/api/rag/chat/private`) and an owner-only public corpus. Superseded by the single-endpoint, header-switched model below. Canonical statement of the M4 retrieval contract lives in `docs/prd/M3-rag-ingestion.md` §"M4 retrieval contract".
+
+M2's only RAG responsibility is publishing accurate `docs.document.*` events. The downstream chain that gives the caller a chat grounded in documents they're allowed to see:
 
 ```
 M2 (docs)                      M3 (rag-ingestion)              M4 (rag-chat)
@@ -440,27 +442,41 @@ user uploads/edits doc
   │
   └─ writes docs.documents row
   └─ emits docs.document.uploaded ───▶ consumes event
-                                       fetches body from docs
+                                       fetches body from docs (internal HTTP)
                                        chunks + embeds (BGE-M3)
                                        writes to pgvector with
-                                         (chunk, user_id, visibility)
+                                         (document_id, chunk_index,
+                                          user_id, visibility,
+                                          embedding, text)
                                                                        │
-user starts chat in M4                                                 │
-  └─ POST /api/rag/chat/private (X-User-Id=alice) ──────────────────▶  │
+anyone starts chat in M4 (anon or auth)                                │
+  └─ POST /api/rag/chat                                                │
+        (X-User-Id present iff signed in)  ──────────────────────────▶ │
                                                                        │
                                                                        retrieves chunks
-                                                                       WHERE user_id=alice
-                                                                       (returns alice's own docs as context)
+                                                                       WHERE visibility = 'public'
+                                                                          OR (user_id = X-User-Id
+                                                                              AND visibility = 'private')
+                                                                       ORDER BY cosine_distance
+                                                                       LIMIT K
                                                                        │
-                                                                       generates answer
-                                                                       (Qwen3-32B) citing alice's docs
+                                                                       generates answer (Qwen3-32B)
+                                                                       citing the matched docs
                                                                        │
-                                       ◀────── stream tokens to alice ◀┘
+                                       ◀────── stream tokens to caller ◀┘
 ```
 
-If the user later toggles visibility, `docs.document.visibility-changed` re-tags the chunks (ADR-09 §"Public retrieval scoping"). No M2 work needed beyond emitting the event.
+If the author later toggles visibility, `docs.document.visibility-changed` re-tags the chunks (ADR-09 §"Public retrieval scoping") — M3 updates the `visibility` column on every chunk row of that document without re-embedding. No M2 work needed beyond emitting the event.
 
-M4 public RAG chat scope (when M4 ships): **owner public docs only** — `/api/rag/chat/public` retrieves chunks where `user_id == owner_user_id` AND `visibility='public'`. Matches the home's owner-curated identity. Confirmed at M2 spec level; M4 spec re-confirms.
+### M4 retrieval contract (canonical — supersedes any earlier reading)
+
+- **Single endpoint**: `/api/rag/chat`. The legacy `/api/rag/chat/public` and `/api/rag/chat/private` split is removed.
+- **Anonymous caller** (`X-User-Id` absent — gateway does not inject it on public routes; see ADR-09 §"Anonymous identity contract"): retrieval corpus = `WHERE visibility = 'public'`. Community-wide public docs from every author.
+- **Authenticated caller** (`X-User-Id` present): retrieval corpus = `WHERE visibility = 'public' OR (user_id = X-User-Id AND visibility = 'private')`. All public docs from every author, plus the caller's own private docs.
+- **Never visible**: other users' `private` docs — no caller can retrieve them via M4.
+- M3's job is to keep the `(user_id, visibility)` pair on every chunk row accurate at all times so the WHERE clause above is the only filter M4 needs. No additional M3 API surface for retrieval.
+
+`/api/rag/chat`'s public-route policy in ADR-09 will be updated in the M4 per-milestone ADR (or an ADR-09 amendment) when M4 ships.
 
 ## 9. Markdown feature scope (M2)
 
