@@ -54,11 +54,18 @@ not the main checkout:
 1. `EnterWorktree({ name: "<topic>" })` before any code edit.
 2. Edit, build, verify inside the worktree.
 3. Commit, push, open a PR with `gh pr create`.
-4. Merge with `gh pr merge --rebase --delete-branch`.
+4. Merge with `gh pr merge --rebase` (drop `--delete-branch` — it
+   tries to `git checkout main` locally and aborts because `main` is
+   already checked out by the main repo working tree). Then
+   `git push origin --delete <branch>` to drop the remote branch.
 5. `ExitWorktree({ action: "remove", discard_changes: true })` to
    tear the worktree down (its commit is already on `main`).
-6. `git fetch origin && git reset --hard origin/main` to sync the
-   main checkout.
+6. Sync the main checkout via fast-forward:
+   `git fetch origin && git merge --ff-only origin/main`.
+   If `--ff-only` aborts, local `main` has commits that bypassed the
+   PR loop. Recover them (push to a branch, open a PR) before
+   retrying. **Never** `git reset --hard origin/main` — it silently
+   discards those commits.
 
 Don't push from the main checkout directly. Don't open PRs that span
 multiple worktrees.
