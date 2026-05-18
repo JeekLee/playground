@@ -38,5 +38,10 @@
     "postcss": "8.5.1",
     "tailwindcss": "3.4.17",
     "typescript": "5.6.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "prosemirror-model": "1.25.4"
+    }
   }
 }
