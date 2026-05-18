@@ -12,6 +12,7 @@ import org.springframework.security.web.server.authentication.RedirectServerAuth
 import org.springframework.security.web.server.DelegatingServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.DelegatingServerAuthenticationEntryPoint.DelegateEntry;
 import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository;
+import org.springframework.security.web.server.csrf.ServerCsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
@@ -41,7 +42,17 @@ public class GatewaySecurityConfig {
 
         return http
                 .cors(Customizer.withDefaults())
-                .csrf(csrf -> csrf.csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse()))
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse())
+                        // Spring Security 6.x defaults to XorServerCsrfTokenRequestAttributeHandler
+                        // which XOR-encodes the token in the request attribute (BREACH-attack mitigation
+                        // for templates that render the raw token into HTML). For our SPA + JS-readable
+                        // cookie + double-submit pattern that doesn't fit: the frontend reads the raw
+                        // cookie value and echoes it as the X-XSRF-TOKEN header, but the Xor handler
+                        // tries to XOR-decode the header (expecting a different encoding) → mismatch
+                        // → "Invalid CSRF Token" 403. Force the plain handler so the header is compared
+                        // verbatim against the cookie value.
+                        .csrfTokenRequestHandler(new ServerCsrfTokenRequestAttributeHandler()))
                 // Eagerly materialize the CsrfToken Mono so the XSRF-TOKEN cookie
                 // is written on GET responses too (CookieServerCsrfTokenRepository
                 // is lazy by default). See CsrfTokenCookieMaterializingFilter.
