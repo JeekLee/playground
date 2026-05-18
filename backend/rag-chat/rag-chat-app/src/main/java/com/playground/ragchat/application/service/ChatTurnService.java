@@ -68,6 +68,7 @@ public class ChatTurnService {
     private final CitationExtractor citationExtractor;
     private final PromptTemplate promptTemplate;
     private final AutoTitleService autoTitleService;
+    private final ActiveTurnRegistry activeTurnRegistry;
     private final RagChatProperties properties;
     private final Clock clock;
 
@@ -84,6 +85,7 @@ public class ChatTurnService {
             CitationExtractor citationExtractor,
             PromptTemplate promptTemplate,
             AutoTitleService autoTitleService,
+            ActiveTurnRegistry activeTurnRegistry,
             RagChatProperties properties,
             Clock clock) {
         this.sessionRepository = sessionRepository;
@@ -98,6 +100,7 @@ public class ChatTurnService {
         this.citationExtractor = citationExtractor;
         this.promptTemplate = promptTemplate;
         this.autoTitleService = autoTitleService;
+        this.activeTurnRegistry = activeTurnRegistry;
         this.properties = properties;
         this.clock = clock;
     }
@@ -230,6 +233,7 @@ public class ChatTurnService {
         // client-facing flux).
         Flux<ChatStreamEvent> source = Flux.concat(retrievalEvent, tokens, done)
                 .doFinally(signal -> {
+                    activeTurnRegistry.unregister(prep.session().id());
                     try {
                         handle.release();
                     } catch (RuntimeException e) {
@@ -252,6 +256,12 @@ public class ChatTurnService {
         Flux<ChatStreamEvent> shared = source
                 .replay(MAX_REPLAY_EVENTS)
                 .autoConnect(1);
+
+        // Register so `GET /api/rag/chat/sessions/{id}/stream` can attach late
+        // subscribers (mid-stream re-join) before the keep-alive subscribe
+        // wires the source up. Unregister happens in source.doFinally above so
+        // the entry disappears as soon as the pipeline terminates.
+        activeTurnRegistry.register(prep.session().id(), request.caller(), shared);
 
         shared.subscribe(
                 event -> { /* drain — side effects accumulate + persist via the source */ },

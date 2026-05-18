@@ -196,17 +196,21 @@ data: {"code":"GATEWAY_5XX|RATE_LIMIT|RETRIEVAL_EMPTY|ABORTED|INTERNAL","message
 - `done` is emitted after the last `token`; carries the assistant message's persisted ID and token counts. The frontend uses `messageId` to enable post-stream actions (regenerate, copy, etc. — those are PRD features, P1 candidates).
 - `error` is terminal. Once emitted, the SSE connection closes. The assistant message is **not** persisted when the stream ended in `error` (upstream LLM failure). Client disconnects without an `error` event (navigate-away, Stop button) do **not** abort the server pipeline — see §6.1 step 12 for the disconnect-tolerant persistence rule (revised 2026-05-18).
 
-### 5.3 Session management endpoints (non-streaming)
+### 5.3 Session management endpoints (non-streaming + resume)
 
 ```
-POST   /api/rag/chat/sessions           Create empty session. Response 201 { "sessionId", "title": "New chat" }
-GET    /api/rag/chat/sessions           List caller's sessions. Response 200 { "sessions":[{ "id","title","updatedAt","messageCount"}] }
-PATCH  /api/rag/chat/sessions/{id}      Rename session. Body { "title": "..." }. 404 if not owned.
-DELETE /api/rag/chat/sessions/{id}      Hard delete + cascade. 404 if not owned. Idempotent.
-GET    /api/rag/chat/sessions/{id}/messages  Load message + citation history. Response 200 { "messages":[{...,"citations":[...]}] }
+POST   /api/rag/chat/sessions                 Create empty session. Response 201 { "sessionId", "title": "New chat" }
+GET    /api/rag/chat/sessions                 List caller's sessions. Response 200 { "sessions":[{ "id","title","updatedAt","messageCount"}] }
+PATCH  /api/rag/chat/sessions/{id}            Rename session. Body { "title": "..." }. 404 if not owned.
+DELETE /api/rag/chat/sessions/{id}            Hard delete + cascade. 404 if not owned. Idempotent.
+GET    /api/rag/chat/sessions/{id}/messages   Load message + citation history. Response 200 { "messages":[{...,"citations":[...]}] }
+GET    /api/rag/chat/sessions/{id}/stream     Attach to an in-flight chat turn for this session as SSE. Returns the same
+                                              event grammar as POST /api/rag/chat (replay of retrieval + every token emitted
+                                              so far + the live tail or final done). 404 if no in-flight turn OR session
+                                              not owned. Added 2026-05-18 — see §6.3.
 ```
 
-All session endpoints require `X-User-Id` and enforce ownership at the SQL level (`WHERE user_id = ?`). No internal `/internal/**` routes; M4 has no peer BCs.
+All session endpoints require `X-User-Id` and enforce ownership at the SQL level (`WHERE user_id = ?`). The resume endpoint enforces ownership against the in-memory turn registry. No internal `/internal/**` routes; M4 has no peer BCs.
 
 ### 5.4 DTO sketches (final shapes in OpenAPI / per-milestone ADR)
 
@@ -302,6 +306,18 @@ Token budget per turn (Qwen3-32B context = 32k):
 Truncation policy: drop oldest turn pairs until the history fits. Never truncate mid-turn (a user message and its assistant response are dropped together). Working default; the ADR may revise the budget split.
 
 **Open question for ADR-14**: should we summarize truncated turns into a single "Earlier in this conversation: ..." paragraph instead of dropping? P0 default = drop.
+
+### 6.4 Mid-stream re-join (resume) — added 2026-05-18
+
+Decoupling the server pipeline from the SSE subscription (§6.1 step 12) means an in-flight chat turn keeps running even when the client disconnects, but the live token stream itself is still in memory on the hot replay-shared flux. The resume endpoint lets a returning client attach to that flux:
+
+- **`GET /api/rag/chat/sessions/{id}/stream`** with `Accept: text/event-stream` and `X-User-Id` — see §5.3 row.
+- Server consults an in-memory `ActiveTurnRegistry` keyed by `SessionId`. Entry value carries `(owner UserId, shared Flux<ChatStreamEvent>, startedAt Instant)`.
+- Ownership: the entry's `owner` must equal `X-User-Id`. Mismatch + missing entry both map to 404 (same shape, do not distinguish — matches §6.1 step 3's "not found vs not yours" rule).
+- Wire grammar: identical to the POST stream — `retrieval` (replayed) → `token` (replayed past + live tail) → terminal `done` / `error`. The frontend SSE consumer is the same parser, just bound to GET.
+- Lifecycle: `ChatTurnService` registers the entry immediately after building the shared flux; `Flux.doFinally` on the source unregisters it as the pipeline terminates (success, error, or both). The replay buffer is GC'd once the registry no longer references it.
+- Scope: JVM-local. ADR-07 §"Hosting model" keeps playground single-instance through M5; multi-instance scale-out would add a Redis `sessionId → instanceId` routing index on top (the flux itself stays in-process — it owns the live Spring AI subscription and cannot be transported).
+- Multi-tab UX: opening a second tab on the same session attaches another subscriber to the same shared flux — both tabs see the same tokens at the same time, for free.
 
 ### 6.4 Circuit breaker
 
@@ -489,6 +505,8 @@ The M4 ADR (`docs/adr/14-m4-rag-chat.md`) must close at least these:
 - [ ] On normal completion, exactly one `done` event terminates the stream.
 - [ ] On any failure, exactly one `error` event terminates the stream and no `done` is emitted.
 - [ ] Client disconnect (SSE `close`, Stop button, navigate-away) → server pipeline continues to completion; assistant message + cited rows persist and show up on the user's next `GET /sessions/{id}/messages` (revised 2026-05-18).
+- [ ] Mid-stream re-join: while a turn is in flight, `GET /api/rag/chat/sessions/{id}/stream` returns the live SSE stream — same wire grammar, replayed `retrieval` + every token so far + live tail (added 2026-05-18, §6.4).
+- [ ] Re-join 404 conditions: no in-flight turn for the session OR session not owned by `X-User-Id` — both return 404 (indistinguishable to the client, matches §6.1 step 3).
 
 ### Conversation persistence
 - [ ] `chat.messages` insert order matches the `created_at` clock; reload renders identical history.
