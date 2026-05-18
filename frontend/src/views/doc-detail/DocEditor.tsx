@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
@@ -75,63 +75,52 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
     return () => window.clearTimeout(id);
   }, [showPublishedToast]);
 
-  // Pristine if the in-memory values match the server load.
-  const pristine = title === doc.title && body === doc.body;
+  // Tracks the (title, body) snapshot that was last persisted to the server.
+  // Starts as the SSR-loaded doc values; updated on every successful PATCH.
+  // The debounced save loop + ⌘+S compare against this — they used to fall
+  // back on the stale `doc.title/doc.body` SSR props, which never updated
+  // after a save, so every save success triggered another no-op PATCH in a
+  // tight loop driven by setSaveState reruns of the effect.
+  const lastSavedRef = useRef<{ title: string; body: string }>({ title: doc.title, body: doc.body });
+  const pristine =
+    lastSavedRef.current.title === title && lastSavedRef.current.body === body;
 
-  // Debounced PATCH. Skipped while pristine.
-  useEffect(() => {
-    if (pristine) return;
-    if (saveState.kind === 'too-large') return;
+  // Shared save action — reused by the debounced loop and the ⌘+S shortcut.
+  const runSave = useCallback(async () => {
     if (bodyByteSize(body) > MAX_BODY_BYTES) {
       setSaveState({ kind: 'too-large' });
       return;
     }
-    const handle = window.setTimeout(async () => {
-      setSaveState({ kind: 'saving' });
-      const result = await patchDocument(doc.id, {
-        title: title.trim().length > 0 ? title.trim() : undefined,
-        body,
-      });
-      if (result.kind === 'ok') {
-        setSaveState({ kind: 'saved', at: Date.now() });
-      } else if (result.kind === 'too-large') {
-        setSaveState({ kind: 'too-large' });
-      } else if (result.kind === 'unauthorized') {
-        router.push('/login?next=' + encodeURIComponent(`/docs/${doc.id}`));
-      } else if (result.kind === 'not-found') {
-        setSaveState({ kind: 'error', message: 'Document not found' });
-      } else {
-        setSaveState({ kind: 'error', message: 'Save failed — retry' });
-      }
-    }, SAVE_DEBOUNCE_MS);
-    return () => window.clearTimeout(handle);
-  }, [body, doc.id, doc.title, doc.body, pristine, router, title, saveState.kind]);
+    setSaveState({ kind: 'saving' });
+    const result = await patchDocument(doc.id, {
+      title: title.trim().length > 0 ? title.trim() : undefined,
+      body,
+    });
+    if (result.kind === 'ok') {
+      lastSavedRef.current = { title, body };
+      setSaveState({ kind: 'saved', at: Date.now() });
+    } else if (result.kind === 'too-large') {
+      setSaveState({ kind: 'too-large' });
+    } else if (result.kind === 'unauthorized') {
+      router.push('/login?next=' + encodeURIComponent(`/docs/${doc.id}`));
+    } else if (result.kind === 'not-found') {
+      setSaveState({ kind: 'error', message: 'Document not found' });
+    } else {
+      setSaveState({ kind: 'error', message: 'Save failed — retry' });
+    }
+  }, [body, doc.id, router, title]);
 
-  // ⌘+S / Ctrl+S immediate save — complements the debounced loop above.
+  // Debounced PATCH. Skipped while pristine (no changes since last save).
+  useEffect(() => {
+    if (pristine) return;
+    if (saveState.kind === 'too-large') return;
+    const handle = window.setTimeout(() => { void runSave(); }, SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [pristine, runSave, saveState.kind]);
+
+  // ⌘+S / Ctrl+S immediate save — same no-op guard as the debounced loop.
   useSaveShortcut(
-    useCallback(async () => {
-      if (pristine) return;
-      if (bodyByteSize(body) > MAX_BODY_BYTES) {
-        setSaveState({ kind: 'too-large' });
-        return;
-      }
-      setSaveState({ kind: 'saving' });
-      const result = await patchDocument(doc.id, {
-        title: title.trim().length > 0 ? title.trim() : undefined,
-        body,
-      });
-      if (result.kind === 'ok') {
-        setSaveState({ kind: 'saved', at: Date.now() });
-      } else if (result.kind === 'too-large') {
-        setSaveState({ kind: 'too-large' });
-      } else if (result.kind === 'unauthorized') {
-        router.push('/login?next=' + encodeURIComponent(`/docs/${doc.id}`));
-      } else if (result.kind === 'not-found') {
-        setSaveState({ kind: 'error', message: 'Document not found' });
-      } else {
-        setSaveState({ kind: 'error', message: 'Save failed — retry' });
-      }
-    }, [body, doc.id, pristine, router, title]),
+    useCallback(() => { if (!pristine) void runSave(); }, [pristine, runSave]),
     saveState.kind !== 'too-large' && !publishing,
   );
 
