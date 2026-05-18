@@ -5,9 +5,9 @@ import com.playground.ragchat.domain.model.ChatSession;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
 import java.sql.ResultSet;
-import java.sql.Timestamp;
-import java.sql.Types;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,8 +39,8 @@ public class SessionRepositoryJdbcAdapter implements SessionRepository {
                     ps.setObject(1, session.id().value());
                     ps.setObject(2, session.userId().value());
                     ps.setString(3, session.title());
-                    ps.setObject(4, Timestamp.from(session.createdAt()), Types.TIMESTAMP_WITH_TIMEZONE);
-                    ps.setObject(5, Timestamp.from(session.updatedAt()), Types.TIMESTAMP_WITH_TIMEZONE);
+                    ps.setObject(4, OffsetDateTime.ofInstant(session.createdAt(), ZoneOffset.UTC));
+                    ps.setObject(5, OffsetDateTime.ofInstant(session.updatedAt(), ZoneOffset.UTC));
                 });
         return session;
     }
