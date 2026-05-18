@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { startChatStream } from '@/shared/api/chat.sse';
+import type { ChatStreamEvent } from '@/shared/api/chat.sse';
+import { resumeChatStream, startChatStream } from '@/shared/api/chat.sse';
 import type {
   Citation,
   ErrorPayload,
@@ -28,15 +29,17 @@ import type {
  * §6.1 step 12, revised 2026-05-18). Abort / unmount / navigate-away
  * close the stream on the client, but the server pipeline keeps
  * running to completion — the assistant message + citations land in
- * `chat.messages` either way. Callers returning to a session always
- * see the final answer via `fetchSessionMessages`, even when they
- * navigated away mid-stream.
+ * `chat.messages` either way. A returning client can attach to the
+ * still-running flux via `resume(sessionId)` and continue seeing live
+ * tokens (spec §6.4) — when there's nothing in flight the server
+ * answers 404 and `resume` reports `'no-active-turn'` so the caller
+ * just renders history.
  */
 
 export interface UseChatStreamApi {
   /** The in-flight turn — null between streams. */
   turn: StreamingTurn | null;
-  /** True while `start` is awaiting its terminal event. */
+  /** True while `start` / `resume` is awaiting its terminal event. */
   isStreaming: boolean;
   /**
    * Begin a turn. Resolves on terminal event with the final status the
@@ -44,6 +47,13 @@ export interface UseChatStreamApi {
    * in `turn.status`).
    */
   start: (sessionId: string, message: string) => Promise<StreamingTurnStatus>;
+  /**
+   * Attach to an in-flight chat turn on the server. Returns
+   * `'no-active-turn'` when no live turn exists for the session (the
+   * caller renders history and returns to idle); otherwise resolves
+   * with the terminal status once the live stream finishes.
+   */
+  resume: (sessionId: string) => Promise<StreamingTurnStatus | 'no-active-turn'>;
   /** Abort the in-flight stream. No-op when nothing is in flight. */
   stop: () => void;
   /** Clear the current turn — call after the consumer has handed off
@@ -82,10 +92,7 @@ export function useChatStream(): UseChatStreamApi {
       const controller = new AbortController();
       abortRef.current = controller;
       const clientId = newClientId();
-      let accumulated = '';
-      let citations: Citation[] = [];
-      let terminalStatus: StreamingTurnStatus = 'aborted';
-      let terminalError: ErrorPayload | undefined;
+      const state = { terminalStatus: 'aborted' as StreamingTurnStatus };
 
       setIsStreaming(true);
       setTurn({
@@ -100,46 +107,55 @@ export function useChatStream(): UseChatStreamApi {
         sessionId,
         message,
         signal: controller.signal,
-        onEvent: (ev) => {
-          if (ev.type === 'retrieval') {
-            citations = ev.payload.citations;
-            setTurn((prev) =>
-              prev && prev.clientId === clientId
-                ? { ...prev, citations, status: 'streaming' }
-                : prev,
-            );
-          } else if (ev.type === 'token') {
-            accumulated += ev.payload.delta;
-            const snapshot = accumulated;
-            setTurn((prev) =>
-              prev && prev.clientId === clientId
-                ? { ...prev, content: snapshot, status: 'streaming' }
-                : prev,
-            );
-          } else if (ev.type === 'done') {
-            terminalStatus = 'done';
-            setTurn((prev) =>
-              prev && prev.clientId === clientId
-                ? { ...prev, status: 'done' }
-                : prev,
-            );
-          } else if (ev.type === 'error') {
-            terminalStatus = ev.payload.code === 'ABORTED' ? 'aborted' : 'error';
-            terminalError = ev.payload;
-            setTurn((prev) =>
-              prev && prev.clientId === clientId
-                ? { ...prev, status: terminalStatus, error: terminalError }
-                : prev,
-            );
-          }
-        },
+        onEvent: makeOnEvent(clientId, setTurn, state),
       });
 
       setIsStreaming(false);
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
-      return terminalStatus;
+      return state.terminalStatus;
+    },
+    [stop],
+  );
+
+  const resume = useCallback(
+    async (sessionId: string): Promise<StreamingTurnStatus | 'no-active-turn'> => {
+      // Same single-stream invariant as `start` — a resume attempt aborts
+      // any prior in-flight stream owned by this hook.
+      stop();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const clientId = newClientId();
+      const state = { terminalStatus: 'aborted' as StreamingTurnStatus };
+
+      setIsStreaming(true);
+      setTurn({
+        clientId,
+        role: 'assistant',
+        content: '',
+        citations: [],
+        status: 'thinking',
+      });
+
+      const outcome = await resumeChatStream({
+        sessionId,
+        signal: controller.signal,
+        onEvent: makeOnEvent(clientId, setTurn, state),
+      });
+
+      setIsStreaming(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+
+      if (outcome === 'no-active-turn') {
+        // Nothing was in flight — clear the placeholder so the page
+        // renders pure history without an empty streaming bubble.
+        setTurn((prev) => (prev && prev.clientId === clientId ? null : prev));
+        return 'no-active-turn';
+      }
+      return state.terminalStatus;
     },
     [stop],
   );
@@ -154,5 +170,52 @@ export function useChatStream(): UseChatStreamApi {
     };
   }, []);
 
-  return { turn, isStreaming, start, stop, reset };
+  return { turn, isStreaming, start, resume, stop, reset };
+}
+
+/**
+ * Per-stream SSE event handler. Shared between `start` and `resume`
+ * because the wire grammar (and therefore the state-machine for
+ * accumulating tokens / promoting status / capturing the terminal
+ * error) is identical regardless of how the stream was opened.
+ */
+function makeOnEvent(
+  clientId: string,
+  setTurn: (updater: (prev: StreamingTurn | null) => StreamingTurn | null) => void,
+  state: { terminalStatus: StreamingTurnStatus },
+): (ev: ChatStreamEvent) => void {
+  let accumulated = '';
+  return (ev) => {
+    if (ev.type === 'retrieval') {
+      const citations: Citation[] = ev.payload.citations;
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? { ...prev, citations, status: 'streaming' }
+          : prev,
+      );
+    } else if (ev.type === 'token') {
+      accumulated += ev.payload.delta;
+      const snapshot = accumulated;
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? { ...prev, content: snapshot, status: 'streaming' }
+          : prev,
+      );
+    } else if (ev.type === 'done') {
+      state.terminalStatus = 'done';
+      setTurn((prev) =>
+        prev && prev.clientId === clientId ? { ...prev, status: 'done' } : prev,
+      );
+    } else if (ev.type === 'error') {
+      const terminalStatus: StreamingTurnStatus =
+        ev.payload.code === 'ABORTED' ? 'aborted' : 'error';
+      const terminalError: ErrorPayload = ev.payload;
+      state.terminalStatus = terminalStatus;
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? { ...prev, status: terminalStatus, error: terminalError }
+          : prev,
+      );
+    }
+  };
 }

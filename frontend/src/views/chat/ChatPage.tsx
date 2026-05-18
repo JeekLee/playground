@@ -126,6 +126,42 @@ export function ChatPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
+  // Mid-stream re-join (spec §6.4): every time the active session becomes
+  // available — initial mount OR tab switch — attempt to attach to a live
+  // chat turn on the server. The endpoint answers 404 when nothing's in
+  // flight, in which case `resume` reports `'no-active-turn'` and the
+  // page stays on the loaded history. When a turn IS in flight, the
+  // streaming bubble fills with the buffered retrieval + every token so
+  // far + the live tail — identical UX to having stayed on the page.
+  useEffect(() => {
+    if (!activeId) return;
+    let cancelled = false;
+    const target = activeId;
+    void (async () => {
+      const status = await streamApi.resume(target);
+      if (cancelled) return;
+      if (status === 'no-active-turn') return;
+      if (status === 'done') {
+        await loadMessages(target);
+        streamApi.reset();
+        sessionsApi.bumpUpdatedAt(target);
+        // Auto-title may have just settled — refresh the session list so
+        // the tab strip picks up the new title (ADR-14 §6).
+        void sessionsApi.refresh();
+      } else if (status === 'error') {
+        const err = streamApi.turn?.error;
+        if (err) handleStreamError(err);
+      }
+      // 'aborted' = the user submitted a new turn / switched tabs / unmounted
+      // while we were attached. No UI cleanup needed — the next effect or
+      // submit() owns the state from here.
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
   // ----- Send a turn -----
 
   const handleStreamError = useCallback((err: ErrorPayload) => {

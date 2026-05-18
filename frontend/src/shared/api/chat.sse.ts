@@ -176,7 +176,77 @@ export async function startChatStream(options: StartChatStreamOptions): Promise<
     return;
   }
 
-  const reader = res.body.getReader();
+  await consumeSseResponse(res, signal, onEvent);
+}
+
+export interface ResumeChatStreamOptions {
+  sessionId: string;
+  signal: AbortSignal;
+  onEvent: (event: ChatStreamEvent) => void;
+}
+
+/**
+ * Mid-stream re-join surface per spec §6.4 — attaches to the live
+ * server-side flux for a chat turn that was started by an earlier POST
+ * but whose SSE subscriber disconnected. Wire grammar identical to
+ * {@link startChatStream}; the only difference is the verb (GET, no
+ * body) and the `'no-active-turn'` short-circuit when the server's
+ * `ActiveTurnRegistry` has no entry for this session (HTTP 404 returns
+ * without ever firing an `onEvent` so the caller can quietly fall back
+ * to the loaded history).
+ */
+export async function resumeChatStream(
+  options: ResumeChatStreamOptions,
+): Promise<'attached' | 'no-active-turn'> {
+  const { sessionId, signal, onEvent } = options;
+  const xsrf = getXsrfToken();
+
+  let res: Response;
+  try {
+    res = await fetch(`/api/rag/chat/sessions/${encodeURIComponent(sessionId)}/stream`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: {
+        accept: 'text/event-stream',
+        ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}),
+      },
+      signal,
+    });
+  } catch (err) {
+    if (signal.aborted) {
+      return 'no-active-turn';
+    }
+    const text = err instanceof Error ? err.message : 'Network error';
+    onEvent({ type: 'error', payload: { code: 'INTERNAL', message: text } });
+    return 'attached';
+  }
+
+  if (res.status === 404) {
+    // No in-flight turn (or session not owned) — caller falls back to history.
+    return 'no-active-turn';
+  }
+
+  if (!res.ok || !res.body) {
+    onEvent({ type: 'error', payload: syntheticErrorFromStatus(res.status, res.headers.get('Retry-After')) });
+    return 'attached';
+  }
+
+  await consumeSseResponse(res, signal, onEvent);
+  return 'attached';
+}
+
+/**
+ * Read SSE frames off a streaming response until the body closes or
+ * the abort signal fires. Shared between {@link startChatStream}
+ * (POST) and {@link resumeChatStream} (GET) since the wire grammar is
+ * identical — only the request shape differs.
+ */
+async function consumeSseResponse(
+  res: Response,
+  signal: AbortSignal,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let terminalSeen = false;
