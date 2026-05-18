@@ -227,7 +227,7 @@ export function DocNewPage() {
         publishing={publishing}
       />
       <div className="flex-1 overflow-y-auto bg-bg">
-        <div className="mx-auto w-full max-w-[720px] px-md py-xl">
+        <div className="mx-auto w-full max-w-[1100px] px-md py-xl">
           <input
             type="text"
             value={title}

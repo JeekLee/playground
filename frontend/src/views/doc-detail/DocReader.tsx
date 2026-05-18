@@ -85,7 +85,7 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
   };
 
   return (
-    <article className="mx-auto flex w-full max-w-[800px] flex-col gap-lg px-[28px] py-xl">
+    <article className="mx-auto flex w-full max-w-[1100px] flex-col gap-lg px-[28px] py-xl">
       <header className="flex flex-col gap-md">
         <h1 className="text-h1 text-text">{doc.title}</h1>
         <div className="flex flex-wrap items-center justify-between gap-md">
