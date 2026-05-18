@@ -24,10 +24,13 @@ import type {
  * - Cleanup: on unmount we abort any active stream — covers the
  *   "user switches tab during stream" case per ADR-14 §14.
  *
- * Per ADR-14 §13: partial assistant text is NOT persisted on abort.
- * The hook does not write to the DB; persistence happens server-side on
- * the `done` event only. Callers that want the persisted message back
- * should refetch via `fetchSessionMessages` after `done` fires.
+ * Server-side persistence is decoupled from this SSE connection (spec
+ * §6.1 step 12, revised 2026-05-18). Abort / unmount / navigate-away
+ * close the stream on the client, but the server pipeline keeps
+ * running to completion — the assistant message + citations land in
+ * `chat.messages` either way. Callers returning to a session always
+ * see the final answer via `fetchSessionMessages`, even when they
+ * navigated away mid-stream.
  */
 
 export interface UseChatStreamApi {

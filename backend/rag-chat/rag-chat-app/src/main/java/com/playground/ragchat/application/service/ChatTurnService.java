@@ -223,10 +223,12 @@ public class ChatTurnService {
             return persistAssistantAndDone(prep, accumulated.toString(), request);
         });
 
-        return Flux.concat(retrievalEvent, tokens, done)
-                .doOnCancel(() -> log.info("stream_abort sessionId=" + prep.session().id()
-                        + " userId=" + request.caller()
-                        + " bytesEmitted=" + accumulated.length()))
+        // Source pipeline — must run to completion on the server even when the
+        // SSE client disconnects mid-stream, so the assistant message + citations
+        // land in `chat.messages` / `chat.message_citations`. Lock release and
+        // auto-title fire from the source's terminal signal (not from the
+        // client-facing flux).
+        Flux<ChatStreamEvent> source = Flux.concat(retrievalEvent, tokens, done)
                 .doFinally(signal -> {
                     try {
                         handle.release();
@@ -234,17 +236,37 @@ public class ChatTurnService {
                         log.warn("lock release failed sessionId=" + prep.session().id()
                                 + " reason=" + e.toString());
                     }
-                    // Fire-and-forget auto-title if first user turn AND we got
-                    // here without an upstream cancel (the partial assistant
-                    // would still be persistable from a value side, but auto-
-                    // title runs on the user message regardless).
                     if (prep.firstTurn() && signal == reactor.core.publisher.SignalType.ON_COMPLETE) {
                         autoTitleService.generate(prep.session().id(), request.message())
                                 .subscribeOn(Schedulers.boundedElastic())
                                 .subscribe();
                     }
                 });
+
+        // Decouple client lifecycle from source: replay+autoConnect(1) makes the
+        // pipeline hot, the background "keep-alive" subscribe drives it through
+        // to completion regardless of whether the SSE client stays connected,
+        // and late re-subscribers replay the buffered events from the start.
+        // `MAX_REPLAY_EVENTS` >> max tokens-per-turn (spec §B `maxCompletionTokens`)
+        // so the buffer never overflows.
+        Flux<ChatStreamEvent> shared = source
+                .replay(MAX_REPLAY_EVENTS)
+                .autoConnect(1);
+
+        shared.subscribe(
+                event -> { /* drain — side effects accumulate + persist via the source */ },
+                err -> log.warn("chat stream upstream error sessionId=" + prep.session().id()
+                        + " userId=" + request.caller() + " reason=" + err, err),
+                () -> { /* upstream completed; doFinally already ran */ });
+
+        return shared
+                .doOnCancel(() -> log.info("stream_abort_client sessionId=" + prep.session().id()
+                        + " userId=" + request.caller()
+                        + " bytesEmitted=" + accumulated.length()
+                        + " (server pipeline keeps going — assistant message will persist)"));
     }
+
+    private static final int MAX_REPLAY_EVENTS = 4096;
 
     private Mono<ChatStreamEvent> persistAssistantAndDone(
             Preparation prep, String accumulatedText, ChatTurnRequest request) {
