@@ -1,0 +1,129 @@
+server:
+  # ADR-14 §2 — gateway-routable port 18084. No host port mapping in compose
+  # per ADR-08 / ADR-14 §A; browser traffic flows through gateway:18080.
+  port: 18084
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: rag-chat-api
+  main:
+    web-application-type: reactive
+  datasource:
+    # ADR-14 §3.1 — single Hikari datasource with search_path covering the four
+    # schemas rag-chat reads (chat write, rag/docs/identity read). Fully-
+    # qualified table names are used in adapters too; search_path is belt-and-
+    # suspenders for diagnostic SQL via psql.
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=chat
+    username: ${POSTGRES_USER:playground}
+    password: ${POSTGRES_PASSWORD:}
+    hikari:
+      maximum-pool-size: 5
+      pool-name: rag-chat-pool
+      connection-init-sql: "SET search_path TO chat,docs,rag,identity,public"
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: chat
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    schemas: chat
+    default-schema: chat
+    table: flyway_history
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    # ADR-14 §5 + §D — Redisson Spring Boot starter reads these to wire its
+    # RedissonClient bean. Rate-limit keys (rag-chat:bucket:user:*) and lock
+    # keys (rag-chat:lock:user:*) are namespaced inside the adapters.
+    redis:
+      host: ${REDIS_HOST:redis-playground}
+      port: ${REDIS_PORT:6379}
+  ai:
+    openai:
+      # ADR-04 + ADR-14 §4 — spark-inference-gateway at
+      # host.docker.internal:10080 exposes OpenAI-compatible /v1/chat/completions
+      # and /v1/embeddings.
+      base-url: ${SPRING_AI_OPENAI_BASE_URL:http://host.docker.internal:10080}
+      api-key: ${SPRING_AI_OPENAI_API_KEY:dummy-not-used}
+      chat:
+        options:
+          model: ${SPRING_AI_CHAT_MODEL:Qwen3-32B}
+          # ADR-14 §B — default chat temperature. Auto-title overrides to 0.1
+          # at call site per ADR-14 §6.
+          temperature: 0.2
+      embedding:
+        options:
+          model: ${SPRING_AI_EMBEDDING_MODEL:BGE-M3}
+    retry:
+      # ADR-13 §2 retry curve — applies to both chat and embedding via the
+      # Spring AI starter's retry advisor.
+      max-attempts: 3
+      backoff:
+        initial-interval: 400ms
+        multiplier: 4.0
+        max-interval: 5s
+      on-client-errors: false
+      exclude-on-http-codes:
+        - 400
+        - 413
+        - 422
+
+# ADR-14 §7 + §8 — overridable retrieval + prompt budgets.
+playground:
+  rag-chat:
+    retrieval:
+      k: ${PLAYGROUND_RAG_CHAT_RETRIEVAL_K:6}
+      ef-search: ${PLAYGROUND_RAG_CHAT_EF_SEARCH:40}
+    prompt:
+      system-prompt-budget-tokens: 200
+      retrieval-block-token-budget: 2400
+      max-history-tokens: 24576
+      max-completion-tokens: 4000
+      per-chunk-token-budget: 400
+
+# ADR-14 §4 — Resilience4j breaker config (resilience4j-spring-boot3 reads
+# this and registers the breaker, which our SparkGatewayCircuitBreakerConfig
+# bean then specializes/replaces). The instance entry mirrors the @Bean
+# config to keep the Micrometer metrics tags consistent.
+resilience4j:
+  circuitbreaker:
+    instances:
+      spark-gateway:
+        failure-rate-threshold: 50
+        sliding-window-type: TIME_BASED
+        sliding-window-size: 60
+        minimum-number-of-calls: 10
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        register-health-indicator: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: rag-chat
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui
+
+logging:
+  level:
+    com.playground.ragchat: INFO

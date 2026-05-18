@@ -44,4 +44,12 @@ include(":rag-ingestion:rag-ingestion-app")
 include(":rag-ingestion:rag-ingestion-domain")
 include(":rag-ingestion:rag-ingestion-infra")
 
-// M4 (rag-chat), M5 (metrics): same pattern.
+// M4 — rag-chat quadruplet (ADR-01 v2 + ADR-14). WebFlux SSE controller on
+// port 18084 (gateway-routable). Cross-schema SELECT into rag/docs/identity
+// for retrieval + citation enrichment + display-name; no Kafka surface.
+include(":rag-chat:rag-chat-api")
+include(":rag-chat:rag-chat-app")
+include(":rag-chat:rag-chat-domain")
+include(":rag-chat:rag-chat-infra")
+
+// M5 (metrics): same pattern.
