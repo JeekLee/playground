@@ -39,7 +39,7 @@ This spec **does not** describe the M4 PRD's user-story list, the architect's po
 - **Top-tab session navigation** at the top of `/chat`. Sidebar Apps row routes to `/chat`. No sidebar-based session list.
 - **Session lifecycle**: hard delete (CASCADE), auto-title from the first user turn via a fire-and-forget Qwen3-32B call, manual rename.
 - **Auth-only cost protection**: per-user token-bucket rate limit + Resilience4j circuit breaker on `spark-inference-gateway` 5xx rate. Concrete numbers in the M4 ADR.
-- **Stop affordance** during streaming: client-initiated abort cancels the SSE; the partial assistant message is **not** persisted.
+- **Stop affordance** during streaming: client-initiated abort closes the SSE on the client. The server pipeline keeps running to completion so the assistant message + citations land in `chat.messages` (revised 2026-05-18 — was "not persisted"; server can't reliably distinguish involuntary navigate-away from a deliberate stop click, so persistence wins and the user can come back to find the answer). A future "discard this turn" feature can layer a separate endpoint on top.
 - **Empty / loading / error states** explicitly defined (§7).
 - **Desktop only** (≥720 px viewport). Mobile is M4.1.
 
@@ -194,7 +194,7 @@ data: {"code":"GATEWAY_5XX|RATE_LIMIT|RETRIEVAL_EMPTY|ABORTED|INTERNAL","message
 - `retrieval` is **always emitted first** (even when citations is empty). The frontend uses its arrival to dismiss the "Thinking…" indicator and render the citation accordion skeleton.
 - `token` events deliver `delta` strings as they arrive from Spring AI's `Flux<ChatResponse>`. No transformation server-side — the LLM's `[N]` markers reach the client as-is and are matched against the citation list by `n`.
 - `done` is emitted after the last `token`; carries the assistant message's persisted ID and token counts. The frontend uses `messageId` to enable post-stream actions (regenerate, copy, etc. — those are PRD features, P1 candidates).
-- `error` is terminal. Once emitted, the SSE connection closes. The assistant message is **not** persisted unless `done` was emitted.
+- `error` is terminal. Once emitted, the SSE connection closes. The assistant message is **not** persisted when the stream ended in `error` (upstream LLM failure). Client disconnects without an `error` event (navigate-away, Stop button) do **not** abort the server pipeline — see §6.1 step 12 for the disconnect-tolerant persistence rule (revised 2026-05-18).
 
 ### 5.3 Session management endpoints (non-streaming)
 
@@ -279,7 +279,7 @@ type CitationEvent = {
     - Retrieval context is fresh per turn — prior turn's retrieved chunks are NOT carried forward.
 
 11. **Spring AI streaming call**: `chatClient.prompt().messages(...).stream().chatResponse()` returns `Flux<ChatResponse>`. Map `.getResult().getOutput().getText()` to `token` SSE events, forwarding as they arrive.
-12. **Persist assistant message** when the stream completes successfully: insert `chat.messages` (role=`assistant`, with `content` = accumulated text, `tokens_in/out/retrieval_k` from the final `ChatResponse`), then insert `chat.message_citations` rows. Whether to persist **only the citations whose `[N]` marker appeared in the final text** or **all retrieved chunks regardless** is open-question #10 (§11) — the working assumption is "only those that appeared", but the ADR may revise.
+12. **Persist assistant message** when the stream completes successfully: insert `chat.messages` (role=`assistant`, with `content` = accumulated text, `tokens_in/out/retrieval_k` from the final `ChatResponse`), then insert `chat.message_citations` rows. **The server pipeline is decoupled from client subscription state** (revised 2026-05-18) — the chat-turn pipeline runs to completion on a hot replay-shared flux regardless of whether the SSE client is still attached, so navigate-away / Stop-button / tab-close all still produce a persisted assistant message that shows up on the user's next visit via `GET /sessions/{id}/messages`. Whether to persist **only the citations whose `[N]` marker appeared in the final text** or **all retrieved chunks regardless** is open-question #10 (§11) — the working assumption is "only those that appeared", but the ADR may revise.
 13. **Emit `done` SSE event** with `messageId` + token counts. Close the stream.
 14. **On any failure** between step 11 and step 12: emit `error` event with `code`, do **not** persist the assistant message. The user message persisted in step 9 stays.
 
@@ -324,7 +324,7 @@ The breaker is shared across all rag-chat instances if M4 ever scales horizontal
 | Qwen3-32B 4xx | no | `INTERNAL` |
 | Circuit breaker OPEN | no | `GATEWAY_5XX` with retry-after suggestion |
 | Rate limit bucket empty | no | `RATE_LIMIT` with `retryAfter` seconds |
-| Client disconnect (SSE close) | n/a | `ABORTED` (logged; not emitted since client is gone) |
+| Client disconnect (SSE close) | n/a | `ABORTED` (logged only; not emitted since client is gone). Server pipeline keeps running to completion — assistant message persists (revised 2026-05-18). |
 
 ## 7. UX surfaces
 
@@ -367,7 +367,7 @@ Sidebar `Apps` row "Chat" unlocks on M4 ship. Locked row pattern stays for unaut
 - `+` button at the end → POST `/api/rag/chat/sessions` → new tab inserted at the left of the strip, title = "New chat", page scrolls to the composer.
 - **Overflow rule**: max 7 visible tabs (most recent by `updated_at DESC`). The 8th and beyond appear in the `▾ N more` dropdown; selecting one from the dropdown pulls it back to the head of the visible strip.
 - **Tab hover affordances**: a `⋯` button reveals on hover → Rename / Delete. Rename inlines (the tab becomes a text input). Delete prompts a confirm dialog ("Delete this conversation? This cannot be undone.") → DELETE `/api/rag/chat/sessions/{id}` → tab removed, page navigates to the next-most-recent session or to an empty `/chat` if none remain.
-- Switching tabs while a stream is in flight: client aborts the current SSE (no `ABORTED` notification needed — same user, same authority). The partial assistant message is not persisted (per §6.1 step 12 rule).
+- Switching tabs while a stream is in flight: client aborts the current SSE (no `ABORTED` notification needed — same user, same authority). The server pipeline keeps running and persists the assistant message; switching back loads it from `GET /sessions/{id}/messages` (revised 2026-05-18 — was "partial assistant message is not persisted").
 
 ### 7.3 Citation accordion (inline, per assistant message)
 
@@ -470,7 +470,7 @@ The M4 ADR (`docs/adr/14-m4-rag-chat.md`) must close at least these:
 10. **Cite-persistence policy**: persist all retrieved citations in `chat.message_citations`, OR only the ones whose `[N]` actually appeared in the LLM output. PRD/ADR call.
 11. **Stale-citation rendering on the frontend**: exact copy + whether to show the chunk_index in the "deleted" state.
 12. **Empty-state suggestions for P0**: pin the three static suggestion strings.
-13. **Stop button → assistant message persistence**: confirm "not persisted" vs "persist partial up to abort point" (P0 default = not persisted).
+13. ~~**Stop button → assistant message persistence**: confirm "not persisted" vs "persist partial up to abort point" (P0 default = not persisted).~~ **Resolved 2026-05-18**: assistant message is persisted regardless of client disconnect (Stop button, navigate-away, tab-close all count as disconnects). Server pipeline is decoupled from SSE subscription state via `Flux.replay(N).autoConnect(1)` + background drain, so the chat turn always runs to completion server-side. A future "discard this turn" endpoint can lay on top if needed.
 14. **Streaming abort signaling to the LLM**: does Spring AI's `Flux<ChatResponse>` cancellation actually stop the gateway-side generation, or does the gateway keep generating tokens that get dropped? If the latter, we're paying for tokens we don't use — needs investigation.
 15. **`X-User-Sub` audit logging**: which fields are mandatory in the chat audit log (PII concerns vs operator's ability to debug).
 16. **Contract test fixture strategy**: WireMock for spark-inference-gateway (BGE-M3 + Qwen3-32B), Testcontainers for pgvector + Redis. Confirm pattern (matches M3 ADR-13 §13).
@@ -488,7 +488,7 @@ The M4 ADR (`docs/adr/14-m4-rag-chat.md`) must close at least these:
 - [ ] Response is `Content-Type: text/event-stream`, exactly one `retrieval` event ordered before any `token` event.
 - [ ] On normal completion, exactly one `done` event terminates the stream.
 - [ ] On any failure, exactly one `error` event terminates the stream and no `done` is emitted.
-- [ ] Client disconnect (SSE `close`) → server-side abort (Spring AI subscription cancelled); no assistant message persisted.
+- [ ] Client disconnect (SSE `close`, Stop button, navigate-away) → server pipeline continues to completion; assistant message + cited rows persist and show up on the user's next `GET /sessions/{id}/messages` (revised 2026-05-18).
 
 ### Conversation persistence
 - [ ] `chat.messages` insert order matches the `created_at` clock; reload renders identical history.
