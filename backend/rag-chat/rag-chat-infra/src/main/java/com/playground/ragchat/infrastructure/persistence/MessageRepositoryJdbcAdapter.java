@@ -11,8 +11,9 @@ import com.playground.ragchat.domain.model.id.UserId;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -46,7 +47,7 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
                     setNullableInt(ps, 6, message.tokensIn());
                     setNullableInt(ps, 7, message.tokensOut());
                     setNullableInt(ps, 8, message.retrievalK());
-                    ps.setObject(9, Timestamp.from(message.createdAt()), Types.TIMESTAMP_WITH_TIMEZONE);
+                    ps.setObject(9, OffsetDateTime.ofInstant(message.createdAt(), ZoneOffset.UTC));
                 });
         return message;
     }
