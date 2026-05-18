@@ -31,12 +31,6 @@ dependencies {
     // Spring AI 1.0.0 BOM.
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
 
-    // Force RestClient to use Apache HttpClient5 (HTTP/1.1 default) instead of
-    // the JDK HttpClient (HTTP/2 default). spark-inference-gateway's vLLM 0.19
-    // backend is HTTP/1.1-only — JDK HttpClient's h2c upgrade attempt is rejected
-    // with `Invalid HTTP request received.` and surfaces as HTTP 400.
-    implementation("org.apache.httpcomponents.client5:httpclient5")
-
     // ADR-13 §F — pgvector type bindings (Java client + Hibernate
     // dialect helpers). Used by the JPA adapter's native-SQL inserts.
     implementation("com.pgvector:pgvector:0.1.6")

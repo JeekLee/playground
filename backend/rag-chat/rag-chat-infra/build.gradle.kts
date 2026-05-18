@@ -31,14 +31,6 @@ dependencies {
     // Note: Spring AI 1.0.0 GA renamed the starter to spring-ai-starter-model-openai.
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
 
-    // Force RestClient to use Apache HttpClient5 (HTTP/1.1 default) instead of
-    // the JDK HttpClient (HTTP/2 default). spark-inference-gateway's vLLM 0.19
-    // backend is HTTP/1.1-only — JDK HttpClient's h2c upgrade is rejected with
-    // `Invalid HTTP request received.` (HTTP 400). Applies to the sync embedding
-    // call + the non-streaming chat auto-title call; streaming `.stream()` uses
-    // WebClient (Reactor Netty), which negotiates HTTP/1.1 gracefully.
-    implementation("org.apache.httpcomponents.client5:httpclient5")
-
     // ADR-14 §4 — Resilience4j 2.2.x circuit breaker shared by the
     // ChatGenerationPort + EmbeddingPort adapters (breaker name spark-gateway).
     // resilience4j-reactor is needed for CircuitBreakerOperator on Flux.
