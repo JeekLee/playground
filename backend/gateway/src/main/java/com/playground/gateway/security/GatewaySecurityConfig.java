@@ -76,6 +76,11 @@ public class GatewaySecurityConfig {
                         .pathMatchers(HttpMethod.GET, "/api/docs/owner").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/docs/search").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/docs/{id:[0-9a-fA-F-]{36}}").permitAll()
+                        // M2 S3 / ADR-12 §10: POST /api/docs/{uuid}/view is anonymous-OK
+                        // (view-counter endpoint dedups via PLAYGROUND_ANON cookie). The
+                        // {id}/like routes (POST + DELETE) remain authenticated and fall
+                        // through to the catch-all below.
+                        .pathMatchers(HttpMethod.POST, "/api/docs/{id:[0-9a-fA-F-]{36}}/view").permitAll()
                         // GET /api/docs (community feed + per-author feed via ?author=);
                         // POST /api/docs (create) still requires auth — explicit HttpMethod.GET.
                         .pathMatchers(HttpMethod.GET, "/api/docs", "/api/docs/").permitAll()

@@ -7,6 +7,14 @@ server:
 spring:
   application:
     name: docs-api
+  data:
+    # M2 S3 (ADR-12 §10): Redis-backed view-dedup keys. Same Redis instance the
+    # gateway uses for Spring Session (M1) — co-tenanted on a single host-local
+    # container per ADR-05. No namespace clash because the view-claim keys are
+    # prefixed `view:` while gateway session keys live under `spring:session:`.
+    redis:
+      host: ${REDIS_HOST:redis-playground}
+      port: ${REDIS_PORT:6379}
   servlet:
     multipart:
       # Aligns with the 1 MB raw-MD body cap pinned by ADR-12 §4 /

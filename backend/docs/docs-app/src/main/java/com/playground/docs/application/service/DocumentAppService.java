@@ -7,6 +7,7 @@ import com.playground.docs.application.dto.DocumentDetailDto;
 import com.playground.docs.application.dto.MyDocumentListItemDto;
 import com.playground.docs.application.dto.PatchDocumentCommand;
 import com.playground.docs.application.port.IdentityLookupPort;
+import com.playground.docs.application.repository.DocumentLikeRepository;
 import com.playground.docs.application.repository.DocumentRepository;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.event.DocumentDeleted;
@@ -26,6 +27,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,17 +64,42 @@ public class DocumentAppService {
     private final DocumentRepository repository;
     private final ApplicationEventPublisher events;
     private final IdentityLookupPort identityLookup;
+    /** M2 S3: optional like repository so getById can populate {@code likedByMe}. */
+    private final DocumentLikeRepository likeRepository;
     private final Clock clock;
 
+    /**
+     * Primary constructor (S3) — Spring picks this one in production wiring
+     * via the explicit {@link Autowired}. The shorter S2-compat overload
+     * below routes through this constructor with {@code likeRepository = null}.
+     *
+     * <p>The {@code likeRepository} parameter is optional: a null value
+     * disables the {@code likedByMe} join and the detail DTO falls back to
+     * S2 behavior ({@code likedByMe == null}). This keeps the older five-arg
+     * unit tests in {@code DocumentAppServiceTest} working without a fresh
+     * wiring change.
+     */
+    @Autowired
+    public DocumentAppService(
+            DocumentRepository repository,
+            ApplicationEventPublisher events,
+            IdentityLookupPort identityLookup,
+            DocumentLikeRepository likeRepository,
+            Clock clock) {
+        this.repository = repository;
+        this.events = events;
+        this.identityLookup = identityLookup;
+        this.likeRepository = likeRepository;
+        this.clock = clock;
+    }
+
+    /** S2-compat constructor for tests pre-dating the like repo. */
     public DocumentAppService(
             DocumentRepository repository,
             ApplicationEventPublisher events,
             IdentityLookupPort identityLookup,
             Clock clock) {
-        this.repository = repository;
-        this.events = events;
-        this.identityLookup = identityLookup;
-        this.clock = clock;
+        this(repository, events, identityLookup, null, clock);
     }
 
     // --- CRUD ---
@@ -102,10 +129,33 @@ public class DocumentAppService {
 
     @Transactional(readOnly = true)
     public List<MyDocumentListItemDto> listMine(UUID callerId) {
+        return listMine(callerId, null);
+    }
+
+    /**
+     * S3 overload: optionally scope to a single folder path per M2 spec §6.1
+     * row {@code GET /api/docs?scope=mine&path={folder}}. Null/blank path →
+     * caller's full mine list.
+     */
+    @Transactional(readOnly = true)
+    public List<MyDocumentListItemDto> listMine(UUID callerId, String pathFilter) {
         AuthorId author = AuthorId.of(callerId);
-        return repository.findAllByAuthor(author).stream()
+        List<Document> rows = (pathFilter == null || pathFilter.isBlank())
+                ? repository.findAllByAuthor(author)
+                : repository.findAllByAuthorAndPath(author, normalizePath(pathFilter));
+        return rows.stream()
                 .map(d -> MyDocumentListItemDto.from(d, d.viewCount(), d.likeCount()))
                 .toList();
+    }
+
+    /**
+     * Normalize a path-filter parameter: validate via {@link DocumentPath}
+     * (single source of truth for format rules) and return its canonical
+     * form. Rejects malformed paths with the same {@code PATH_INVALID}
+     * error code the create path uses.
+     */
+    private static String normalizePath(String raw) {
+        return parsePath(raw).value();
     }
 
     /**
@@ -123,7 +173,8 @@ public class DocumentAppService {
         if (!isReadableBy(doc, callerId)) {
             throw new DocumentNotFoundException(id);
         }
-        return toDetailDto(doc, callerOwnsRow(doc, callerId));
+        Boolean likedByMe = resolveLikedByMe(id, callerId);
+        return toDetailDto(doc, callerOwnsRow(doc, callerId), likedByMe);
     }
 
     /** Internal body-fetch for M3 rag-ingestion (ADR-12 §2). No auth filter; visibility-agnostic. */
@@ -267,9 +318,31 @@ public class DocumentAppService {
      * HTTP critical path.
      */
     private DocumentDetailDto toDetailDto(Document doc, boolean authorOwnsRow) {
+        return toDetailDto(doc, authorOwnsRow, null);
+    }
+
+    /**
+     * S3 overload — wires the {@code likedByMe} flag (resolved by
+     * {@link #resolveLikedByMe} when the caller is authenticated; null
+     * otherwise per spec §6.4 — anonymous detail responses omit the flag).
+     */
+    private DocumentDetailDto toDetailDto(Document doc, boolean authorOwnsRow, Boolean likedByMe) {
         AuthorDto author = authorOwnsRow ? null : resolveAuthor(doc.authorId().value());
-        // S2: likedByMe is null (the document_likes table lands in S3).
-        return DocumentDetailDto.from(doc, author, doc.viewCount(), doc.likeCount(), null);
+        return DocumentDetailDto.from(doc, author, doc.viewCount(), doc.likeCount(), likedByMe);
+    }
+
+    /**
+     * S3 helper: when the caller is authenticated, ask the like repository
+     * whether the (doc, caller) pair exists. Returns {@code null} for
+     * anonymous callers per spec §6.4 ({@code likedByMe?} is absent on
+     * anonymous responses). Tolerates a null {@code likeRepository} (test
+     * paths constructed via the S2-compat constructor).
+     */
+    private Boolean resolveLikedByMe(DocumentId documentId, UUID callerId) {
+        if (callerId == null || likeRepository == null) {
+            return null;
+        }
+        return likeRepository.existsBy(documentId, AuthorId.of(callerId));
     }
 
     private AuthorDto resolveAuthor(UUID authorUserId) {

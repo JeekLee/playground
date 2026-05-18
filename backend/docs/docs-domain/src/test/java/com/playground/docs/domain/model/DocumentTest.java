@@ -107,6 +107,56 @@ class DocumentTest {
         assertThat(edited.createdAt()).isEqualTo(doc.createdAt());
     }
 
+    // --- M2 S3 counter mutations (Document aggregate) ---
+
+    @Test
+    void incrementViewCount_bumps_counter_only_does_not_touch_updatedAt() {
+        Document doc = newDoc();
+        Document bumped = doc.incrementViewCount();
+
+        assertThat(bumped.viewCount()).isEqualTo(1L);
+        assertThat(bumped.likeCount()).isEqualTo(doc.likeCount());
+        // View increments don't masquerade as edits — updatedAt stays put
+        // (per Document.incrementViewCount javadoc).
+        assertThat(bumped.updatedAt()).isEqualTo(doc.updatedAt());
+        assertThat(bumped.id()).isEqualTo(doc.id());
+    }
+
+    @Test
+    void incrementLikeCount_bumps_only_like_counter() {
+        Document doc = newDoc();
+        Document bumped = doc.incrementLikeCount();
+
+        assertThat(bumped.likeCount()).isEqualTo(1L);
+        assertThat(bumped.viewCount()).isEqualTo(doc.viewCount());
+        assertThat(bumped.updatedAt()).isEqualTo(doc.updatedAt());
+    }
+
+    @Test
+    void decrementLikeCount_floors_at_zero_and_is_idempotent_below_zero() {
+        Document doc = newDoc();
+        // newDoc() has likeCount=0; decrementing returns the same instance
+        // (idempotent against an already-zero counter per the brief: "Don't
+        // let it go below 0").
+        Document decremented = doc.decrementLikeCount();
+        assertThat(decremented).isSameAs(doc);
+        assertThat(decremented.likeCount()).isEqualTo(0L);
+    }
+
+    @Test
+    void decrementLikeCount_removes_one_when_positive() {
+        Document doc = newDoc().incrementLikeCount().incrementLikeCount();
+        assertThat(doc.likeCount()).isEqualTo(2L);
+
+        Document once = doc.decrementLikeCount();
+        Document twice = once.decrementLikeCount();
+        Document thrice = twice.decrementLikeCount(); // floor at 0
+
+        assertThat(once.likeCount()).isEqualTo(1L);
+        assertThat(twice.likeCount()).isEqualTo(0L);
+        assertThat(thrice.likeCount()).isEqualTo(0L);
+    }
+
     @Test
     void isAuthoredBy_matches_when_author_id_equal() {
         AuthorId author = AuthorId.of(UUID.randomUUID());

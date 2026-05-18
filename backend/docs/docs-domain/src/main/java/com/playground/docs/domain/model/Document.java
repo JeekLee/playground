@@ -278,6 +278,81 @@ public final class Document {
         return changeVisibility(Visibility.PRIVATE, now);
     }
 
+    /**
+     * Counter mutation: bump {@code view_count} by one. Per M2 spec §10
+     * "View dedup correctness" the dedup happens upstream (Redis claim in
+     * {@code ViewIncrementService}); this aggregate-level helper assumes the
+     * caller has already claimed the view and merely produces the next state.
+     *
+     * <p>Does <em>not</em> bump {@code updatedAt} — view increments are a
+     * background-style counter mutation; surfacing them as a recent-edit signal
+     * on {@code /docs/mine} would mis-represent author activity (the author
+     * didn't edit the doc; a reader visited it). The denormalized column is
+     * updated transactionally by the JPA-layer increment query so the aggregate
+     * itself never need round-trip through a save() call.
+     */
+    public Document incrementViewCount() {
+        return new Document(
+                this.id,
+                this.authorId,
+                this.title,
+                this.body,
+                this.visibility,
+                this.path,
+                this.viewCount + 1,
+                this.likeCount,
+                this.publishedAt,
+                this.createdAt,
+                this.updatedAt);
+    }
+
+    /**
+     * Counter mutation: bump {@code like_count} by one. Per M2 spec §10
+     * "Like idempotency" the per-user upsert happens at the
+     * {@code document_likes} table layer; this helper produces the next
+     * aggregate state for code paths that round-trip the aggregate.
+     *
+     * <p>Like {@link #incrementViewCount()}, does not bump {@code updatedAt}.
+     */
+    public Document incrementLikeCount() {
+        return new Document(
+                this.id,
+                this.authorId,
+                this.title,
+                this.body,
+                this.visibility,
+                this.path,
+                this.viewCount,
+                this.likeCount + 1,
+                this.publishedAt,
+                this.createdAt,
+                this.updatedAt);
+    }
+
+    /**
+     * Counter mutation: decrement {@code like_count} by one, clamped to 0
+     * (M2 spec §10 "Like idempotency" + S3 brief: "Don't let it go below 0").
+     * Idempotent against an already-zero counter — returns the existing
+     * instance verbatim.
+     */
+    public Document decrementLikeCount() {
+        if (this.likeCount <= 0) {
+            return this;
+        }
+        return new Document(
+                this.id,
+                this.authorId,
+                this.title,
+                this.body,
+                this.visibility,
+                this.path,
+                this.viewCount,
+                this.likeCount - 1,
+                this.publishedAt,
+                this.createdAt,
+                this.updatedAt);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

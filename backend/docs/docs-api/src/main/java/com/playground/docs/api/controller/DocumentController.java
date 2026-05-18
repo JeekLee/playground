@@ -131,16 +131,20 @@ public class DocumentController {
         // ---- scope=mine: caller's docs ----
         if ("mine".equals(scope)) {
             UUID caller = requireUserId(userIdHeader);
-            if (author != null || pathFilter != null) {
-                // Path-filter on mine-scope lands in S3 (folder UI); reject in S2.
+            // M2 S3: path filter is now supported (folder-pane right list);
+            // author filter on mine-scope is still meaningless (caller is the
+            // only author scope can resolve to).
+            if (author != null) {
                 ExceptionCreator.of(DocsErrorCode.SCOPE_FILTER_UNSUPPORTED).throwIt();
             }
-            return ResponseEntity.ok(MyDocumentListResponse.from(docService.listMine(caller)));
+            return ResponseEntity.ok(
+                    MyDocumentListResponse.from(docService.listMine(caller, pathFilter)));
         }
         // ---- scope present but not "mine": invalid ----
         if (scope != null && !scope.isBlank()) {
             ExceptionCreator.of(DocsErrorCode.SCOPE_REQUIRED).throwIt();
         }
+        UUID caller = parseOptionalUserId(userIdHeader);
         // ---- author=<uuid>: per-author public feed ----
         if (author != null && !author.isBlank()) {
             UUID authorId;
@@ -150,10 +154,12 @@ public class DocumentController {
                 ExceptionCreator.of(DocsErrorCode.AUTHOR_PARAM_INVALID).throwIt();
                 return null; // unreachable
             }
-            return ResponseEntity.ok(DocListResponse.from(feedService.authorFeed(authorId, cursor)));
+            return ResponseEntity.ok(
+                    DocListResponse.from(feedService.authorFeed(authorId, cursor, caller)));
         }
         // ---- default: community feed ----
-        return ResponseEntity.ok(DocListResponse.from(feedService.communityFeed(cursor)));
+        return ResponseEntity.ok(
+                DocListResponse.from(feedService.communityFeed(cursor, caller)));
     }
 
     @GetMapping("/{id}")

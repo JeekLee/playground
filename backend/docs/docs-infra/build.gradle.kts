@@ -17,6 +17,12 @@ dependencies {
     // M2 S2: Caffeine-backed cache for identity lookups + owner resolution.
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
+    // M2 S3 (ADR-12 §10): Redis-backed view dedup. The Servlet-stack starter
+    // (non-reactive) matches docs-api's WebMvc transport — the reactive
+    // starter the gateway uses pulls in Netty and conflicts with Tomcat's
+    // servlet container.
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
     // For the Testcontainers-driven integration test we need the -api class as
     // the @SpringBootTest entrypoint.
     testImplementation(project(":docs:docs-api"))
