@@ -46,6 +46,12 @@ export interface DocDetailDto {
   excerpt: string;
   visibility: DocVisibility;
   path: string;
+  authorId: string;
+  // Spec §6.4 declares this non-nullable, but defensive code paths fall
+  // back to `authorId` when the cross-BC identity lookup misses (e.g.,
+  // identity-api transient outage). Backend returns a placeholder
+  // {id: authorId, displayName: 'Unknown', avatarUrl: null} so callers
+  // can treat `author` as always present in normal operation.
   author: AuthorDto;
   viewCount: number;
   likeCount: number;

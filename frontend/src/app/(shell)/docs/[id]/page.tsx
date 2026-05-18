@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       type: 'article',
       url: `/docs/${doc.id}`,
       publishedTime: doc.publishedAt,
-      authors: [doc.author.displayName],
+      authors: doc.author ? [doc.author.displayName] : [],
     },
     twitter: {
       card: 'summary_large_image',
@@ -71,8 +71,12 @@ export default async function DocByIdRoute({ params, searchParams }: PageProps) 
   }
 
   const doc = docResult.value;
+  // Fall back to authorId-based ownership check when author lookup missed.
+  // Spec §6.4 declares author non-nullable but defending against an older
+  // backend / partial outages is cheap insurance.
   const isOwner =
-    me.kind === 'authenticated' && me.user.id === doc.author.id;
+    me.kind === 'authenticated' &&
+    (doc.author ? me.user.id === doc.author.id : me.user.id === doc.authorId);
 
   if (isOwner) {
     return <DocEditor doc={doc} publishedFlash={searchParams.published === '1'} />;
