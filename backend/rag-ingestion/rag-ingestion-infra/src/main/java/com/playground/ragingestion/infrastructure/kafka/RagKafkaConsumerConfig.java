@@ -59,8 +59,16 @@ public class RagKafkaConsumerConfig {
         return factory;
     }
 
+    /**
+     * Default-named {@code producerFactory} so Spring Boot's
+     * {@code KafkaAutoConfiguration} skips its own (the auto config is
+     * {@code @ConditionalOnMissingBean(ProducerFactory.class)}). Used by
+     * both the DLQ recoverer and the Spring Modulith Kafka externalizer
+     * (which autowires {@code KafkaOperations} — satisfied by the
+     * default-named {@code kafkaTemplate} bean below).
+     */
     @Bean
-    public ProducerFactory<String, Object> ragDlqProducerFactory(
+    public ProducerFactory<String, Object> producerFactory(
             @Value("${spring.kafka.bootstrap-servers:kafka-playground:9092}") String bootstrap) {
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
@@ -71,10 +79,16 @@ public class RagKafkaConsumerConfig {
         return new DefaultKafkaProducerFactory<>(props);
     }
 
+    /**
+     * Default-named {@code kafkaTemplate} so the Spring Modulith
+     * {@code KafkaEventExternalizerConfiguration} resolves its
+     * {@code KafkaOperations} dependency. Spring Boot's auto KafkaTemplate
+     * is skipped because we already provide a ProducerFactory bean above.
+     */
     @Bean
-    public KafkaTemplate<String, Object> ragDlqKafkaTemplate(
-            ProducerFactory<String, Object> ragDlqProducerFactory) {
-        return new KafkaTemplate<>(ragDlqProducerFactory);
+    public KafkaTemplate<String, Object> kafkaTemplate(
+            ProducerFactory<String, Object> producerFactory) {
+        return new KafkaTemplate<>(producerFactory);
     }
 
     /**
@@ -84,9 +98,9 @@ public class RagKafkaConsumerConfig {
      * within the bounds of the smaller partition count.
      */
     @Bean
-    public DefaultErrorHandler ragKafkaErrorHandler(KafkaTemplate<String, Object> ragDlqKafkaTemplate) {
+    public DefaultErrorHandler ragKafkaErrorHandler(KafkaTemplate<String, Object> kafkaTemplate) {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
-                ragDlqKafkaTemplate,
+                kafkaTemplate,
                 (record, ex) -> new TopicPartition(record.topic() + ".dlq", record.partition() % 3));
 
         ExponentialBackOffWithMaxRetries backOff = new ExponentialBackOffWithMaxRetries(2);
