@@ -431,7 +431,9 @@ Server-side rendering required — unfurlers (Slack, KakaoTalk, X, Discord) don'
 
 ## 8. RAG handoff trace (informational — confirms ADR-09)
 
-> **Amended 2026-05-18 (M3 PRD cycle):** earlier draft described M4 with two endpoints (`/api/rag/chat/public` + `/api/rag/chat/private`) and an owner-only public corpus. Superseded by the single-endpoint, header-switched model below. Canonical statement of the M4 retrieval contract lives in `docs/prd/M3-rag-ingestion.md` §"M4 retrieval contract".
+> **Amended 2026-05-18 (M3 PRD cycle):** earlier draft described M4 with two endpoints (`/api/rag/chat/public` + `/api/rag/chat/private`) and an owner-only public corpus. Superseded by the single-endpoint, header-switched model below.
+>
+> **Re-amended 2026-05-18 (M4 ADR cycle, ADR-14):** the immediately prior "anonymous or signed-in" framing is itself superseded — `/api/rag/chat` is **authenticated-only**. Anonymous callers receive 401 at the gateway. The anonymous-corpus bullet is dropped from the M4 retrieval contract sub-list below. Canonical statement of the M4 retrieval contract lives in `docs/prd/M3-rag-ingestion.md` §"M4 retrieval contract" + ADR-14 §G.
 
 M2's only RAG responsibility is publishing accurate `docs.document.*` events. The downstream chain that gives the caller a chat grounded in documents they're allowed to see:
 
@@ -449,9 +451,9 @@ user uploads/edits doc
                                           user_id, visibility,
                                           embedding, text)
                                                                        │
-anyone starts chat in M4 (anon or auth)                                │
+an authenticated user starts chat in M4                                │
   └─ POST /api/rag/chat                                                │
-        (X-User-Id present iff signed in)  ──────────────────────────▶ │
+        (X-User-Id always present — gateway 401 on absence)  ────────▶ │
                                                                        │
                                                                        retrieves chunks
                                                                        WHERE visibility = 'public'
@@ -470,13 +472,12 @@ If the author later toggles visibility, `docs.document.visibility-changed` re-ta
 
 ### M4 retrieval contract (canonical — supersedes any earlier reading)
 
-- **Single endpoint**: `/api/rag/chat`. The legacy `/api/rag/chat/public` and `/api/rag/chat/private` split is removed.
-- **Anonymous caller** (`X-User-Id` absent — gateway does not inject it on public routes; see ADR-09 §"Anonymous identity contract"): retrieval corpus = `WHERE visibility = 'public'`. Community-wide public docs from every author.
+- **Single endpoint**: `/api/rag/chat`, **authenticated-only**. Anonymous callers receive 401 at the gateway. The legacy `/api/rag/chat/public` and `/api/rag/chat/private` split is removed; the interim "anonymous or signed-in" framing is also superseded (re-revised 2026-05-18 by ADR-14).
 - **Authenticated caller** (`X-User-Id` present): retrieval corpus = `WHERE visibility = 'public' OR (user_id = X-User-Id AND visibility = 'private')`. All public docs from every author, plus the caller's own private docs.
-- **Never visible**: other users' `private` docs — no caller can retrieve them via M4.
+- **Never visible**: other users' `private` docs, AND the entire chat surface is closed to unauthenticated callers (no anonymous retrieval corpus exists at all).
 - M3's job is to keep the `(user_id, visibility)` pair on every chunk row accurate at all times so the WHERE clause above is the only filter M4 needs. No additional M3 API surface for retrieval.
 
-`/api/rag/chat`'s public-route policy in ADR-09 will be updated in the M4 per-milestone ADR (or an ADR-09 amendment) when M4 ships.
+`/api/rag/chat`'s public-route policy in ADR-09 is updated via the ADR-14 amendment block — the public allowlist row is removed and the rate-limit section is rewritten for authenticated traffic only.
 
 ## 9. Markdown feature scope (M2)
 

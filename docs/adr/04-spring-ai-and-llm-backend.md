@@ -97,3 +97,31 @@ not change this ADR.
 - Negative: No fallback model — if `spark-inference-gateway` is down,
   `rag-chat` and `rag-ingestion` fail. Acceptable for a dev-only personal
   service.
+
+## Amendment (2026-05-18, ADR-14) — ChatClient streaming exercised by rag-chat
+
+ADR-14 (M4 RAG-Chat per-milestone) **confirms** every pin in this ADR
+with **no semantic change**. The amendment is informational, recording
+the first end-to-end exercise of the streaming path.
+
+- **Streaming `ChatClient`** — M4 invokes
+  `chatClient.prompt().messages(...).stream().chatResponse()`, mapping
+  the returned `Flux<ChatResponse>` one-to-one to SSE `token` events on
+  the gateway-routed `POST /api/rag/chat` endpoint (per ADR-14 §1). The
+  base URL (`http://host.docker.internal:10080`), the model name
+  (`Qwen3-32B`), and the default `chat.options.temperature=0.2` are
+  unchanged. ADR-14 §6 applies a per-call `temperature=0.1` override for
+  the auto-title path only; it is a Spring AI `ChatOptions` override per
+  call, not a property change.
+- **Query-time `EmbeddingModel`** — M4's per-turn query embedding uses
+  the same `EmbeddingModel.embed(text)` shape M3 uses for chunk
+  embedding (per ADR-13 §10). BGE-M3, 1024-dim dense output, OpenAI-
+  compatible `/v1/embeddings` endpoint — unchanged.
+- **Resilience4j wrap** — ADR-14 §4 wraps both `ChatClient` and
+  `EmbeddingModel` invocations with a Resilience4j `CircuitBreaker`
+  named `spark-gateway`. ADR-04's "No fallback model" consequence
+  remains in force; the breaker short-circuits faster but does not
+  introduce a substitute model.
+
+See `docs/adr/14-m4-rag-chat.md` §1 + §4 + §6 + §17 for the full
+specification.
