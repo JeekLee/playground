@@ -273,6 +273,51 @@ services:
       retries: 10
     # NO `ports:` block — rag-ingestion-api is compose-internal only (ADR-08).
 
+  # --- M4: rag-chat-api (RAG-Chat BC quadruplet runnable per ADR-01 v2 + ADR-14) ---
+  # No host port — gateway routes /api/rag/chat/** here per ADR-07 + ADR-14 §2.
+  # No Kafka dependency — rag-chat publishes/consumes no events (ADR-14 §1 + §A).
+  # Cross-schema SELECT into `rag.document_chunks`, `docs.documents`, and
+  # `identity.users` runs via JDBC against postgres-playground (ADR-14 §3 + §G.3);
+  # docs-api / rag-ingestion-api are NOT depends_on targets (no HTTP coupling).
+  # Reaches spark-inference-gateway (Qwen3-32B chat + BGE-M3 query embeddings)
+  # via host.docker.internal:10080 per ADR-04 + ADR-14 §B.
+  rag-chat-api:
+    build:
+      context: ../backend
+      dockerfile: rag-chat/rag-chat-api/Dockerfile
+    container_name: rag-chat-api
+    depends_on:
+      postgres-playground:
+        condition: service_healthy
+      redis-playground:
+        condition: service_healthy
+      gateway:
+        condition: service_started     # gateway must be up for /api/rag/chat/** routing
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # per ADR-04 — reach spark-inference-gateway
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-playground}
+      POSTGRES_USER: ${POSTGRES_USER:-playground}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
+      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # spark-inference-gateway via the OpenAI-compatible vLLM endpoint (ADR-04 + ADR-14 §B).
+      # Same defaults as rag-ingestion-api (M3) — shared host-process gateway at port 10080.
+      SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
+      SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
+      # Retrieval K (ADR-14 §7) — overridable for experiments without recompile.
+      PLAYGROUND_RAG_CHAT_RETRIEVAL_K: ${PLAYGROUND_RAG_CHAT_RETRIEVAL_K:-6}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:18084/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    # NO `ports:` block — rag-chat-api is compose-internal only (ADR-08).
+    # Browser traffic reaches it via gateway:18080 → /api/rag/chat/** → http://rag-chat-api:18084.
+
   # --- M1: frontend (Next.js SSR) per ADR-06 + ADR-07 forwarding map ---
   # No host port — gateway routes `/**` here.
   frontend:
