@@ -68,6 +68,7 @@ export function ShellChrome({ user, docsBadge, children }: ShellChromeProps) {
     if (pathname === '/docs/new') return 'Documents / New';
     if (pathname === '/docs/search') return 'Documents / Search';
     if (pathname.startsWith('/docs/')) return 'Documents';
+    if (pathname === '/chat' || pathname.startsWith('/chat/')) return 'Home / Chat';
     return 'Home';
   }, [pathname]);
 
