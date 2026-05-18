@@ -1,11 +1,12 @@
 /**
- * SSE consumer for `POST /api/rag/chat/sessions/{id}/messages`.
+ * SSE consumer for `POST /api/rag/chat` (M4 spec §5.1).
  *
  * Why hand-rolled (not `EventSource`):
  * - `EventSource` only does `GET` and cannot carry a JSON request body.
- *   The chat turn endpoint is a POST with `{ message }` payload per spec
- *   §5.1, so we drive the SSE wire format ourselves via `fetch()` +
- *   `ReadableStream` and parse `event: foo\ndata: {…}\n\n` frames.
+ *   The chat turn endpoint is a POST with `{ sessionId, message }` payload
+ *   per spec §5.1, so we drive the SSE wire format ourselves via
+ *   `fetch()` + `ReadableStream` and parse `event: foo\ndata: {…}\n\n`
+ *   frames.
  * - This also lets us pass `AbortSignal` directly, which is the entire
  *   Stop-button contract (P95 ≤ 200ms abort per spec §12 / ADR-14 §13).
  *
@@ -148,7 +149,7 @@ export async function startChatStream(options: StartChatStreamOptions): Promise<
 
   let res: Response;
   try {
-    res = await fetch(`/api/rag/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+    res = await fetch('/api/rag/chat', {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
@@ -156,7 +157,7 @@ export async function startChatStream(options: StartChatStreamOptions): Promise<
         'content-type': 'application/json',
         ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}),
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ sessionId, message }),
       signal,
     });
   } catch (err) {
