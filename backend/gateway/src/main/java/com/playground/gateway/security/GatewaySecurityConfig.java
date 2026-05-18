@@ -47,8 +47,17 @@ public class GatewaySecurityConfig {
                         .pathMatchers("/oauth2/**", "/login/**", "/logout").permitAll()
                         // Actuator probes (compose healthcheck, ops).
                         .pathMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                        // Public SSR routes.
-                        .pathMatchers(HttpMethod.GET, "/", "/docs/public/**", "/chat", "/metrics").permitAll()
+                        // Public SSR routes. The frontend itself gates auth-required pages
+                        // (`/docs/mine`, `/docs/new`) via SSR redirect to `/login` — the
+                        // gateway must let the request through so the Next.js handler runs.
+                        // Per M2 spec v5 §6.2 the legacy `/docs/public/**` prefix is gone;
+                        // the unified `/docs` namespace lives at:
+                        //   /docs                 community feed (auth optional)
+                        //   /docs/{uuid}          single doc (auth optional, frontend renders)
+                        //   /docs/search          search results page (auth optional, scope-aware)
+                        //   /docs/mine            caller's docs (frontend redirects to /login)
+                        //   /docs/new             new doc editor (frontend redirects to /login)
+                        .pathMatchers(HttpMethod.GET, "/", "/docs", "/docs/**", "/chat", "/metrics").permitAll()
                         // Public API routes per ADR-09 allowlist.
                         // ADR-12 amendment to ADR-09: the legacy /api/docs/public/** prefix is
                         // removed; the unified namespace gates per-doc visibility inside docs-api.
