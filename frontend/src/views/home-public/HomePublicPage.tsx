@@ -9,12 +9,10 @@ import type { DocumentListItem } from '@/entities/document';
  * Layout shell (Sidebar + Topbar) lives in the root layout; this page
  * renders only the main column body.
  *
- * M2 S2 delta: the `Latest documents` section is now the owner-curated
- * `Latest published docs` slot — see M2 spec v5 §6.3 + §7.3 and design
- * doc §"Home composition deltas". When the owner has zero published docs
- * (or `PLAYGROUND_OWNER_GOOGLE_SUB` is unset on docs-api), the section
- * falls back to a friendly empty-state card that links to the community
- * feed so the visit doesn't read as broken.
+ * The `Latest published docs` section surfaces the community-wide
+ * latest feed (no author filter); when zero docs are published yet,
+ * the section falls back to a friendly empty-state card that links to
+ * `/docs` so the visit doesn't read as broken.
  */
 
 export interface HomePublicPageProps {
@@ -67,13 +65,13 @@ function LatestDocsSection({ items }: { items: DocumentListItem[] }) {
       {items.length === 0 ? (
         <article className="flex flex-col items-center gap-sm rounded-md border border-border bg-surface p-xl text-center shadow-card">
           <p className="text-eyebrow text-accent">M2 — Documents</p>
-          <h3 className="text-h3 text-text">No published docs from the owner yet.</h3>
+          <h3 className="text-h3 text-text">No published docs yet.</h3>
           <p className="max-w-[560px] text-small text-text-muted">
-            Head to{' '}
+            Sign in to publish the first one, or head to{' '}
             <Link href="/docs" className="font-medium text-accent hover:text-accent-hover">
               the community feed
             </Link>{' '}
-            to see everyone else&rsquo;s writing.
+            once the corpus fills in.
           </p>
         </article>
       ) : (

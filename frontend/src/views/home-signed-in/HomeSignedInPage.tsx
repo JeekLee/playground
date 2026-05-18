@@ -10,9 +10,9 @@ import type { User } from '@/entities/user';
  * footer + topbar account pill are owned by the layout (they swap on
  * `user`); this page changes only the hero subtitle.
  *
- * M2 S2 delta: the `Latest documents` section is replaced by the
- * owner-curated `Latest published docs` section. See
- * `HomePublicPage` for the full rationale.
+ * The `Latest published docs` section surfaces the community-wide
+ * latest feed (no author filter). See `HomePublicPage` for the full
+ * rationale.
  */
 
 export interface HomeSignedInPageProps {
@@ -66,7 +66,7 @@ function LatestDocsSection({ items }: { items: DocumentListItem[] }) {
       {items.length === 0 ? (
         <article className="flex flex-col items-center gap-sm rounded-md border border-border bg-surface p-xl text-center shadow-card">
           <p className="text-eyebrow text-accent">M2 — Documents</p>
-          <h3 className="text-h3 text-text">No published docs from the owner yet.</h3>
+          <h3 className="text-h3 text-text">No published docs yet.</h3>
           <p className="max-w-[560px] text-small text-text-muted">
             Publish your first document from{' '}
             <Link

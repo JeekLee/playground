@@ -37,7 +37,7 @@ This spec **does not** describe the M2 PRD's user-story list, the architect's po
 - **Single `/docs` URL namespace.** The `/public` path prefix is removed entirely. Every document has a single canonical URL: `/docs/{id}` where `id` is the document's UUID.
 - **Authorization-based access** on single-doc endpoint: `(visibility='public') OR (X-User-Id == doc.user_id)` returns 200; anything else returns 404 (do not leak existence of private docs).
 - **Community-wide public document list** (`GET /api/docs`) — every author's public documents, sorted `published_at DESC`. Owner-filter is removed from this list.
-- **Owner-curated home.** The home page's `Latest documents` section retains the owner filter (consumes `GET /api/docs?author={ownerUserId}&visibility=public` — see §6). This is the only owner-filtered surface in M2.
+- **Community-wide home (revised 2026-05-18).** The home page's `Latest published docs` section sources the community-wide latest feed (`GET /api/docs?limit=6`, no author filter). v5 originally kept this owner-curated; that constraint was dropped after the multi-author shift made the section read as a hole when the owner hadn't published recently. See §7.3 for the current treatment.
 - Private read/edit surfaces: `/docs/mine` (my list with directory hierarchy), `/docs/new`, `/docs/{id}` (edit when owner; read when not).
 - **Directory hierarchy.** Each document has a `path TEXT NOT NULL DEFAULT '/'` column on `docs.documents`. Folders are **implicit** — derived from distinct path prefixes. No separate `folders` table. UI exposes a left tree pane on `/docs/mine` that lists status filters + folder tree with counts. Move action and folder ops are per-author scoped.
 - **Full-text search backed by OpenSearch** — `GET /api/docs/search` with `mine` and `public` scopes, fed by a Kafka consumer inside the docs service that mirrors writes to OpenSearch.
@@ -230,7 +230,7 @@ There is no `/api/docs/public/*` prefix. Every route lives under `/api/docs/*` a
 | Method | Path | Auth | Body | Returns |
 |---|---|---|---|---|
 | GET | `/api/docs` | optional | — | Community feed: documents with `visibility='public'`, all authors. Sort `published_at DESC`. Cursor pagination, page size 20. Returns `{ items: DocListItem[], nextCursor: string? }`. |
-| GET | `/api/docs?author={userId}` | optional | — | All public documents by a specific author. Sort `published_at DESC`. Used by the home for the owner feed: home calls `/api/docs?author={ownerUserId}`. (Owner's `userId` is resolved from `PLAYGROUND_OWNER_GOOGLE_SUB` env, see §6.3.) |
+| GET | `/api/docs?author={userId}` | optional | — | All public documents by a specific author. Sort `published_at DESC`. Available for future per-author profile views; the home no longer uses it (revised 2026-05-18 — see §7.3). |
 | GET | `/api/docs?scope=mine` | required | — | Caller's own documents, all visibilities. Cursor pagination; sort `updated_at DESC`. May combine with `&path={folder}` to filter to a folder. |
 | GET | `/api/docs?scope=mine&path={folder}` | required | — | Caller's own documents in a given folder path. |
 | GET | `/api/docs/folders` | required | — | Caller's folder tree: `{ items: [{ path: '/agents/', count: 8 }, ...] }`. Computed as `SELECT path, COUNT(*) FROM docs.documents WHERE user_id=? GROUP BY path`. |
@@ -259,15 +259,13 @@ These v4 routes are **deleted**:
 - `GET /api/docs/mine` (replaced by `GET /api/docs?scope=mine`)
 - `POST /api/docs/public/{slug}/view` (replaced by `POST /api/docs/{id}/view`)
 
-### 6.3 Owner resolution (used by home only)
+### 6.3 Owner resolution (no longer consumed by the home; retained for future per-author surfaces)
+
+> Revised 2026-05-18: the home no longer uses the owner feed (§7.3). The resolution + `GET /api/docs/owner` endpoint stay in place so future surfaces (per-author profile page, attribution lines, etc.) have one consistent source of truth.
 
 - `PLAYGROUND_OWNER_GOOGLE_SUB` is set in the gateway and docs service environments at deploy time.
 - On boot, the docs service resolves `owner_user_id = SELECT id FROM identity.users WHERE google_sub = $env` (or via a gateway-internal call to identity). Result is cached in memory.
-- The frontend (or the BFF) calls `GET /api/docs?author={ownerUserId}` for the home's `Latest documents` section. The owner's `userId` is either:
-  - Exposed via a tiny endpoint `GET /api/docs/owner` → `{ ownerUserId: UUID }`, called once at app boot and cached, OR
-  - Pre-baked into the frontend at build time as a public env var.
-  Mechanism is a per-milestone ADR decision.
-- If the env var is unset or the lookup returns no row, the owner-feed endpoint returns an empty list (fail-closed); a startup log line at WARN flags the misconfiguration.
+- `GET /api/docs/owner` → `{ ownerUserId: UUID | null }` is still exposed for callers that need the owner id; it returns `null` when the env var is unset or the lookup misses (fail-closed). A startup log line at WARN flags the misconfiguration.
 - This env var is the system's **only** notion of "owner." No DB column, no role. All other surfaces are author-agnostic.
 
 ### 6.4 DTOs (sketch — final shapes belong to the per-milestone ADR / OpenAPI)
@@ -382,7 +380,7 @@ APPS
 
 | Route | Auth | Purpose |
 |---|---|---|
-| `/` | optional | Home. The `Latest documents` section sources from `GET /api/docs?author={ownerUserId}` (owner-filtered). |
+| `/` | optional | Home. The `Latest published docs` section sources from `GET /api/docs?limit=6` (community-wide, no author filter — see §7.3 2026-05-18 revision). |
 | `/docs` | optional | **Community feed.** All authors' public documents (consumes `GET /api/docs`). Anonymous OK. |
 | `/docs/mine` | required | **My documents.** Caller's docs in a directory-tree + list layout (left tree pane: status filters + folder tree from `GET /api/docs/folders`; right list pane: docs in selected folder from `GET /api/docs?scope=mine&path=...`). Has a Search input + `New document` button. |
 | `/docs/{id}` | optional | **Single document view/edit.** Read-only for non-owner viewers (if public). Editor for the owner (Notion-style **BlockNote** block editor, "/" command, drag-handles per block). Body roundtrips raw MD via BlockNote's `blockToMarkdownLossy` / `tryParseMarkdownToBlocks`. Top-right toolbar (owner only): `Publish` / `Unpublish` / `Delete` + a `View public` link if published. **No edit-vs-view URL split** — the route is one and the same; the surface adapts based on `X-User-Id == doc.user_id`. |
@@ -391,11 +389,13 @@ APPS
 
 ### 7.3 Home composition (supersedes design system §9 item 3)
 
-The home's `Latest documents` section sources only **owner-authored public documents** (`GET /api/docs?author={ownerUserId}`). This is the only owner-filtered surface in M2 — every other Docs surface is multi-author or per-caller.
+> Revised 2026-05-18: the section was originally owner-curated; in production it now sources the community-wide latest feed (no author filter), matching the `/docs` scope but trimmed by recency to the first 6.
 
-Visual treatment (3-column thumbnail grid) is unchanged from design system §9 except the card meta row, which extends to: `· N min · {date} · 👁 {viewCount} · ♥ {likeCount}`. Icon glyphs are placeholders — the frontend-implementer swaps to Lucide `Eye` and `Heart` (matching the spec §3 emoji-to-icon migration rule). Empty-state copy (pre-M2) is unchanged.
+The home's `Latest published docs` section sources the community-wide latest feed (`GET /api/docs?limit=6`, no author filter). Every public document by every author can land here in reverse-chronological order. The `All documents →` link still navigates to `/docs` (the same feed, paginated).
 
-On the document detail page (`/docs/{id}`, when `visibility='public'`), the same view/like counts render directly under the title in `text.muted`; the like control is an inline button (filled `accent` when `likedByMe`, outline otherwise) that toggles the like via `POST` / `DELETE /api/docs/{id}/like`. Anonymous readers see the button in a disabled "sign in to like" state. **Author row** (avatar + display name) is rendered next to the meta on public docs — since the home shows only owner docs, all home cards show JeekLee as author, but `/docs` (community feed) and `/docs/{id}` show the document's actual author.
+Visual treatment (3-column thumbnail grid) is unchanged from design system §9 except the card meta row, which extends to: `· N min · {date} · 👁 {viewCount} · ♥ {likeCount}`. Icon glyphs are placeholders — the frontend-implementer swaps to Lucide `Eye` and `Heart` (matching the spec §3 emoji-to-icon migration rule).
+
+On the document detail page (`/docs/{id}`, when `visibility='public'`), the same view/like counts render directly under the title in `text.muted`; the like control is an inline button (filled `accent` when `likedByMe`, outline otherwise) that toggles the like via `POST` / `DELETE /api/docs/{id}/like`. Anonymous readers see the button in a disabled "sign in to like" state. **Author row** (avatar + display name) is rendered next to the meta on every card — both on `/` and `/docs` — showing the document's actual author.
 
 ### 7.4 OpenGraph + share preview
 
@@ -544,7 +544,7 @@ Replaces the M2 bullet list in `docs/roadmap.md` when the M2 cycle opens.
 - [ ] Community feed integration test: seed three users' public docs + each user's private doc; assert `GET /api/docs` returns only the public ones and none of the private ones.
 
 ### Owner-curated home
-- [ ] Home renders `Latest documents` sourced from `GET /api/docs?author={ownerUserId}` where `ownerUserId` is resolved from `PLAYGROUND_OWNER_GOOGLE_SUB`. Non-owner public docs do not appear on the home.
+- [ ] Home renders `Latest published docs` sourced from the community-wide `GET /api/docs?limit=6` feed (no author filter). Every author's public docs appear in reverse-chronological order. (Revised 2026-05-18 — was owner-only.)
 
 ### Publish lifecycle
 - [ ] `POST /api/docs/{id}/publish` (with empty body) sets `visibility='public'`, sets `published_at` to `now()` if NULL (else retains existing), and the document is immediately reachable at `/docs/{id}` for anonymous readers.
