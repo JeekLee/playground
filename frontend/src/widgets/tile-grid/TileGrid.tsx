@@ -32,6 +32,7 @@ export function TileGrid() {
         className="block rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <Tile
+          active
           icon={<FileText size={18} />}
           title="Documents"
           description="Long-form notes and posts. Read publicly, sign in to write your own."
