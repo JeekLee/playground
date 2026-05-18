@@ -68,7 +68,7 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
         jdbc.batchUpdate(
                 "INSERT INTO rag.document_chunks "
                         + "(document_id, chunk_index, user_id, visibility, embedding, text, body_checksum) "
-                        + "VALUES (?, ?, ?, ?, ?::vector, ?, ?)",
+                        + "VALUES (?, ?, ?, ?, ?::public.vector, ?, ?)",
                 new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(java.sql.PreparedStatement ps, int i) throws java.sql.SQLException {

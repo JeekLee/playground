@@ -60,7 +60,7 @@ public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
                             + "FROM rag.document_chunks "
                             + "WHERE visibility = 'public' "
                             + "   OR (user_id = ? AND visibility = 'private') "
-                            + "ORDER BY embedding <=> ?::vector "
+                            + "ORDER BY embedding <=> ?::public.vector "
                             + "LIMIT ?")) {
                 ps.setObject(1, caller.value());
                 ps.setString(2, vectorLiteral);
