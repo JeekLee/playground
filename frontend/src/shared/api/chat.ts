@@ -5,9 +5,10 @@
  *
  * Wire shapes mirror the M4 spec
  * (`docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`) §5 + §10
- * verbatim. The single streaming endpoint (`POST /api/rag/chat/sessions/{id}/messages`)
- * is consumed via the SSE consumer in `./chat.sse.ts`; this module owns
- * the JSON DTO shapes + the non-streaming session-CRUD calls.
+ * verbatim. The single streaming endpoint (`POST /api/rag/chat` with body
+ * `{ sessionId, message }`) is consumed via the SSE consumer in
+ * `./chat.sse.ts`; this module owns the JSON DTO shapes + the
+ * non-streaming session-CRUD calls.
  *
  * Same-origin relative paths — the browser attaches `PLAYGROUND_SESSION`
  * automatically. SSR helpers (which forward the inbound cookie via
