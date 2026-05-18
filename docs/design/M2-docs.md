@@ -297,12 +297,12 @@ export async function generateMetadata({ params }) {
 
 ## Home composition deltas (applied to M1 home frames)
 
-M2 spec v5 §7.3 keeps the home as **owner-curated** — the `Latest documents` section on the home is the *owner's* recent published documents, NOT the community feed (that's `/docs`). This is the key conceptual delta worth restating: the multi-author shift opens up `/docs` to the community, but the home stays a personal-platform surface where the owner's voice leads. A non-owner author's published docs do NOT appear on the home; they appear on `/docs` (community feed). The `All documents →` link on the home navigates to `/docs` (which is *not* owner-filtered in v5) — so the user moves from the owner's voice to the community's by clicking that link.
+> Revised 2026-05-18: the `Latest published docs` section is now **community-wide**, sourcing every author's latest public document — not owner-curated. The earlier v5 framing kept the home owner-only as a "personal-platform surface where the owner's voice leads"; in use the section read as a hole when the owner hadn't published recently while the community had, and the `/` ↔ `/docs` distinction wasn't paying for itself. The home now matches `/docs` in scope (just trimmed to the first 6 by recency) and `All documents →` still navigates to the full feed.
 
 Two deltas applied to the M1 home frames in this round:
 
-1. **Section header rename (carried from v4):** `Latest documents` with `All documents →` right-aligned link. Unchanged in v5.
-2. **Card meta + author row:** the 3-column thumbnail grid uses the same vocabulary as the `/docs` community feed for visual consistency. **Per-card meta row** carries `<tag-chip> · N min · {date} · 👁 viewCount · ♥ likeCount`. **Author row (new in v5)** below the meta on every home card shows `JeekLee · {date}` — explicitly the owner, since the home is owner-curated. The 3 mock entries are unchanged from v4: (a) `build-log · "Building an agent team…"`, (b) `architecture · "Why I rebuilt my blog…"`, (c) `infra · "Spark cluster…"`. All three show `JeekLee · today/yesterday/this week` author rows.
+1. **Section header rename (carried from v4):** `Latest published docs` with `All documents →` right-aligned link.
+2. **Card meta + author row:** the 3-column thumbnail grid uses the same vocabulary as the `/docs` community feed for visual consistency. **Per-card meta row** carries `<tag-chip> · N min · {date} · 👁 viewCount · ♥ likeCount`. **Author row** below the meta on every home card shows `<author display name> · {date}` — every card carries the real author the doc was published by, identical to how cards render on `/docs` (mock content in the Figma frames still shows `JeekLee` as a placeholder; production renders the actual author).
 
 Both deltas are textual + data-source changes; no new layout, no new tokens.
 
