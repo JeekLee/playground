@@ -207,7 +207,7 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
 
       {isPublic && (
         <a
-          href={`/docs/${doc.id}`}
+          href={`/docs/${doc.id}?as=reader`}
           target="_blank"
           rel="noreferrer noopener"
           className="border-b border-border bg-bg px-[28px] py-[4px] text-small text-accent hover:text-accent-hover"
@@ -224,7 +224,7 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
           >
             <span>Published as /docs/{doc.id.slice(0, 8)}…</span>
             <a
-              href={`/docs/${doc.id}`}
+              href={`/docs/${doc.id}?as=reader`}
               target="_blank"
               rel="noreferrer noopener"
               className="pointer-events-auto font-semibold underline"
