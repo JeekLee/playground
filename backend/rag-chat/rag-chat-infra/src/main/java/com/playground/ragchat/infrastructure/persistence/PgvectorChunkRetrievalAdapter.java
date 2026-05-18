@@ -63,8 +63,13 @@ public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
             boolean priorAutoCommit = conn.getAutoCommit();
             conn.setAutoCommit(false);
             try {
-                try (var setLocal = conn.prepareStatement("SET LOCAL hnsw.ef_search = ?")) {
-                    setLocal.setInt(1, properties.efSearch());
+                // `SET LOCAL …` is a utility statement and rejects bound
+                // parameters (`syntax error at or near "$1"`). `set_config`
+                // is a regular function call that accepts parameters and,
+                // with `is_local = true`, has the same tx-scoped effect.
+                try (var setLocal = conn.prepareStatement(
+                        "SELECT set_config('hnsw.ef_search', ?, true)")) {
+                    setLocal.setString(1, Integer.toString(properties.efSearch()));
                     setLocal.execute();
                 }
                 List<ChunkRow> collected;
