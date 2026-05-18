@@ -25,6 +25,8 @@ public final class DocumentMapper {
                 DocumentBody.of(entity.getBody()),
                 Visibility.fromWire(entity.getVisibility()),
                 DocumentPath.of(entity.getPath()),
+                entity.getViewCount(),
+                entity.getLikeCount(),
                 entity.getPublishedAt(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
@@ -38,12 +40,19 @@ public final class DocumentMapper {
                 doc.body().value(),
                 doc.visibility().wireValue(),
                 doc.path().value(),
+                doc.viewCount(),
+                doc.likeCount(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());
     }
 
-    /** Copy domain-mutable fields onto a managed entity (preserves JPA identity). */
+    /**
+     * Copy domain-mutable fields onto a managed entity (preserves JPA identity).
+     * The counters are NOT copied here — they're maintained transactionally with
+     * the originating mutation (S3) and would otherwise get clobbered when an
+     * unrelated edit reads-modifies-writes the aggregate.
+     */
     public static DocumentJpaEntity copyMutable(Document source, DocumentJpaEntity managed) {
         managed.setTitle(source.title().value());
         managed.setBody(source.body().value());

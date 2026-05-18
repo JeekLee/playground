@@ -4,6 +4,7 @@ import com.playground.shared.error.BadRequestException;
 import com.playground.shared.error.ErrorCode;
 import com.playground.shared.error.MappedTo;
 import com.playground.shared.error.NotFoundException;
+import com.playground.shared.error.ServiceUnavailableException;
 import com.playground.shared.error.UnauthorizedException;
 
 /**
@@ -44,7 +45,32 @@ public enum DocsErrorCode implements ErrorCode {
 
     @MappedTo(BadRequestException.class)
     UPLOAD_FILE_MISSING("DOCS-VALIDATION-007",
-            "multipart upload requires a non-empty 'file' part containing a Markdown document");
+            "multipart upload requires a non-empty 'file' part containing a Markdown document"),
+
+    @MappedTo(BadRequestException.class)
+    SEARCH_QUERY_BLANK("DOCS-VALIDATION-008",
+            "search query parameter 'q' is required and must not be blank"),
+
+    @MappedTo(BadRequestException.class)
+    SEARCH_SCOPE_INVALID("DOCS-VALIDATION-009",
+            "search scope must be one of: public, mine"),
+
+    @MappedTo(BadRequestException.class)
+    CURSOR_INVALID("DOCS-VALIDATION-010",
+            "pagination cursor is malformed"),
+
+    @MappedTo(BadRequestException.class)
+    AUTHOR_PARAM_INVALID("DOCS-VALIDATION-011",
+            "author query parameter must be a UUID"),
+
+    /**
+     * M2 spec §10 "Search failure isolation" + spec §6.5: when OpenSearch is
+     * unreachable, search routes return 503 with this code so callers can
+     * distinguish "no hits" from "search subsystem down".
+     */
+    @MappedTo(ServiceUnavailableException.class)
+    SEARCH_UNAVAILABLE("DOCS-SEARCH-001",
+            "Search is temporarily unavailable");
 
     private final String code;
     private final String defaultMessage;

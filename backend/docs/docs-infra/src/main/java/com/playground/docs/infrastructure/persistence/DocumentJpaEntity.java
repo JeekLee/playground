@@ -38,6 +38,12 @@ public class DocumentJpaEntity {
     @Column(name = "path", nullable = false)
     private String path;
 
+    @Column(name = "view_count", nullable = false)
+    private long viewCount;
+
+    @Column(name = "like_count", nullable = false)
+    private long likeCount;
+
     @Column(name = "published_at")
     private Instant publishedAt;
 
@@ -58,6 +64,8 @@ public class DocumentJpaEntity {
             String body,
             String visibility,
             String path,
+            long viewCount,
+            long likeCount,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
@@ -67,6 +75,8 @@ public class DocumentJpaEntity {
         this.body = body;
         this.visibility = visibility;
         this.path = path;
+        this.viewCount = viewCount;
+        this.likeCount = likeCount;
         this.publishedAt = publishedAt;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -96,6 +106,14 @@ public class DocumentJpaEntity {
         return path;
     }
 
+    public long getViewCount() {
+        return viewCount;
+    }
+
+    public long getLikeCount() {
+        return likeCount;
+    }
+
     public Instant getPublishedAt() {
         return publishedAt;
     }
@@ -122,6 +140,14 @@ public class DocumentJpaEntity {
 
     public void setPath(String path) {
         this.path = path;
+    }
+
+    public void setViewCount(long viewCount) {
+        this.viewCount = viewCount;
+    }
+
+    public void setLikeCount(long likeCount) {
+        this.likeCount = likeCount;
     }
 
     public void setPublishedAt(Instant publishedAt) {

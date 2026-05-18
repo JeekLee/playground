@@ -61,19 +61,27 @@ class PublicRouteMatcherTest {
     }
 
     @Test
-    void get_api_docs_base_path_is_not_public_in_s1() {
-        // Spec §6.1 + §6.2: GET /api/docs?scope=mine is the only S1 use of the
-        // bare path, and it requires authentication. The community feed (no
-        // scope) lands in M2 S2. Either way the gateway treats the bare
-        // /api/docs path as authenticated.
-        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs"))).isFalse();
+    void get_api_docs_base_path_is_public_in_s2() {
+        // M2 S2 amendment: GET /api/docs (community feed, no scope) is
+        // anonymous-OK. The docs-api itself enforces 401 on scope=mine when
+        // X-User-Id is absent — gateway treats the route as permitAll() so
+        // the public-feed flow stays anonymous.
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs"))).isTrue();
     }
 
     @Test
-    void get_api_docs_trailing_slash_is_not_public() {
-        // Mirrors the bare path — trailing slash variant must not slip into the
-        // public allowlist.
-        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs/"))).isFalse();
+    void get_api_docs_trailing_slash_is_public_in_s2() {
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs/"))).isTrue();
+    }
+
+    @Test
+    void get_api_docs_owner_is_public() {
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs/owner"))).isTrue();
+    }
+
+    @Test
+    void get_api_docs_search_is_public() {
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs/search"))).isTrue();
     }
 
     @Test

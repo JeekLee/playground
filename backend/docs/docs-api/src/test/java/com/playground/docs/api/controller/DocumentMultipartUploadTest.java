@@ -40,7 +40,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class DocumentMultipartUploadTest {
 
     private final DocumentAppService docService = mock(DocumentAppService.class);
-    private final DocumentController controller = new DocumentController(docService);
+    private final com.playground.docs.application.service.DocumentFeedService feedService =
+            mock(com.playground.docs.application.service.DocumentFeedService.class);
+    private final DocumentController controller = new DocumentController(docService, feedService);
     private final SharedExceptionHandler exceptionHandler = new SharedExceptionHandler();
 
     private MockMvc mockMvc;
@@ -138,16 +140,20 @@ class DocumentMultipartUploadTest {
     }
 
     @Test
-    void list_mine_requires_scope_mine_query_param() throws Exception {
-        // Per spec §6.2 GET /api/docs/mine is deleted; the bare GET /api/docs
-        // (which is what we see post-StripPrefix=2 → "/") with no scope must 400.
-        mockMvc.perform(get("/").header("X-User-Id", author.toString()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode", is(DocsErrorCode.SCOPE_REQUIRED.code())));
+    void list_no_scope_no_author_returns_community_feed() throws Exception {
+        // S2 (this PR): GET /api/docs with no scope returns the community feed
+        // (auth optional). The controller delegates to DocumentFeedService;
+        // standalone-MockMvc test mocks the service to an empty page.
+        when(feedService.communityFeed(null))
+                .thenReturn(com.playground.docs.application.dto.CursorPage.empty());
+
+        mockMvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
     }
 
     @Test
-    void list_mine_rejects_unsupported_scope() throws Exception {
+    void list_invalid_scope_returns_400() throws Exception {
         mockMvc.perform(get("/")
                         .param("scope", "community")
                         .header("X-User-Id", author.toString()))
@@ -156,9 +162,8 @@ class DocumentMultipartUploadTest {
     }
 
     @Test
-    void list_mine_rejects_combined_filters_in_s1() throws Exception {
-        // Path / author filters land in S2; the bare ?scope=mine is the only
-        // S1-supported shape.
+    void list_mine_rejects_combined_filters_in_s2() throws Exception {
+        // Path filters on mine-scope land in S3 (folder UI); S2 rejects with 400.
         mockMvc.perform(get("/")
                         .param("scope", "mine")
                         .param("path", "/agents/")
@@ -167,15 +172,38 @@ class DocumentMultipartUploadTest {
                 .andExpect(jsonPath("$.errorCode", is(DocsErrorCode.SCOPE_FILTER_UNSUPPORTED.code())));
     }
 
+    @Test
+    void list_with_author_param_returns_author_feed() throws Exception {
+        UUID someAuthor = UUID.randomUUID();
+        when(feedService.authorFeed(someAuthor, null))
+                .thenReturn(com.playground.docs.application.dto.CursorPage.empty());
+
+        mockMvc.perform(get("/").param("author", someAuthor.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
+    void list_with_invalid_author_uuid_returns_400() throws Exception {
+        mockMvc.perform(get("/").param("author", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode", is(DocsErrorCode.AUTHOR_PARAM_INVALID.code())));
+    }
+
     private DocumentDetailDto stubDetail(String title, String body) {
         Instant now = Instant.parse("2026-05-18T00:00:00Z");
         return new DocumentDetailDto(
                 documentId.toString(),
                 author.toString(),
+                null,            // author block (S2 resolved by app service via identity lookup)
                 title,
                 body,
+                "",              // excerpt
                 "private",
                 "/",
+                0L,              // viewCount
+                0L,              // likeCount
+                null,            // likedByMe
                 null,
                 now,
                 now);

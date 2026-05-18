@@ -4,7 +4,10 @@ import com.playground.identity.application.repository.UserRepository;
 import com.playground.identity.domain.model.User;
 import com.playground.identity.domain.model.id.UserId;
 import com.playground.identity.domain.model.vo.GoogleSub;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Repository;
 
 /** JPA-backed adapter satisfying {@link UserRepository}. */
@@ -25,6 +28,17 @@ public class UserRepositoryImpl implements UserRepository {
     @Override
     public Optional<User> findById(UserId id) {
         return jpaRepository.findById(id.value()).map(UserMapper::toDomain);
+    }
+
+    @Override
+    public List<User> findAllByIds(Collection<UserId> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> uuids = ids.stream().map(UserId::value).toList();
+        return jpaRepository.findAllByIdIn(uuids).stream()
+                .map(UserMapper::toDomain)
+                .toList();
     }
 
     @Override

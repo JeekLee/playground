@@ -43,7 +43,10 @@ class DocumentAppServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DocumentAppService(repository, fixedClock);
+        // Pass null for the optional event publisher + identity lookup so the
+        // S1 CRUD assertions run without an outbox bridge. S2 event-firing
+        // assertions are exercised in DocumentEventPublicationTest.
+        service = new DocumentAppService(repository, null, null, fixedClock);
     }
 
     @Test

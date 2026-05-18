@@ -60,15 +60,25 @@ public class GatewaySecurityConfig {
                         // `GET /api/docs` from an authenticated client surfaces as 400
                         // (not 403/401).
                         //
-                        // S1 ships only the GET /api/docs/{id} public allowance; the
-                        // community feed (GET /api/docs), view counter
-                        // (POST /api/docs/{id}/view), and public search
-                        // (GET /api/docs/search?scope=public) land in M2 S2 / S3.
+                        // M2 S2 adds the community feed, owner endpoint, and
+                        // public-scope search to the allowlist (ADR-12 amendment
+                        // to ADR-09). The order below is load-bearing:
+                        //   1. /api/docs/owner — static segment beats /{id} regex.
+                        //   2. /api/docs/search — same.
+                        //   3. /api/docs/{uuid} — single-doc anonymous read.
+                        //   4. GET /api/docs — community feed (no scope=mine).
+                        //   5. catch-all /api/docs/** → authenticated.
                         //
-                        // The catch-all .pathMatchers("/api/docs/**").authenticated()
-                        // below covers PATCH/DELETE/{id}/publish/{id}/unpublish; ordering
-                        // ensures the UUID-only public read is matched first.
+                        // The {scope=mine, scope=public} distinction on search
+                        // is enforced inside docs-api: it 401's mine-scope when
+                        // X-User-Id is absent. Gateway treats the route as
+                        // permitAll() so the public-scope path stays anonymous.
+                        .pathMatchers(HttpMethod.GET, "/api/docs/owner").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/api/docs/search").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/docs/{id:[0-9a-fA-F-]{36}}").permitAll()
+                        // GET /api/docs (community feed + per-author feed via ?author=);
+                        // POST /api/docs (create) still requires auth — explicit HttpMethod.GET.
+                        .pathMatchers(HttpMethod.GET, "/api/docs", "/api/docs/").permitAll()
                         .pathMatchers("/api/docs", "/api/docs/", "/api/docs/**").authenticated()
                         .pathMatchers(HttpMethod.POST, "/api/rag/chat/public").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/metrics/**").permitAll()

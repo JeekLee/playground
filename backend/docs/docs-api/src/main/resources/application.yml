@@ -48,21 +48,23 @@ spring:
         compression.type: lz4
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: docs-search-projector
+      auto-offset-reset: earliest
   modulith:
     events:
-      # M2 S1 wires the Modulith JPA outbox table (per ADR-12 §1, inheriting
-      # ADR-10 §8) but does not yet publish any events — the docs domain event
-      # POJOs and the EventExternalizationConfiguration land in M2 S2 alongside
-      # the search projector. Keep the JPA schema-init enabled so the
-      # JpaEventPublication entity validates; disable externalization + Kafka
-      # bridges so no consumer threads start up looking for un-published events.
+      # M2 S2: Spring Modulith JPA outbox + Kafka bridge enabled. Domain events
+      # (DocumentUploaded, DocumentVisibilityChanged, DocumentDeleted) publish
+      # transactionally with the documents row per ADR-12 §1; the externalizer
+      # mapping in docs-infra wraps them in the shared-kernel EventEnvelope and
+      # routes them to the three Kafka topics defined in spec §5.
       jdbc:
         schema-initialization:
           enabled: true
       externalization:
-        enabled: false
+        enabled: true
       kafka:
-        enabled: false
+        enabled: true
 
 management:
   endpoints:
@@ -81,6 +83,14 @@ springdoc:
   swagger-ui:
     enabled: true
     path: /swagger-ui
+
+# M2 S2 ADR-12 §5 + §8 — env-derived endpoints + owner sub. Read via @Value
+# in the respective infra adapters; left here only as a single-line audit
+# trail so a reader of application.yml sees all the externals at a glance.
+# No Spring binding here — these are pure env vars consumed at @Value time.
+#   OPENSEARCH_BASE_URL          (default http://opensearch-playground:9200)
+#   IDENTITY_BASE_URL            (default http://identity-api:18081)
+#   PLAYGROUND_OWNER_GOOGLE_SUB  (unset → fail-closed empty owner feed)
 
 logging:
   level:
