@@ -132,10 +132,62 @@ services:
       timeout: 10s
       retries: 10
 
-  # --- M2 S1: docs-api (Docs BC quadruplet runnable per ADR-01 v2 + ADR-12 §15) ---
+  # --- ADR-05 amendment + ADR-12 §5/§6: OpenSearch (search projection for docs BC) ---
+  # The `docs-v1` index is created by docs-api at boot (search projector ensures
+  # mappings + Nori-based Korean analyzer; ADR-12 §6). The `analysis-nori` plugin
+  # ships built-in with the 2.x image — no extra install step. Security plugin is
+  # disabled for dev (single-node, compose-internal); re-enable for any public
+  # deployment via a future per-milestone ADR.
+  opensearch-playground:
+    image: opensearchproject/opensearch:2.18.0
+    container_name: opensearch-playground
+    environment:
+      cluster.name: opensearch-playground
+      node.name: opensearch-playground
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "10292:9200"
+    volumes:
+      - opensearch-playground-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  # --- ADR-03: one-shot Kafka topic provisioning ---
+  # Ensures the M1 (identity.user.*) and M2 (docs.document.*) business topics
+  # exist with the ADR-03 default settings (partitions=3, replication=1,
+  # retention=7d). Auto-create is still enabled on the broker for safety, but
+  # auto-created topics use the broker's `num.partitions=1` default — running
+  # this init container at compose-up time pins the partition count. The
+  # service exits 0 on success; recreate it with `docker compose up kafka-init`
+  # if a new topic is added.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: kafka-init
+    depends_on:
+      kafka-playground:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
+    entrypoint: ["/bin/sh", "/etc/kafka-init/init-topics.sh"]
+    volumes:
+      - ./kafka/init-topics.sh:/etc/kafka-init/init-topics.sh:ro
+    restart: "no"
+
+  # --- M2 S1/S2: docs-api (Docs BC quadruplet runnable per ADR-01 v2 + ADR-12 §15) ---
   # No host port — gateway is the only host-exposed ingress (ADR-08).
-  # S1 scope is single-author CRUD only: OpenSearch projector, owner-resolution
-  # webclient, and PLAYGROUND_OWNER_GOOGLE_SUB env are deferred to S2.
+  # S2 adds: OpenSearch projector wiring (OPENSEARCH_BASE_URL), owner-resolution
+  # webclient against identity-api (IDENTITY_BASE_URL), and the configured owner
+  # google-sub (PLAYGROUND_OWNER_GOOGLE_SUB) for the public feed (ADR-12 §8).
   docs-api:
     build:
       context: ../backend
@@ -148,6 +200,10 @@ services:
         condition: service_healthy
       redis-playground:
         condition: service_healthy
+      opensearch-playground:
+        condition: service_healthy
+      identity-api:
+        condition: service_healthy   # boot-time owner resolution per ADR-12 §8
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -158,6 +214,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-playground}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
+      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      # M2 S2 (ADR-12 §5 + §8)
+      OPENSEARCH_BASE_URL: ${OPENSEARCH_BASE_URL:-http://opensearch-playground:9200}
+      IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://identity-api:18081}
+      PLAYGROUND_OWNER_GOOGLE_SUB: ${PLAYGROUND_OWNER_GOOGLE_SUB:-}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18082/actuator/health || exit 1"]
       interval: 15s
@@ -188,3 +250,4 @@ volumes:
   postgres-playground-data:
   redis-playground-data:
   kafka-playground-data:
+  opensearch-playground-data:
