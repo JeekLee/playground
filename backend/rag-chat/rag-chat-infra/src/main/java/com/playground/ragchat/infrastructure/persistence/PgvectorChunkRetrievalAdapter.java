@@ -14,6 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -29,6 +31,8 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
+
+    private static final Logger log = LoggerFactory.getLogger(PgvectorChunkRetrievalAdapter.class);
 
     private final JdbcTemplate jdbc;
     private final RagChatProperties properties;
@@ -53,7 +57,9 @@ public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
         // for the duration of the call, COMMIT on success / ROLLBACK on
         // failure, and restore auto-commit before handing the connection
         // back to the pool.
-        List<ChunkRow> rows = jdbc.execute((java.sql.Connection conn) -> {
+        List<ChunkRow> rows;
+        try {
+            rows = jdbc.execute((java.sql.Connection conn) -> {
             boolean priorAutoCommit = conn.getAutoCommit();
             conn.setAutoCommit(false);
             try {
@@ -96,7 +102,11 @@ public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
             } finally {
                 conn.setAutoCommit(priorAutoCommit);
             }
-        });
+            });
+        } catch (RuntimeException ex) {
+            log.error("pgvector retrieval failed", ex);
+            throw ex;
+        }
 
         if (rows == null || rows.isEmpty()) {
             return List.of();
