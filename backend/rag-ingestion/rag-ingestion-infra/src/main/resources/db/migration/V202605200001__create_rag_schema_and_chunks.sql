@@ -4,18 +4,22 @@
 -- Spring's `spring.jpa.properties.hibernate.default_schema=rag` plus the
 -- JPA entity's @Table(schema = "rag") keep the wiring symmetrical.
 
--- The pgvector extension must exist before the vector(1024) column type
--- compiles. ADR-13 §F asks for it in the `rag` schema; in practice the
--- compose Postgres image installs the .so once and CREATE EXTENSION ...
--- SCHEMA is namespace bookkeeping.
-CREATE EXTENSION IF NOT EXISTS vector SCHEMA rag;
+-- The pgvector extension lives in `public` schema (created globally by
+-- infra/postgres/init.sql at first volume bootstrap, or by this CREATE
+-- EXTENSION IF NOT EXISTS otherwise). The `vector` TYPE thus belongs to
+-- public regardless of which schema CREATE EXTENSION names. With
+-- Flyway's `flyway.schemas=rag` the migration runs under
+-- `search_path=rag`, so an unqualified `vector(1024)` column type fails
+-- to resolve. Reference the type as `public.vector(1024)` so the
+-- search_path doesn't matter.
+CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE rag.document_chunks (
     document_id    UUID         NOT NULL,
     chunk_index    INTEGER      NOT NULL,
     user_id        UUID         NOT NULL,
     visibility     TEXT         NOT NULL CHECK (visibility IN ('public', 'private')),
-    embedding      vector(1024) NOT NULL,
+    embedding      public.vector(1024) NOT NULL,
     text           TEXT         NOT NULL,
     body_checksum  TEXT         NOT NULL,
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -46,7 +50,7 @@ CREATE INDEX rag_document_chunks_user_id_visibility_idx
 -- at M4 retrieval time (not here — the index doesn't carry ef_search).
 CREATE INDEX rag_document_chunks_embedding_hnsw_idx
     ON rag.document_chunks
-    USING hnsw (embedding vector_cosine_ops)
+    USING hnsw (embedding public.vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 COMMENT ON TABLE rag.document_chunks IS
