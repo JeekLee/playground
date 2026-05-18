@@ -37,6 +37,32 @@ M4 is the playground's first **user-facing LLM surface** and the first BC whose 
 
 All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K search pill, `font.body` rendering, button tokens — comes from M1 + M2 verbatim. Frontend-implementer does **not** scaffold a second design token set, a second sidebar widget, or a second topbar. The intent: the user reaches `/chat` and the shell feels indistinguishable from `/docs`.
 
+### 1.5 Viewport-locked layout (load-bearing)
+
+The `/chat` page occupies one viewport (typically 1440 × ~900 on desktop). The composer is **sticky to the viewport bottom**; the messages list (or empty-state hero) fills the area between the tab strip and the composer with internal scrolling. This applies to every chat surface — empty state, mid-stream, loaded conversation, error states. The Figma frames at `54:8, 54:180, 54:233, 54:301, 54:379, 54:443, 54:509` are sized at 900 px height to represent one viewport; the composer sits 16 px from the frame bottom edge.
+
+Implementation contract:
+
+- Page shell uses `height: 100vh` (or `100dvh` on mobile-capable browsers).
+- Sidebar (232×100vh) and topbar (56px) are page chrome — always visible, never overlapped.
+- Tab strip (52px) sits directly under the topbar; never scrolls.
+- **Composer** is positioned `sticky` (or absolutely pinned) to the bottom edge of the main column with `bottom: 16px` margin. It does NOT scroll with the messages.
+- **Message list** is the only scrollable region — `flex: 1; overflow-y: auto;` between the tab strip and the composer. The latest message in mid-stream / loaded states sits flush against the composer top (the older messages scroll up off-screen as the conversation grows; the static frames show this by rendering the most recent turn ~8 px above the composer with a subtle gradient mask hint at the top to imply overflow above).
+- **Error banners** (503, 429 — frames `54:443`, `54:509`) anchor to the composer's top edge with an 8 px gap, NOT to the bottom of the page. When a banner is visible the message list's effective scroll area shrinks by `banner.height + 8`.
+- **In-message Stop button** on the streaming frame (`54:180`) sits at the bottom-right corner of the latest assistant message inside the scroll area — it is NOT pinned. It scrolls with the message and disappears once the stream completes.
+- **Sidebar account footer card** is anchored to the sidebar's bottom edge (the sidebar itself = 100vh), 16 px from bottom. It does NOT scroll independently.
+
+Coordinate contract for the Figma mocks (every chat frame is 1440 × 900 with top-left at `(frame_x, frame_y)` where `frame_y = 2200` for the M4 track):
+
+| Element | Frame-relative top-left | Frame-relative bottom-right | Notes |
+|---|---|---|---|
+| Composer (1112 × 56) | `(280, 828)` | `(1392, 884)` | 16 px from frame bottom (frame.height − composer.height − 16). |
+| Send / Stop button (76 × 32) | `(1308, 840)` | `(1384, 872)` | Inside composer right padding (4 px) + top padding (12 px). |
+| Composer placeholder text | `(300, 848)` | — | 20 px from composer top-left. |
+| Banner (1112 × 52) — error states only | `(280, 768)` | `(1392, 820)` | 8 px above composer (composer.y − 8 − banner.height). |
+| Account footer card (200 × 66) | `(16, 818)` | `(216, 884)` | 16 px from sidebar bottom. |
+| In-message Stop (90 × 28) — mid-stream only | bottom-right of latest assistant message | — | Scrolls with the message; not viewport-pinned. |
+
 ## 2. Per-screen specifications
 
 ### 2.1 `/chat` (empty state) — frame node-id: `54:8`
@@ -50,7 +76,7 @@ All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K s
   - **Sidebar (232px, `surface.soft`):** brand row (J glyph + stacked `JeekLee's` / `PLAYGROUND` wordmark) → `⌘K` search pill → Apps section (`Home` inactive, `Docs` inactive — note: Docs is **shipped** post-M2 so it renders in primary `color.text` not muted; this is a difference from M1's design where Docs was milestone-locked, `Chat` **active** with `accent.soft` bg + `accent` fg weight 600 NO badge, `System status` muted with `M5 🔒` badge) → spacer → signed-in account footer card (28px khaki avatar + `JeekLee` / `jeeklee1120@gmail.com` stacked).
   - **Topbar:** breadcrumb `Home  /  Chat  /  New chat` on the left; `● Signed in` success chip + account pill (`JL` khaki avatar + `JeekLee ▾`) on the right.
   - **Tab strip (below topbar, 52px tall, `bg` color, `border-bottom 1px border`):** single active tab `💬  New chat` (200×32 `surface` bg + `border` 1px + `radius.md`, label in `text` weight 600) with the `⋯` overflow hint at its right edge. The `+` new-tab button (32×32, `surface.soft` bg, `radius.md`) sits immediately to the right of the active tab.
-  - **Empty-state hero (centered horizontally, ~316px from frame top):**
+  - **Empty-state hero (vertically centered in the available area between tab strip end and composer top — frame-relative `y ≈ 366` for the title, with the 3-chip block ending at `y ≈ 570`):**
     - Title: `What do you want to know about your corpus?` (`font.h2` 22px / 600 / `text`). Centered to the message-area column.
     - Subtitle: `Ask anything about your public + private docs. Citations link back to the source chunk.` (`font.small` 14px / 400 / `text.muted`).
   - **Three suggestion chips** (vertically stacked, `surface` bg + `border` 1px + `radius.md` 10px + `font.small` 13px / 500 / `text`):
@@ -58,7 +84,7 @@ All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K s
     2. `이 주제에 대해 내 공개 문서에 뭐가 있어?` (420×36)
     3. `ADR-13의 chunking 정책이 어떻게 되지?` (330×36)
     - Strings pinned VERBATIM by ADR-14 §12 (Korean primary, English fallback per `Accept-Language`).
-  - **Composer (bottom, ~30px from frame bottom):** 1112×56 `surface` bg + `border.strong` 1px + `radius.lg` 12px; placeholder `Ask anything about your corpus…` in `text.subtle` 14px on the left; `⏎ Send` primary button (`accent` 76×32 + `radius.md`) on the right.
+  - **Composer (viewport-bottom-pinned, frame-relative `(280, 828)` — 16 px from frame bottom per §1.5):** 1112×56 `surface` bg + `border.strong` 1px + `radius.lg` 12px; placeholder `Ask anything about your corpus…` in `text.subtle` 14px on the left; `⏎ Send` primary button (`accent` 76×32 + `radius.md`) on the right.
 - **Interactions:**
   - Clicking a suggestion chip pre-fills the composer with the chip's exact string. **Does not auto-send** (per spec §7.5). The user can edit and then press `Enter` / click `⏎ Send`.
   - The `+` button creates a new empty session (POST `/api/rag/chat/sessions`); a new tab is inserted at the head of the strip and becomes active.
@@ -82,8 +108,8 @@ All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K s
   - **User turn (frame-relative y=140):** small `you` label (`font.eyebrow` 11px / 600 / `text.muted`) followed by the user message body (`font.body` 15px / 400 / `text`). The body wraps at ~820px max-width.
   - **Assistant turn (y=220):** `assistant` label (`font.eyebrow` 11px / 600 / `accent`) followed by the streaming assistant text (`font.body` 15px / 400 / `text`). The text contains inline `[1]` `[2]` markers — these are 1-indexed superscript pills in the design system §6.3 chip vocabulary (`accent.soft` bg / `accent` fg / `font.eyebrow` 11px); rendered here as inline `[1]` for legibility in the static mock.
   - **Pulsing block cursor `▍`:** an 10×20 rectangle in `accent` color placed at the end of the streaming text (currently at frame-relative ~(956, 352)). The implementer animates `opacity` between 0.3 and 1.0 at ~1s cadence to convey "live."
-  - **In-message Stop button:** 90×28, `surface` bg + `border.strong` 1px + `radius.md` 10px. Label `⏹ Stop` in `text` 13px / 500. Click → P95 ≤ 200ms SSE abort (per spec §12 "UX").
-  - **Composer (disabled):** bg swaps to `surface.soft`; placeholder copy becomes the pinned Korean string `응답이 생성 중입니다…` in `text.subtle`. The Send button bg recolors to `danger` (`#B14B3B`) and the label flips to `⏹ Stop` in white — a second affordance for the same abort action. **Both Stop buttons (in-message + composer) wire to the same SSE abort handler** — kept duplicated for discoverability per spec §7.4.
+  - **In-message Stop button (anchored to the latest assistant message's bottom-right, frame-relative `(1010, 362)` in the mock — inside the scroll region, not the viewport-pinned chrome per §1.5):** 90×28, `surface` bg + `border.strong` 1px + `radius.md` 10px. Label `⏹ Stop` in `text` 13px / 500. Click → P95 ≤ 200ms SSE abort (per spec §12 "UX"). This button scrolls with the message and disappears on stream-complete; it is NOT pinned.
+  - **Composer (viewport-bottom-pinned at frame-relative `(280, 828)`, disabled state):** bg swaps to `surface.soft`; placeholder copy becomes the pinned Korean string `응답이 생성 중입니다…` in `text.subtle`. The Send button bg recolors to `danger` (`#B14B3B`) and the label flips to `⏹ Stop` in white — a second affordance for the same abort action. **Both Stop buttons (in-message + composer) wire to the same SSE abort handler** — kept duplicated for discoverability per spec §7.4.
 - **Interactions:**
   - Click any Stop button → SSE `close()` → server-side `Subscription.cancel()` propagates per ADR-14 §14. Partial assistant text is NOT persisted (per ADR-14 §13); reloading the page after Stop shows the user turn alone, with no assistant reply.
   - Composer is non-interactive (`pointer-events: none`, `opacity: 0.6` per design system §6.2 disabled-input convention).
@@ -109,7 +135,7 @@ All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K s
     - **Card 2 — `[4]  M3 PRD §"Failure handling — DLQ"`** same shape.
     - **Card 3 — `[5]  ADR-13 §10 Resilience4j retry`** same shape.
     - Cards are separated by 1px `border` dividers.
-  - **Composer** (enabled, ready for next user turn): bg `surface`, placeholder `Ask anything about your corpus…`, `⏎ Send` primary button.
+  - **Composer (viewport-bottom-pinned at frame-relative `(280, 828)`, enabled, ready for next user turn):** bg `surface`, placeholder `Ask anything about your corpus…`, `⏎ Send` primary button. Conversation body above scrolls internally between the tab strip and the composer top.
 - **Interactions:**
   - Click `[1]` `[2]` `[3]` `[4]` `[5]` inline markers in the assistant body → scrolls / focuses the matching accordion card (in the collapsed state for turn 1, the chevron auto-expands first).
   - Click `↗ open` on a card → opens `/docs/{documentId}` in a new tab (the chunk anchor `#chunk-{chunkIndex}` is M4.1 per spec §7.3).
@@ -179,12 +205,12 @@ All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K s
 - **Figma frame:** `M4 — 503 GATEWAY_DOWN error state  /chat` — node `54:443`. ![screenshot](assets/M4/503.png)
 - **Key elements:**
   - **Underlying frame:** identical to Frame 3 (loaded conversation).
-  - **Banner (1112×52, frame-relative y=792, just above the composer):** bg `danger.soft` (`#F4E1DA`), border 1px `danger` (`#B14B3B`), `radius.md` 10px.
+  - **Banner (1112×52, frame-relative `(280, 768)` — anchored 8 px above the composer top per §1.5):** bg `danger.soft` (`#F4E1DA`), border 1px `danger` (`#B14B3B`), `radius.md` 10px.
     - Left edge (20px in): `⚠` glyph in `danger`, 18px.
     - Title: `AI service is currently unavailable.` in `danger` 14px / 600.
     - Body subtitle: `The inference gateway is failing. Try again in a moment.` in `text.muted` 12px / 400.
     - Right edge: `↻  Retry last message` outline button (`surface` bg + `danger` 1px border + `danger` fg 13px / 600 + `radius.sm` 8px, 160×32).
-  - **Composer:** still enabled (the failure was on the previous turn, not now); user can also type a new message and submit normally.
+  - **Composer (viewport-bottom-pinned at frame-relative `(280, 828)`):** still enabled (the failure was on the previous turn, not now); user can also type a new message and submit normally.
 - **Interactions:**
   - Click `↻  Retry last message` → resubmits the same user message (same `sessionId`, same `message` body). Banner persists until the retry succeeds (then dismisses on `done` event) or fails again (then re-renders the banner with the new failure timestamp).
   - The banner has NO close button — the only dismissal paths are "retry succeeds" or "user submits a different turn that succeeds."
@@ -201,12 +227,12 @@ All other chrome — sidebar primitives, topbar primitives, account pill, ⌘K s
 - **Figma frame:** `M4 — 429 RATE_LIMIT error state  /chat` — node `54:509`. ![screenshot](assets/M4/429.png)
 - **Key elements:**
   - **Underlying frame:** identical to Frame 3 (loaded conversation).
-  - **Banner (1112×52):** bg `warning.soft` (`#F4E8C7`), border 1px `warning` (`#B58A2B`).
+  - **Banner (1112×52, frame-relative `(280, 768)` — anchored 8 px above the composer top per §1.5):** bg `warning.soft` (`#F4E8C7`), border 1px `warning` (`#B58A2B`).
     - Left: `⚠` glyph in `warning` 18px.
     - Title: `You've hit your hourly limit.` in `warning` 14px / 600.
     - Body subtitle: `Try again in 13 minutes. Hourly cap is 60 completions per user (cost ceiling).` in `text.muted` 12px / 400.
     - Right edge: countdown pill (`warning.soft` bg + `warning` 1px border + `warning` fg, 160×32, `radius.sm` 8px). Label: `⏱  13 : 24` (mm:ss countdown derived from the `Retry-After` header value).
-  - **Composer (disabled):** bg `surface.soft`; placeholder `Rate limit reached — disabled until cooldown ends` in `text.subtle`; Send button bg `surface.soft` + label `text.subtle` (visually-muted Send glyph; click is no-op).
+  - **Composer (viewport-bottom-pinned at frame-relative `(280, 828)`, disabled):** bg `surface.soft`; placeholder `Rate limit reached — disabled until cooldown ends` in `text.subtle`; Send button bg `surface.soft` + label `text.subtle` (visually-muted Send glyph; click is no-op).
 - **Interactions:**
   - The countdown ticks down every second client-side; on reaching `00 : 00` the banner dismisses, composer re-enables. (No server round-trip — the countdown is a UI optimism; the next actual submit will retry server-side and reveal whether the bucket has refilled.)
 - **Per-state:**
