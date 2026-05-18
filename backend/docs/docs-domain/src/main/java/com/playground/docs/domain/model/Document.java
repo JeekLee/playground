@@ -29,6 +29,12 @@ import java.util.Objects;
  *       (per M2 spec §4.4).</li>
  *   <li>{@code updatedAt} bumps on any application-level mutation.</li>
  * </ul>
+ *
+ * <p>S2 adds the denormalized {@code view_count} / {@code like_count} columns
+ * (migration {@code V202605190001__add_counter_columns.sql}). The aggregate
+ * carries them as immutable fields on the read path — the increment paths
+ * (POST /like, POST /view) and the nightly resync land in S3 per ADR-12 §11.
+ * S2 always reads them and always writes 0 on a brand-new draft.
  */
 public final class Document {
 
@@ -38,6 +44,8 @@ public final class Document {
     private final DocumentBody body;
     private final Visibility visibility;
     private final DocumentPath path;
+    private final long viewCount;
+    private final long likeCount;
     private final Instant publishedAt;
     private final Instant createdAt;
     private final Instant updatedAt;
@@ -49,6 +57,8 @@ public final class Document {
             DocumentBody body,
             Visibility visibility,
             DocumentPath path,
+            long viewCount,
+            long likeCount,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
@@ -58,6 +68,14 @@ public final class Document {
         this.body = Objects.requireNonNull(body, "Document.body must not be null");
         this.visibility = Objects.requireNonNull(visibility, "Document.visibility must not be null");
         this.path = Objects.requireNonNull(path, "Document.path must not be null");
+        if (viewCount < 0) {
+            throw new IllegalArgumentException("Document.viewCount must be >= 0");
+        }
+        if (likeCount < 0) {
+            throw new IllegalArgumentException("Document.likeCount must be >= 0");
+        }
+        this.viewCount = viewCount;
+        this.likeCount = likeCount;
         this.publishedAt = publishedAt;
         this.createdAt = Objects.requireNonNull(createdAt, "Document.createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "Document.updatedAt must not be null");
@@ -75,9 +93,27 @@ public final class Document {
     }
 
     /**
+     * Backwards-compatible constructor (no counter fields) used by tests that
+     * pre-date the S2 counter columns. Defaults {@code viewCount} and
+     * {@code likeCount} to 0.
+     */
+    public Document(
+            DocumentId id,
+            AuthorId authorId,
+            DocumentTitle title,
+            DocumentBody body,
+            Visibility visibility,
+            DocumentPath path,
+            Instant publishedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, authorId, title, body, visibility, path, 0L, 0L, publishedAt, createdAt, updatedAt);
+    }
+
+    /**
      * Factory for a brand-new draft. Default visibility is {@link Visibility#PRIVATE}
      * per M2 spec §6.1 ({@code POST /api/docs} creates documents with
-     * {@code visibility='private'} and {@code path='/'}).
+     * {@code visibility='private'} and {@code path='/'}). Counters start at 0.
      */
     public static Document create(
             DocumentId id,
@@ -94,6 +130,8 @@ public final class Document {
                 body,
                 Visibility.PRIVATE,
                 path,
+                0L,
+                0L,
                 null,
                 now,
                 now);
@@ -121,6 +159,14 @@ public final class Document {
 
     public DocumentPath path() {
         return path;
+    }
+
+    public long viewCount() {
+        return viewCount;
+    }
+
+    public long likeCount() {
+        return likeCount;
     }
 
     public Instant publishedAt() {
@@ -164,6 +210,8 @@ public final class Document {
                 newBody == null ? this.body : newBody,
                 this.visibility,
                 newPath == null ? this.path : newPath,
+                this.viewCount,
+                this.likeCount,
                 this.publishedAt,
                 this.createdAt,
                 now);
@@ -199,6 +247,8 @@ public final class Document {
                 this.body,
                 next,
                 this.path,
+                this.viewCount,
+                this.likeCount,
                 newPublishedAt,
                 this.createdAt,
                 now);

@@ -1,6 +1,9 @@
 package com.playground.docs.domain.model.vo;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Objects;
 
 /**
@@ -11,6 +14,12 @@ import java.util.Objects;
  * <p>The size cap is enforced against the UTF-8 octet length, not the Java
  * char-count, so multi-byte content is bounded correctly. The DB CHECK
  * constraint applies the same predicate (defense in depth).
+ *
+ * <p>{@link #checksum()} returns the SHA-256 of the UTF-8 bytes of the raw MD,
+ * lowercase hex. This is the {@code bodyChecksum} carried by every
+ * {@code docs.document.uploaded} event per M2 spec §5; the application service
+ * also uses it to gate "did the body actually change on PATCH" so we don't
+ * fire a spurious uploaded event when only the title or path were edited.
  */
 public record DocumentBody(String value) {
 
@@ -35,6 +44,22 @@ public record DocumentBody(String value) {
 
     public boolean isEmpty() {
         return value.isEmpty();
+    }
+
+    /**
+     * SHA-256 of the body's UTF-8 octets, lowercase hex. Stable byte-by-byte
+     * across hosts so the {@code uploaded} event's {@code bodyChecksum} is
+     * comparable across producer + consumer.
+     */
+    public String checksum() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is a JDK-mandated algorithm; the catch is defensive only.
+            throw new IllegalStateException("SHA-256 algorithm unavailable", e);
+        }
     }
 
     private static int octetLength(String s) {

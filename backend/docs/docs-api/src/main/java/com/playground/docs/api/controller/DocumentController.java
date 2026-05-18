@@ -2,10 +2,12 @@ package com.playground.docs.api.controller;
 
 import com.playground.docs.api.request.CreateDocumentRequest;
 import com.playground.docs.api.request.PatchDocumentRequest;
+import com.playground.docs.api.response.DocListResponse;
 import com.playground.docs.api.response.DocumentDetailResponse;
 import com.playground.docs.api.response.MyDocumentListResponse;
 import com.playground.docs.application.dto.CreateDocumentCommand;
 import com.playground.docs.application.service.DocumentAppService;
+import com.playground.docs.application.service.DocumentFeedService;
 import com.playground.docs.domain.exception.DocsErrorCode;
 import com.playground.docs.domain.model.vo.DocumentBody;
 import com.playground.shared.error.ExceptionCreator;
@@ -28,38 +30,38 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * REST controller for the M2 S1 docs CRUD slice per spec §6.1.
+ * REST controller for the docs CRUD + feed surface per M2 spec §6.1.
  *
  * <p>Paths reflect the post-gateway-strip view: the gateway routes
  * {@code /api/docs/**} → {@code docs-api} with {@code StripPrefix=2}, so the
  * upstream service sees {@code /}, {@code /{id}}, {@code /{id}/publish} etc.
  *
- * <p>Auth contract (per M2 spec §6.1 + ADR-09 amendment):
+ * <p>Auth contract:
  * <ul>
- *   <li>{@link #create} / {@link #createMultipart} / {@link #listMine} /
- *       {@link #patch} / {@link #publish} / {@link #unpublish} /
- *       {@link #delete} — {@code X-User-Id} required; missing → 401 via shared
- *       exception hierarchy.</li>
- *   <li>{@link #getById} — {@code X-User-Id} optional; visibility-or-ownership
- *       gate enforced inside {@link DocumentAppService#getById}.</li>
+ *   <li>{@code GET /} with no scope (or with {@code author=...}) — auth optional;
+ *       returns the community feed (or per-author public feed).</li>
+ *   <li>{@code GET /?scope=mine} — auth required.</li>
+ *   <li>{@code GET /{id}} — auth optional; visibility-or-ownership gate inside
+ *       the app service.</li>
+ *   <li>Mutations ({@code POST /}, {@code PATCH /{id}}, {@code POST /{id}/publish},
+ *       {@code POST /{id}/unpublish}, {@code DELETE /{id}}) — auth required +
+ *       owner.</li>
  * </ul>
  *
  * <p>Per M2 spec §6.5 + §10 "Tenant isolation" non-author callers attempting to
  * mutate (or read a private) document receive 404, never 403 — leaking
  * existence by status defeats tenant isolation.
- *
- * <p>S1 scope: {@code GET /api/docs} accepts only {@code ?scope=mine}. The
- * community feed ({@code GET /api/docs} with no scope, or {@code ?author=...},
- * or {@code ?scope=mine&path=...}) lands in M2 S2.
  */
 @RestController
 @RequestMapping
 public class DocumentController {
 
     private final DocumentAppService docService;
+    private final DocumentFeedService feedService;
 
-    public DocumentController(DocumentAppService docService) {
+    public DocumentController(DocumentAppService docService, DocumentFeedService feedService) {
         this.docService = docService;
+        this.feedService = feedService;
     }
 
     @PostMapping(
@@ -109,25 +111,49 @@ public class DocumentController {
     }
 
     /**
-     * {@code GET /api/docs?scope=mine} per M2 spec §6.1 + §6.2 ({@code GET
-     * /api/docs/mine} is explicitly removed). S1 only accepts the bare
-     * {@code ?scope=mine}; combinations with {@code path=} (folder filter) and
-     * the community feed ({@code scope} absent or other) land in M2 S2.
+     * Unified {@code GET /api/docs} per M2 spec §6.1 + §6.2. Mode selection:
+     * <ul>
+     *   <li>{@code scope=mine} → caller's own docs (auth required). Combined
+     *       with {@code path} filter (M2 S3 territory; S2 rejects with 400 so
+     *       the frontend's UX isn't silently broken).</li>
+     *   <li>{@code author={uuid}} → that author's public docs (auth optional).</li>
+     *   <li>no scope, no author → community feed: every author's public docs,
+     *       sorted {@code published_at DESC} (auth optional).</li>
+     * </ul>
      */
     @GetMapping(value = {"/", ""})
-    public ResponseEntity<MyDocumentListResponse> listMine(
+    public ResponseEntity<?> list(
             @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,
             @RequestParam(value = "scope", required = false) String scope,
             @RequestParam(value = "author", required = false) String author,
-            @RequestParam(value = "path", required = false) String pathFilter) {
-        UUID caller = requireUserId(userIdHeader);
-        if (scope == null || !"mine".equals(scope)) {
+            @RequestParam(value = "path", required = false) String pathFilter,
+            @RequestParam(value = "cursor", required = false) String cursor) {
+        // ---- scope=mine: caller's docs ----
+        if ("mine".equals(scope)) {
+            UUID caller = requireUserId(userIdHeader);
+            if (author != null || pathFilter != null) {
+                // Path-filter on mine-scope lands in S3 (folder UI); reject in S2.
+                ExceptionCreator.of(DocsErrorCode.SCOPE_FILTER_UNSUPPORTED).throwIt();
+            }
+            return ResponseEntity.ok(MyDocumentListResponse.from(docService.listMine(caller)));
+        }
+        // ---- scope present but not "mine": invalid ----
+        if (scope != null && !scope.isBlank()) {
             ExceptionCreator.of(DocsErrorCode.SCOPE_REQUIRED).throwIt();
         }
-        if (author != null || pathFilter != null) {
-            ExceptionCreator.of(DocsErrorCode.SCOPE_FILTER_UNSUPPORTED).throwIt();
+        // ---- author=<uuid>: per-author public feed ----
+        if (author != null && !author.isBlank()) {
+            UUID authorId;
+            try {
+                authorId = UUID.fromString(author);
+            } catch (IllegalArgumentException e) {
+                ExceptionCreator.of(DocsErrorCode.AUTHOR_PARAM_INVALID).throwIt();
+                return null; // unreachable
+            }
+            return ResponseEntity.ok(DocListResponse.from(feedService.authorFeed(authorId, cursor)));
         }
-        return ResponseEntity.ok(MyDocumentListResponse.from(docService.listMine(caller)));
+        // ---- default: community feed ----
+        return ResponseEntity.ok(DocListResponse.from(feedService.communityFeed(cursor)));
     }
 
     @GetMapping("/{id}")
@@ -204,9 +230,6 @@ public class DocumentController {
         try {
             return UUID.fromString(header);
         } catch (IllegalArgumentException e) {
-            // A malformed X-User-Id header on an auth-optional route is treated as
-            // anonymous — defense in depth. We do not 400 the read because the
-            // gateway is supposed to vouch for the header.
             return null;
         }
     }
@@ -215,8 +238,6 @@ public class DocumentController {
         try {
             return UUID.fromString(id);
         } catch (IllegalArgumentException e) {
-            // A malformed id maps to "no such document" per M2 spec §6.5 — never
-            // leak that we even parsed the URL.
             ExceptionCreator.of(DocsErrorCode.DOCUMENT_NOT_FOUND, id).throwIt();
             return null; // unreachable
         }
@@ -231,13 +252,6 @@ public class DocumentController {
         }
     }
 
-    /**
-     * Derive a title from the original filename when the multipart upload omits
-     * an explicit {@code title} part. Strips {@code .md} or {@code .markdown}
-     * (case-insensitive) extensions; falls back to a generic placeholder when
-     * the filename is itself absent — the application service's blank-title
-     * check will still reject empty input.
-     */
     private static String deriveTitleFromFilename(String filename) {
         if (filename == null || filename.isBlank()) {
             return "Untitled";

@@ -46,9 +46,17 @@ public class PublicRouteMatcher {
             new Rule(HttpMethod.GET, "/docs/public/**"),
             new Rule(HttpMethod.GET, "/chat"),
             new Rule(HttpMethod.GET, "/metrics"),
-            // ADR-12 amendment to ADR-09: GET /api/docs/{id} is anonymous-OK;
-            // docs-api enforces 404 for private docs the caller doesn't own.
+            // ADR-12 amendment to ADR-09 + M2 S2 brief:
+            //  - GET /api/docs/{uuid}  → single-doc anonymous read (visibility gate inside docs-api).
+            //  - GET /api/docs         → community feed (every author's public docs).
+            //  - GET /api/docs/owner   → owner UUID resolution endpoint (fail-closed null).
+            //  - GET /api/docs/search  → public-scope full-text search; mine-scope handled inside docs-api.
+            // S1 only listed the UUID detail; S2 adds the other three.
             new Rule(HttpMethod.GET, "/api/docs/{id}", DOCS_DETAIL_UUID),
+            new Rule(HttpMethod.GET, "/api/docs"),
+            new Rule(HttpMethod.GET, "/api/docs/"),
+            new Rule(HttpMethod.GET, "/api/docs/owner"),
+            new Rule(HttpMethod.GET, "/api/docs/search"),
             new Rule(HttpMethod.POST, "/api/rag/chat/public"),
             new Rule(HttpMethod.GET, "/api/metrics/**"),
             new Rule(null, "/_next/**"),
