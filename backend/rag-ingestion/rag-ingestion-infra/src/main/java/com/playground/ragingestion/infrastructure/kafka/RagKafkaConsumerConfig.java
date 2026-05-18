@@ -5,10 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,9 +14,7 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
-import org.springframework.kafka.core.DefaultKafkaProducerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
@@ -35,6 +31,19 @@ import org.springframework.kafka.support.serializer.JsonDeserializer;
  * {@code DocsKafkaConsumerConfig}'s comment) — deserializers go on the
  * factory via setters, not in the props map, to avoid the "configured with
  * setters or properties, not both" exception.
+ *
+ * <p>Producer side is fully Spring-Boot-auto-configured from
+ * {@code spring.kafka.producer.*} in {@code application.yml} (acks=all,
+ * StringSerializer key, JsonSerializer value, lz4 compression,
+ * idempotence). The auto-created {@code kafkaTemplate} bean satisfies the
+ * Spring Modulith {@code KafkaEventExternalizerConfiguration}'s
+ * {@code KafkaOperations} dependency. Declaring a custom ProducerFactory
+ * here would trip Spring Boot's
+ * {@code @ConditionalOnMissingBean(ProducerFactory.class)} gate and
+ * silently disable both the auto ProducerFactory and the auto KafkaTemplate
+ * — which manifests as
+ * "kafkaEventExternalizer required a bean of type KafkaOperations"
+ * on startup.
  */
 @EnableKafka
 @Configuration(proxyBeanMethods = false)
@@ -60,45 +69,16 @@ public class RagKafkaConsumerConfig {
     }
 
     /**
-     * Default-named {@code producerFactory} so Spring Boot's
-     * {@code KafkaAutoConfiguration} skips its own (the auto config is
-     * {@code @ConditionalOnMissingBean(ProducerFactory.class)}). Used by
-     * both the DLQ recoverer and the Spring Modulith Kafka externalizer
-     * (which autowires {@code KafkaOperations} — satisfied by the
-     * default-named {@code kafkaTemplate} bean below).
-     */
-    @Bean
-    public ProducerFactory<String, Object> producerFactory(
-            @Value("${spring.kafka.bootstrap-servers:kafka-playground:9092}") String bootstrap) {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
-                org.springframework.kafka.support.serializer.JsonSerializer.class);
-        props.put(ProducerConfig.ACKS_CONFIG, "all");
-        return new DefaultKafkaProducerFactory<>(props);
-    }
-
-    /**
-     * Default-named {@code kafkaTemplate} so the Spring Modulith
-     * {@code KafkaEventExternalizerConfiguration} resolves its
-     * {@code KafkaOperations} dependency. Spring Boot's auto KafkaTemplate
-     * is skipped because we already provide a ProducerFactory bean above.
-     */
-    @Bean
-    public KafkaTemplate<String, Object> kafkaTemplate(
-            ProducerFactory<String, Object> producerFactory) {
-        return new KafkaTemplate<>(producerFactory);
-    }
-
-    /**
      * Routes retry-exhausted records to {@code <sourceTopic>.dlq} per ADR-13
      * §8 + ADR-03 convention. {@code partition % 3} mirrors the ADR-pinned
      * 3-partition DLQ shape — partition affinity per documentId is preserved
      * within the bounds of the smaller partition count.
+     *
+     * <p>The {@code KafkaOperations} parameter is injected by type — Spring
+     * resolves it to the Boot-auto-configured {@code kafkaTemplate} bean.
      */
     @Bean
-    public DefaultErrorHandler ragKafkaErrorHandler(KafkaTemplate<String, Object> kafkaTemplate) {
+    public DefaultErrorHandler ragKafkaErrorHandler(KafkaOperations<?, ?> kafkaTemplate) {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
                 kafkaTemplate,
                 (record, ex) -> new TopicPartition(record.topic() + ".dlq", record.partition() % 3));
