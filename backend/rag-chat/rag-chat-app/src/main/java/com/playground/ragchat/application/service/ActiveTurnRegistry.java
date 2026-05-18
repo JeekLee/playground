@@ -7,8 +7,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -41,7 +41,7 @@ import reactor.core.publisher.Flux;
 @Component
 public class ActiveTurnRegistry {
 
-    private static final Logger log = LoggerFactory.getLogger(ActiveTurnRegistry.class);
+    private static final Log log = LogFactory.getLog(ActiveTurnRegistry.class);
 
     private final ConcurrentMap<SessionId, Entry> turns = new ConcurrentHashMap<>();
 
@@ -49,7 +49,9 @@ public class ActiveTurnRegistry {
 
     public void register(SessionId sessionId, UserId owner, Flux<ChatStreamEvent> stream) {
         turns.put(sessionId, new Entry(owner, stream, Instant.now()));
-        log.debug("active turn registered sessionId={} owner={}", sessionId, owner);
+        if (log.isDebugEnabled()) {
+            log.debug("active turn registered sessionId=" + sessionId + " owner=" + owner);
+        }
     }
 
     public Optional<Entry> find(SessionId sessionId) {
@@ -57,8 +59,8 @@ public class ActiveTurnRegistry {
     }
 
     public void unregister(SessionId sessionId) {
-        if (turns.remove(sessionId) != null) {
-            log.debug("active turn unregistered sessionId={}", sessionId);
+        if (turns.remove(sessionId) != null && log.isDebugEnabled()) {
+            log.debug("active turn unregistered sessionId=" + sessionId);
         }
     }
 }
