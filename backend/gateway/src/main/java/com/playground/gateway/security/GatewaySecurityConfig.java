@@ -42,6 +42,11 @@ public class GatewaySecurityConfig {
         return http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse()))
+                // Eagerly materialize the CsrfToken Mono so the XSRF-TOKEN cookie
+                // is written on GET responses too (CookieServerCsrfTokenRepository
+                // is lazy by default). See CsrfTokenCookieMaterializingFilter.
+                .addFilterAfter(new CsrfTokenCookieMaterializingFilter(),
+                        org.springframework.security.config.web.server.SecurityWebFiltersOrder.CSRF)
                 .authorizeExchange(ex -> ex
                         // System routes Spring Security owns.
                         .pathMatchers("/oauth2/**", "/login/**", "/logout").permitAll()
