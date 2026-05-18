@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
-import { BlockNoteEditor } from '@/features/docs-editor';
+import { BlockNoteEditor, useSaveShortcut } from '@/features/docs-editor';
 import { FolderPicker } from '@/features/folder-picker';
 import {
   bodyByteSize,
@@ -134,6 +134,16 @@ export function DocNewPage() {
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [body, docId, persist, saveState.kind, title]);
+
+  // ⌘+S / Ctrl+S immediate save — complements the debounced loop above.
+  useSaveShortcut(
+    useCallback(() => {
+      const hasContent = title.trim().length > 0 || body.trim().length > 0;
+      if (!hasContent && !docId) return;
+      void persist(title, body, docId);
+    }, [body, docId, persist, title]),
+    saveState.kind !== 'too-large' && !publishing,
+  );
 
   const onPublish = useCallback(async () => {
     // Always run a final synchronous save first so the published row
