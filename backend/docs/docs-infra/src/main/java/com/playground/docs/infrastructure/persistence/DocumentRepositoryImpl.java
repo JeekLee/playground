@@ -1,5 +1,6 @@
 package com.playground.docs.infrastructure.persistence;
 
+import com.playground.docs.application.dto.FolderListItemDto;
 import com.playground.docs.application.repository.DocumentRepository;
 import com.playground.docs.domain.model.Document;
 import com.playground.docs.domain.model.id.AuthorId;
@@ -34,6 +35,13 @@ public class DocumentRepositoryImpl implements DocumentRepository {
     }
 
     @Override
+    public List<Document> findAllByAuthorAndPath(AuthorId author, String path) {
+        return jpaRepository.findAllByUserAndPathOrderedForMine(author.value(), path).stream()
+                .map(DocumentMapper::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<Document> findPublicFeed(Instant cursorPublishedAt, UUID cursorId, int limit) {
         List<DocumentJpaEntity> rows = (cursorPublishedAt == null || cursorId == null)
                 ? jpaRepository.findPublicFeedFirstPage(Limit.of(limit))
@@ -63,5 +71,34 @@ public class DocumentRepositoryImpl implements DocumentRepository {
     @Override
     public void deleteById(DocumentId id) {
         jpaRepository.deleteById(id.value());
+    }
+
+    // --- M2 S3 counter mutations + folder summary + nightly resync ---
+
+    @Override
+    public int incrementViewCount(DocumentId id) {
+        return jpaRepository.incrementViewCount(id.value());
+    }
+
+    @Override
+    public int incrementLikeCount(DocumentId id) {
+        return jpaRepository.incrementLikeCount(id.value());
+    }
+
+    @Override
+    public int decrementLikeCount(DocumentId id) {
+        return jpaRepository.decrementLikeCount(id.value());
+    }
+
+    @Override
+    public List<FolderListItemDto> listFolders(AuthorId author) {
+        return jpaRepository.folderSummary(author.value()).stream()
+                .map(row -> new FolderListItemDto((String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    @Override
+    public int resyncLikeCounts() {
+        return jpaRepository.resyncLikeCounts();
     }
 }

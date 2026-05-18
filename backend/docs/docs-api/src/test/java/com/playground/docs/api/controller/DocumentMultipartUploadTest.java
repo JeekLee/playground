@@ -144,7 +144,9 @@ class DocumentMultipartUploadTest {
         // S2 (this PR): GET /api/docs with no scope returns the community feed
         // (auth optional). The controller delegates to DocumentFeedService;
         // standalone-MockMvc test mocks the service to an empty page.
-        when(feedService.communityFeed(null))
+        // M2 S3: the controller forwards the (optional) caller UUID for
+        // per-row likedByMe resolution — anonymous request → callerId=null.
+        when(feedService.communityFeed(null, null))
                 .thenReturn(com.playground.docs.application.dto.CursorPage.empty());
 
         mockMvc.perform(get("/"))
@@ -162,11 +164,30 @@ class DocumentMultipartUploadTest {
     }
 
     @Test
-    void list_mine_rejects_combined_filters_in_s2() throws Exception {
-        // Path filters on mine-scope land in S3 (folder UI); S2 rejects with 400.
+    void list_mine_with_path_filter_is_accepted_in_s3() throws Exception {
+        // M2 S3: path filter on ?scope=mine is the folder-pane right list
+        // per spec §6.1 row {@code GET /api/docs?scope=mine&path={folder}}.
+        // The controller delegates to DocumentAppService.listMine(caller, path);
+        // we stub it to an empty list so the response asserts ok + empty items.
+        when(docService.listMine(author, "/agents/"))
+                .thenReturn(java.util.List.of());
+
         mockMvc.perform(get("/")
                         .param("scope", "mine")
                         .param("path", "/agents/")
+                        .header("X-User-Id", author.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
+    void list_mine_with_author_filter_still_rejected_in_s3() throws Exception {
+        // Author filter on mine-scope is meaningless — caller IS the only
+        // author the scope can resolve to. Rejected with the same error
+        // code as the S2 path-filter rejection.
+        mockMvc.perform(get("/")
+                        .param("scope", "mine")
+                        .param("author", UUID.randomUUID().toString())
                         .header("X-User-Id", author.toString()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode", is(DocsErrorCode.SCOPE_FILTER_UNSUPPORTED.code())));
@@ -175,7 +196,7 @@ class DocumentMultipartUploadTest {
     @Test
     void list_with_author_param_returns_author_feed() throws Exception {
         UUID someAuthor = UUID.randomUUID();
-        when(feedService.authorFeed(someAuthor, null))
+        when(feedService.authorFeed(someAuthor, null, null))
                 .thenReturn(com.playground.docs.application.dto.CursorPage.empty());
 
         mockMvc.perform(get("/").param("author", someAuthor.toString()))

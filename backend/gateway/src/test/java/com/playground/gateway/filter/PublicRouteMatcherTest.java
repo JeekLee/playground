@@ -128,6 +128,52 @@ class PublicRouteMatcherTest {
         assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs/something"))).isFalse();
     }
 
+    // --- M2 S3 / ADR-12 §10 amendment to ADR-09 ---
+
+    @Test
+    void post_api_docs_uuid_view_is_public_in_s3() {
+        // POST /api/docs/{uuid}/view — anonymous-OK per ADR-12 §10
+        // ("same-cookie path regardless of auth state"). The dedup runs
+        // inside docs-api against the PLAYGROUND_ANON cookie.
+        assertThat(matcher.isPublic(exchange(HttpMethod.POST,
+                "/api/docs/01234567-89ab-cdef-0123-456789abcdef/view"))).isTrue();
+    }
+
+    @Test
+    void get_api_docs_uuid_view_is_not_public() {
+        // The view endpoint is POST-only; a stray GET stays authenticated
+        // (the route doesn't exist server-side either; consistency check).
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET,
+                "/api/docs/01234567-89ab-cdef-0123-456789abcdef/view"))).isFalse();
+    }
+
+    @Test
+    void post_api_docs_uuid_like_is_not_public() {
+        // POST /api/docs/{id}/like — auth required per S3 brief.
+        assertThat(matcher.isPublic(exchange(HttpMethod.POST,
+                "/api/docs/01234567-89ab-cdef-0123-456789abcdef/like"))).isFalse();
+    }
+
+    @Test
+    void delete_api_docs_uuid_like_is_not_public() {
+        // DELETE /api/docs/{id}/like — auth required.
+        assertThat(matcher.isPublic(exchange(HttpMethod.DELETE,
+                "/api/docs/01234567-89ab-cdef-0123-456789abcdef/like"))).isFalse();
+    }
+
+    @Test
+    void get_api_docs_folders_is_not_public() {
+        // GET /api/docs/folders — auth required (caller's own folder tree).
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/api/docs/folders"))).isFalse();
+    }
+
+    @Test
+    void post_api_docs_view_with_non_uuid_is_not_public() {
+        // Anti-bypass: a garbage segment in place of UUID does not unlock the rule.
+        assertThat(matcher.isPublic(exchange(HttpMethod.POST,
+                "/api/docs/something/view"))).isFalse();
+    }
+
     private ServerWebExchange exchange(HttpMethod method, String path) {
         return MockServerWebExchange.from(MockServerHttpRequest.method(method, path).build());
     }

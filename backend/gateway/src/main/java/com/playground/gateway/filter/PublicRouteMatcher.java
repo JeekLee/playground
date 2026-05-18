@@ -41,6 +41,14 @@ public class PublicRouteMatcher {
     private static final Pattern DOCS_DETAIL_UUID =
             Pattern.compile("^/api/docs/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
+    /**
+     * M2 S3 view-counter endpoint: {@code POST /api/docs/{uuid}/view} is
+     * anonymous-OK (ADR-12 §10 "same-cookie path regardless of auth state"
+     * + brief: "Auth optional").
+     */
+    private static final Pattern DOCS_VIEW_UUID =
+            Pattern.compile("^/api/docs/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/view$");
+
     private static final List<Rule> RULES = List.of(
             new Rule(HttpMethod.GET, "/"),
             new Rule(HttpMethod.GET, "/docs/public/**"),
@@ -57,6 +65,11 @@ public class PublicRouteMatcher {
             new Rule(HttpMethod.GET, "/api/docs/"),
             new Rule(HttpMethod.GET, "/api/docs/owner"),
             new Rule(HttpMethod.GET, "/api/docs/search"),
+            // M2 S3: POST /api/docs/{uuid}/view is anonymous-OK (ADR-12 §10).
+            // Auth-required engagement routes (POST/DELETE /like, GET /folders)
+            // are NOT in this allowlist — gateway 401's them when the session
+            // is missing per the default authenticated() catch-all.
+            new Rule(HttpMethod.POST, "/api/docs/{id}/view", DOCS_VIEW_UUID),
             new Rule(HttpMethod.POST, "/api/rag/chat/public"),
             new Rule(HttpMethod.GET, "/api/metrics/**"),
             new Rule(null, "/_next/**"),
