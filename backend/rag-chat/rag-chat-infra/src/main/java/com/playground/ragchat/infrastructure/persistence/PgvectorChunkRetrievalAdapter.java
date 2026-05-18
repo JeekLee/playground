@@ -46,37 +46,55 @@ public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
 
         String vectorLiteral = new PGvector(queryEmbedding).toString();
 
-        // The retrieval SQL per ADR-14 §3.2. SET LOCAL must run in the same
-        // transaction; JdbcTemplate runs each call on a fresh connection from
-        // the pool, so wrap both statements in execute(ConnectionCallback) to
-        // keep them on one connection / one tx.
+        // The retrieval SQL per ADR-14 §3.2. SET LOCAL only takes effect
+        // inside an explicit transaction (outside, Postgres raises
+        // "SET LOCAL can only be used in transaction blocks"), and the
+        // pooled connection arrives in auto-commit mode. Drop auto-commit
+        // for the duration of the call, COMMIT on success / ROLLBACK on
+        // failure, and restore auto-commit before handing the connection
+        // back to the pool.
         List<ChunkRow> rows = jdbc.execute((java.sql.Connection conn) -> {
-            try (var setLocal = conn.prepareStatement("SET LOCAL hnsw.ef_search = ?")) {
-                setLocal.setInt(1, properties.efSearch());
-                setLocal.execute();
-            }
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT document_id, chunk_index, text, user_id, visibility "
-                            + "FROM rag.document_chunks "
-                            + "WHERE visibility = 'public' "
-                            + "   OR (user_id = ? AND visibility = 'private') "
-                            + "ORDER BY embedding <=> ?::public.vector "
-                            + "LIMIT ?")) {
-                ps.setObject(1, caller.value());
-                ps.setString(2, vectorLiteral);
-                ps.setInt(3, k);
-                List<ChunkRow> collected = new ArrayList<>(k);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        collected.add(new ChunkRow(
-                                (UUID) rs.getObject("document_id"),
-                                rs.getInt("chunk_index"),
-                                rs.getString("text"),
-                                (UUID) rs.getObject("user_id"),
-                                rs.getString("visibility")));
+            boolean priorAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                try (var setLocal = conn.prepareStatement("SET LOCAL hnsw.ef_search = ?")) {
+                    setLocal.setInt(1, properties.efSearch());
+                    setLocal.execute();
+                }
+                List<ChunkRow> collected;
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "SELECT document_id, chunk_index, text, user_id, visibility "
+                                + "FROM rag.document_chunks "
+                                + "WHERE visibility = 'public' "
+                                + "   OR (user_id = ? AND visibility = 'private') "
+                                + "ORDER BY embedding <=> ?::public.vector "
+                                + "LIMIT ?")) {
+                    ps.setObject(1, caller.value());
+                    ps.setString(2, vectorLiteral);
+                    ps.setInt(3, k);
+                    collected = new ArrayList<>(k);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            collected.add(new ChunkRow(
+                                    (UUID) rs.getObject("document_id"),
+                                    rs.getInt("chunk_index"),
+                                    rs.getString("text"),
+                                    (UUID) rs.getObject("user_id"),
+                                    rs.getString("visibility")));
+                        }
                     }
                 }
+                conn.commit();
                 return collected;
+            } catch (RuntimeException | java.sql.SQLException ex) {
+                try {
+                    conn.rollback();
+                } catch (java.sql.SQLException ignored) {
+                    // best effort — original cause propagates below
+                }
+                throw ex;
+            } finally {
+                conn.setAutoCommit(priorAutoCommit);
             }
         });
 
