@@ -33,6 +33,7 @@ decisions when a milestone justifies it.
 | 10 | `10-m1-identity.md` | **(per-milestone, M1)** Identity implementation — library versions, gateway filter ordering, `POST /users/bootstrap` mechanics, `PLAYGROUND_ANON` cookie attributes, `identity.users` schema, Spring Modulith Events outbox (inherited by M2+) |
 | 11 | `11-shared-exception-hierarchy.md` | `shared-kernel` exception hierarchy — `AbstractException` + six HTTP-typed subclasses + reflective `ExceptionCreator` + unified `@RestControllerAdvice` |
 | 12 | `12-m2-docs.md` | **(per-milestone, M2)** Docs BC implementation — BlockNote versions + SSR strategy, OpenSearch 2.18 + native client + Nori analyzer, Spring Modulith outbox (inherited from M1), M3 → docs body-fetch HTTP exception, docs → identity owner-lookup HTTP exception, per-IP rate limits for anonymous reads, body size cap 1 MB, view dedup 24h, nightly counter resync via Spring `@Scheduled`. Amends ADR-05, ADR-08, ADR-09. |
+| 13 | `13-m3-rag-ingestion.md` | **(per-milestone, M3)** RAG-Ingestion BC implementation — chunking 800-token windows + 120-token overlap (configurable), embedding retry 3 attempts with exponential backoff + jitter, DLQ per source topic (`<topic>.dlq`, 14-day retention), ingestion-complete signal as new Kafka event `rag.document.ingested` via Spring Modulith outbox (inherited from M1/M2), pgvector HNSW (m=16, ef_construction=64) + `(user_id, visibility)` prefilter indexes, `body_checksum` denormalized per chunk row, race resolution via shared Redisson lock, port 18083 (actuator-only, host-not-exposed), no new ADR-08 exception (Exceptions 1+2 reused verbatim). Amends ADR-03 (topic registry + DLQ retention), ADR-05 (chunk DDL + ef_search runtime hint), ADR-08 (informational — no new exception). |
 
 ### Module count (post-ADR-01 v2, ADR-02 v2)
 
@@ -112,8 +113,12 @@ linked into the BC's `*-api` fat jar.
 |---|---|---|
 | `identity.user.registered` | identity | (future: notifications) |
 | `docs.document.uploaded` | docs | rag-ingestion |
+| `docs.document.visibility-changed` | docs | rag-ingestion |
 | `docs.document.deleted` | docs | rag-ingestion |
-| `rag.chunk.embedded` | rag-ingestion | (future: analytics) |
+| `docs.document.uploaded.dlq` | rag-ingestion (DLQ recoverer) | operator triage |
+| `docs.document.visibility-changed.dlq` | rag-ingestion (DLQ recoverer) | operator triage |
+| `docs.document.deleted.dlq` | rag-ingestion (DLQ recoverer) | operator triage |
+| `rag.document.ingested` | rag-ingestion | (future: M4 readiness, M5 metrics) |
 | `metrics.snapshot.captured` | metrics | (none — internal) |
 
 ## Consequences
