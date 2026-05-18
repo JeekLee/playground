@@ -1,0 +1,88 @@
+server:
+  port: 18082
+  # ADR-07 §"Hosting model" + ADR-10 §9 — Cloudflare Tunnel terminates TLS so
+  # Spring must honor X-Forwarded-* from upstream (the gateway forwards them).
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: docs-api
+  servlet:
+    multipart:
+      # Aligns with the 1 MB raw-MD body cap pinned by ADR-12 §4 /
+      # DocumentBody.MAX_OCTET_LENGTH. A small slack on max-request-size accounts
+      # for the multipart envelope (boundary headers + the optional title/path
+      # parts). Spring's default 1 MB cap would otherwise reject legitimate
+      # at-the-limit Markdown uploads.
+      max-file-size: 1MB
+      max-request-size: 2MB
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=docs
+    username: ${POSTGRES_USER:playground}
+    password: ${POSTGRES_PASSWORD:}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: docs
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    schemas: docs
+    default-schema: docs
+    table: flyway_history
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-playground:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        linger.ms: 10
+        compression.type: lz4
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  modulith:
+    events:
+      # M2 S1 wires the Modulith JPA outbox table (per ADR-12 §1, inheriting
+      # ADR-10 §8) but does not yet publish any events — the docs domain event
+      # POJOs and the EventExternalizationConfiguration land in M2 S2 alongside
+      # the search projector. Keep the JPA schema-init enabled so the
+      # JpaEventPublication entity validates; disable externalization + Kafka
+      # bridges so no consumer threads start up looking for un-published events.
+      jdbc:
+        schema-initialization:
+          enabled: true
+      externalization:
+        enabled: false
+      kafka:
+        enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui
+
+logging:
+  level:
+    com.playground.docs: INFO
+    org.springframework.modulith.events: INFO

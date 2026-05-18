@@ -50,7 +50,26 @@ public class GatewaySecurityConfig {
                         // Public SSR routes.
                         .pathMatchers(HttpMethod.GET, "/", "/docs/public/**", "/chat", "/metrics").permitAll()
                         // Public API routes per ADR-09 allowlist.
-                        .pathMatchers(HttpMethod.GET, "/api/docs/public/**").permitAll()
+                        // ADR-12 amendment to ADR-09: the legacy /api/docs/public/** prefix is
+                        // removed; the unified namespace gates per-doc visibility inside docs-api.
+                        // Per M2 spec §6.1 + §6.2 the only S1 use of `GET /api/docs` is the
+                        // authenticated `?scope=mine` shape — the community feed (bare
+                        // `GET /api/docs`) lands in M2 S2, so the gateway treats every
+                        // `GET /api/docs` (no UUID suffix) as authenticated. The
+                        // `?scope=mine` requirement is enforced inside docs-api so a bare
+                        // `GET /api/docs` from an authenticated client surfaces as 400
+                        // (not 403/401).
+                        //
+                        // S1 ships only the GET /api/docs/{id} public allowance; the
+                        // community feed (GET /api/docs), view counter
+                        // (POST /api/docs/{id}/view), and public search
+                        // (GET /api/docs/search?scope=public) land in M2 S2 / S3.
+                        //
+                        // The catch-all .pathMatchers("/api/docs/**").authenticated()
+                        // below covers PATCH/DELETE/{id}/publish/{id}/unpublish; ordering
+                        // ensures the UUID-only public read is matched first.
+                        .pathMatchers(HttpMethod.GET, "/api/docs/{id:[0-9a-fA-F-]{36}}").permitAll()
+                        .pathMatchers("/api/docs", "/api/docs/", "/api/docs/**").authenticated()
                         .pathMatchers(HttpMethod.POST, "/api/rag/chat/public").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/metrics/**").permitAll()
                         // Next.js static assets.

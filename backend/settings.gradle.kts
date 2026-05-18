@@ -28,4 +28,11 @@ include(":identity:identity-app")
 include(":identity:identity-domain")
 include(":identity:identity-infra")
 
-// M2 (docs), M3 (rag-ingestion), M4 (rag-chat), M5 (metrics): same pattern.
+// M2 — docs quadruplet (ADR-01 v2 + ADR-12). S1 ships single-author CRUD only;
+// search projector / events / engagement counters land in M2 S2+.
+include(":docs:docs-api")
+include(":docs:docs-app")
+include(":docs:docs-domain")
+include(":docs:docs-infra")
+
+// M3 (rag-ingestion), M4 (rag-chat), M5 (metrics): same pattern.
