@@ -20,6 +20,7 @@ import type {
   DocDetailDto,
   DocListItemDto,
   DocVisibility,
+  FolderListItemDto,
   MyDocListItemDto,
   OwnerInfoDto,
   PatchDocRequestDto,
@@ -37,6 +38,7 @@ export type PatchDocumentRequest = PatchDocRequestDto;
 export type SearchHit = SearchHitDto;
 export type OwnerInfo = OwnerInfoDto;
 export type DocSearchScope = SearchScope;
+export type FolderListItem = FolderListItemDto;
 
 /**
  * Resolve initials for an author avatar fallback. The design system

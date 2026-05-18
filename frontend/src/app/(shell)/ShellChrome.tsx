@@ -31,10 +31,16 @@ import type { User } from '@/entities/user';
  */
 export interface ShellChromeProps {
   user: User | null;
+  /**
+   * Optional `published/total` doc counts surfaced as a numeric badge on
+   * the sidebar's Docs row (per design doc M2-docs.md §"Sidebar"). Null
+   * for anonymous shells or when the docs API doesn't respond.
+   */
+  docsBadge?: { published: number; total: number } | null;
   children: React.ReactNode;
 }
 
-export function ShellChrome({ user, children }: ShellChromeProps) {
+export function ShellChrome({ user, docsBadge, children }: ShellChromeProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const pathname = usePathname() ?? '/';
 
@@ -74,6 +80,7 @@ export function ShellChrome({ user, children }: ShellChromeProps) {
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggle}
         pathname={pathname}
+        docsBadge={docsBadge ?? null}
       />
       <div className="flex min-h-screen flex-1 flex-col">
         <Topbar

@@ -49,6 +49,13 @@ export interface SidebarProps {
    * to `/` so SSR snapshots render Home-active.
    */
   pathname?: string;
+  /**
+   * Per design doc M2-docs.md §"Sidebar" / §"My documents" key elements:
+   * a `published/total` numeric badge in `accent` on the Docs row when
+   * the caller is signed in and the current route is somewhere under
+   * `/docs/`. Null for anonymous callers.
+   */
+  docsBadge?: { published: number; total: number } | null;
 }
 
 interface AppsRow {
@@ -63,9 +70,14 @@ interface AppsRow {
   isActive?: (pathname: string) => boolean;
   locked?: boolean;
   milestone?: string;
+  /**
+   * Optional numeric badge text rendered alongside the row label. Used
+   * for the Docs `published/total` count per design doc §"Sidebar".
+   */
+  badge?: string | null;
 }
 
-const APPS: AppsRow[] = [
+const APPS_BASE: AppsRow[] = [
   { label: 'Home', icon: Home, href: '/' },
   {
     label: 'Docs',
@@ -90,7 +102,25 @@ const APPS: AppsRow[] = [
   },
 ];
 
-export function Sidebar({ user, collapsed, onToggleCollapsed, pathname = '/' }: SidebarProps) {
+export function Sidebar({
+  user,
+  collapsed,
+  onToggleCollapsed,
+  pathname = '/',
+  docsBadge = null,
+}: SidebarProps) {
+  // Per design doc §"My documents" the `published/total` badge shows on
+  // the Docs row when the caller is on a Docs surface. We keep it
+  // visible across every `/docs/...` route (mine, search, new, single)
+  // so the count is always one click away — the badge is informational
+  // chrome, not a route indicator.
+  const showDocsBadge =
+    docsBadge !== null && (pathname === '/docs' || pathname.startsWith('/docs/'));
+  const apps: AppsRow[] = APPS_BASE.map((row) =>
+    row.label === 'Docs' && showDocsBadge
+      ? { ...row, badge: `${docsBadge.published}/${docsBadge.total}` }
+      : row,
+  );
   return (
     <aside
       className={cn(
@@ -128,7 +158,7 @@ export function Sidebar({ user, collapsed, onToggleCollapsed, pathname = '/' }: 
       <nav aria-label="Apps" className="flex w-full flex-col gap-sm">
         {!collapsed && <span className="px-sm text-eyebrow text-text-subtle">Apps</span>}
         <ul className="flex flex-col gap-xs">
-          {APPS.map((row) => {
+          {apps.map((row) => {
             const active = !row.locked && (row.isActive?.(pathname) ?? pathname === row.href);
             return (
               <AppsRowItem
@@ -158,6 +188,7 @@ function AppsRowItem({
   active,
   locked,
   milestone,
+  badge,
   collapsed,
 }: AppsRow & { collapsed: boolean; active?: boolean }) {
   const className = cn(
@@ -176,13 +207,26 @@ function AppsRowItem({
         <Icon size={16} aria-hidden="true" />
         <span>{label}</span>
       </span>
-      {locked && (
+      {locked ? (
         <span className="flex items-center gap-xs text-[10px] uppercase tracking-[0.04em] text-text-subtle">
           {milestone}
           <Lock size={11} aria-hidden="true" />
         </span>
+      ) : badge ? (
+        <span
+          className={cn(
+            'rounded-pill px-[7px] py-[1px] font-mono text-[10px]',
+            active
+              ? 'bg-accent text-surface'
+              : 'bg-accent-soft text-accent',
+          )}
+          aria-label={`${badge} documents`}
+        >
+          {badge}
+        </span>
+      ) : (
+        active && <span aria-hidden="true" className="h-[6px] w-[6px] rounded-pill bg-accent" />
       )}
-      {active && <span aria-hidden="true" className="h-[6px] w-[6px] rounded-pill bg-accent" />}
     </>
   );
 

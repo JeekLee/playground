@@ -4,6 +4,7 @@ export type {
   DocSearchScope,
   Document,
   DocumentListItem,
+  FolderListItem,
   MyDocumentListItem,
   OwnerInfo,
   PatchDocumentRequest,
@@ -11,3 +12,13 @@ export type {
   Visibility,
 } from './types';
 export { authorInitials, displayInitials, formatDate, formatRelative } from './types';
+export {
+  buildFolderTree,
+  flattenFolderTree,
+  folderLabel,
+  normalizeFolderPath,
+  parentOf,
+  ROOT_PATH,
+  totalDocCount,
+  type FolderTreeNode,
+} from './folder-tree';

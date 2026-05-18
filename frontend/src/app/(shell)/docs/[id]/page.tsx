@@ -77,5 +77,10 @@ export default async function DocByIdRoute({ params, searchParams }: PageProps) 
   if (isOwner) {
     return <DocEditor doc={doc} publishedFlash={searchParams.published === '1'} />;
   }
-  return <DocReader doc={doc} />;
+  return (
+    <DocReader
+      doc={doc}
+      isAuthenticated={me.kind === 'authenticated'}
+    />
+  );
 }
