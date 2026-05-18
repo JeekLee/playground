@@ -1,14 +1,16 @@
+import Link from 'next/link';
 import { Home, FileText, MessageSquare, Activity, Lock } from 'lucide-react';
 import { Tile } from '@/shared/ui/tile';
 import { Chip } from '@/shared/ui/chip';
 
 /**
  * Tile-grid widget — "Things you can try" 4-column grid pinned in
- * `docs/design/M1-identity.md`. One shipped tile (Home, active) +
- * three locked previews keyed to their unlock milestones.
+ * `docs/design/M1-identity.md`. M2-shipped tiles are now Home + Documents;
+ * Chat (M4) and System status (M5) stay locked.
  *
- * Static content for M1; later milestones flip locked tiles to active
- * by editing the entries below.
+ * Documents tile becomes interactive on M2 — wraps the visual Tile in a
+ * Next.js Link to `/docs` (community feed). Hover lift on the Tile
+ * primitive triggers because neither `locked` nor `active` is set.
  */
 
 export function TileGrid() {
@@ -25,21 +27,21 @@ export function TileGrid() {
           </Chip>
         }
       />
-      <Tile
-        locked
-        icon={<FileText size={18} />}
-        title="Documents"
-        description="Long-form notes and posts. Read publicly; sign in to write."
-        meta={
-          <>
-            <Chip variant="neutral">
-              <Lock size={11} aria-hidden="true" />
-              <span className="ml-xs">M2 — Documents</span>
+      <Link
+        href="/docs"
+        className="block rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <Tile
+          icon={<FileText size={18} />}
+          title="Documents"
+          description="Long-form notes and posts. Read publicly, sign in to write your own."
+          meta={
+            <Chip variant="success" dot>
+              shipped
             </Chip>
-            <Chip variant="neutral">sign in to write</Chip>
-          </>
-        }
-      />
+          }
+        />
+      </Link>
       <Tile
         locked
         icon={<MessageSquare size={18} />}
