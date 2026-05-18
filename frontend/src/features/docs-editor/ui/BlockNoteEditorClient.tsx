@@ -6,6 +6,7 @@ import { BlockNoteView } from '@blocknote/mantine';
 import { useCreateBlockNote } from '@blocknote/react';
 import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
+import { playgroundTheme } from '../lib/playgroundTheme';
 
 /**
  * BlockNote editor — client-only component, dynamic-imported from the
@@ -85,7 +86,7 @@ export default function BlockNoteEditorClient({
 
   return (
     <div className={ready ? '' : 'opacity-0'}>
-      <BlockNoteView editor={editor} editable={editable} theme="light" />
+      <BlockNoteView editor={editor} editable={editable} theme={playgroundTheme} />
     </div>
   );
 }
