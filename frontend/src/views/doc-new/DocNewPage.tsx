@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
@@ -66,6 +66,13 @@ export function DocNewPage() {
   // Guard: prevent re-entry of "first save" while a POST is in flight.
   const [creating, setCreating] = useState(false);
 
+  // Tracks the (title, body) snapshot that was last persisted to the server.
+  // The debounced save loop + ⌘+S shortcut both compare against this so we
+  // never round-trip when nothing has changed (auto-save was firing every
+  // 1.5s even on idle because setSaveState reruns the effect; this prevents
+  // those no-op PATCH calls).
+  const lastSavedRef = useRef<{ title: string; body: string }>({ title: '', body: '' });
+
   const persist = useCallback(
     async (nextTitle: string, nextBody: string, currentId: string | null) => {
       // 1 MB cap.
@@ -113,6 +120,7 @@ export function DocNewPage() {
         body: nextBody,
       });
       if (patched.kind === 'ok') {
+        lastSavedRef.current = { title: nextTitle, body: nextBody };
         setSaveState({ kind: 'saved', at: Date.now() });
       } else if (patched.kind === 'too-large') {
         setSaveState({ kind: 'too-large' });
@@ -124,22 +132,44 @@ export function DocNewPage() {
     [creating, folderPath, router],
   );
 
-  // Debounced save loop.
+  // After a successful first-create POST, remember the snapshot so the
+  // debounced loop doesn't immediately re-fire as a no-op PATCH.
+  useEffect(() => {
+    if (docId && saveState.kind === 'saved') {
+      lastSavedRef.current = { title, body };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional, only on save success
+  }, [docId, saveState.kind]);
+
+  // Debounced save loop. Only fires when (title, body) actually changed
+  // since the last successful save — prevents idle no-op PATCH every 1.5s.
   useEffect(() => {
     if (saveState.kind === 'too-large') return;
     const hasContent = title.trim().length > 0 || body.trim().length > 0;
     if (!hasContent && !docId) return;
+    if (
+      lastSavedRef.current.title === title &&
+      lastSavedRef.current.body === body
+    ) {
+      return;
+    }
     const handle = window.setTimeout(() => {
       void persist(title, body, docId);
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [body, docId, persist, saveState.kind, title]);
 
-  // ⌘+S / Ctrl+S immediate save — complements the debounced loop above.
+  // ⌘+S / Ctrl+S immediate save — same no-op guard as the debounced loop.
   useSaveShortcut(
     useCallback(() => {
       const hasContent = title.trim().length > 0 || body.trim().length > 0;
       if (!hasContent && !docId) return;
+      if (
+        lastSavedRef.current.title === title &&
+        lastSavedRef.current.body === body
+      ) {
+        return;
+      }
       void persist(title, body, docId);
     }, [body, docId, persist, title]),
     saveState.kind !== 'too-large' && !publishing,
