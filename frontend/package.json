@@ -14,9 +14,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@blocknote/core": "^0.22.0",
-    "@blocknote/mantine": "^0.22.0",
-    "@blocknote/react": "^0.22.0",
+    "@blocknote/core": "^0.51.0",
+    "@blocknote/mantine": "^0.51.0",
+    "@blocknote/react": "^0.51.0",
+    "@mantine/core": "^8.3.11",
+    "@mantine/hooks": "^8.3.11",
     "lucide-react": "0.456.0",
     "next": "14.2.35",
     "react": "18.3.1",
@@ -26,11 +28,6 @@
     "remark-gfm": "4.0.0",
     "server-only": "^0.0.1",
     "shiki": "1.24.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "prosemirror-view": "1.33.7"
-    }
   },
   "devDependencies": {
     "@types/node": "22.10.2",
