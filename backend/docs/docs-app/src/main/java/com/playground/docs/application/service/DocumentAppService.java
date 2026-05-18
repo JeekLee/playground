@@ -325,9 +325,16 @@ public class DocumentAppService {
      * S3 overload — wires the {@code likedByMe} flag (resolved by
      * {@link #resolveLikedByMe} when the caller is authenticated; null
      * otherwise per spec §6.4 — anonymous detail responses omit the flag).
+     *
+     * <p>Per M2 spec §6.4 {@code DocDetail.author} is a required block on
+     * every single-doc response — including the author's own view. The
+     * {@code authorOwnsRow} parameter is retained for callers that want to
+     * skip the optional identity lookup, but the resolved author always
+     * flows through to the DTO (fallback to a placeholder when the lookup
+     * misses — see {@link #resolveAuthor}).
      */
     private DocumentDetailDto toDetailDto(Document doc, boolean authorOwnsRow, Boolean likedByMe) {
-        AuthorDto author = authorOwnsRow ? null : resolveAuthor(doc.authorId().value());
+        AuthorDto author = resolveAuthor(doc.authorId().value());
         return DocumentDetailDto.from(doc, author, doc.viewCount(), doc.likeCount(), likedByMe);
     }
 
@@ -345,11 +352,21 @@ public class DocumentAppService {
         return likeRepository.existsBy(documentId, AuthorId.of(callerId));
     }
 
+    /**
+     * Resolve the author block via the cross-BC identity lookup. Falls back
+     * to a placeholder {@code AuthorDto} carrying just the user id when the
+     * lookup port is unavailable (test paths) or the identity row has been
+     * purged — never returns null so the wire contract guarantees a
+     * non-null author on every {@code DocDetail} per spec §6.4.
+     */
     private AuthorDto resolveAuthor(UUID authorUserId) {
-        if (identityLookup == null) {
-            return null;
+        if (identityLookup != null) {
+            AuthorDto resolved = identityLookup.findById(authorUserId).orElse(null);
+            if (resolved != null) {
+                return resolved;
+            }
         }
-        return identityLookup.findById(authorUserId).orElse(null);
+        return new AuthorDto(authorUserId, "Unknown", null);
     }
 
     private static boolean callerOwnsRow(Document doc, UUID callerId) {
