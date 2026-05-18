@@ -3,8 +3,12 @@ import { headers } from 'next/headers';
 import {
   parseResult,
   type DocDetailDto,
+  type DocListResponse,
   type DocsResult,
   type MyDocListResponse,
+  type OwnerInfoDto,
+  type SearchResponseDto,
+  type SearchScope,
 } from './docs';
 
 /**
@@ -66,4 +70,47 @@ export async function fetchMyDocsServerSide(): Promise<DocsResult<MyDocListRespo
  */
 export async function fetchDocByIdServerSide(id: string): Promise<DocsResult<DocDetailDto>> {
   return serverFetch<DocDetailDto>(`/api/docs/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Community feed — `GET /api/docs` (and the per-author variant when
+ * `author` is passed). Auth-optional; cookie forwarded so the gateway
+ * can attach `X-User-Id` to surface `likedByMe` for authenticated
+ * callers.
+ */
+export async function fetchCommunityFeedServerSide(options?: {
+  cursor?: string;
+  author?: string;
+  limit?: number;
+}): Promise<DocsResult<DocListResponse>> {
+  const qs = new URLSearchParams();
+  if (options?.cursor) qs.set('cursor', options.cursor);
+  if (options?.author) qs.set('author', options.author);
+  if (options?.limit !== undefined) qs.set('limit', String(options.limit));
+  const path = qs.toString() ? `/api/docs?${qs.toString()}` : '/api/docs';
+  return serverFetch<DocListResponse>(path);
+}
+
+/**
+ * Full-text search SSR variant. The `/docs/search` route renders an
+ * initial result set server-side from `?q=` for share-ability + SEO;
+ * subsequent typing requeries client-side via `searchDocs`.
+ */
+export async function searchDocsServerSide(options: {
+  q: string;
+  scope: SearchScope;
+  cursor?: string;
+}): Promise<DocsResult<SearchResponseDto>> {
+  const qs = new URLSearchParams({ q: options.q, scope: options.scope });
+  if (options.cursor) qs.set('cursor', options.cursor);
+  return serverFetch<SearchResponseDto>(`/api/docs/search?${qs.toString()}`);
+}
+
+/**
+ * Owner resolution — used at home-render time to decide whether to mount
+ * the `Latest published docs` section. Returns `null` on any failure so
+ * the home stays renderable.
+ */
+export async function fetchOwnerServerSide(): Promise<DocsResult<OwnerInfoDto>> {
+  return serverFetch<OwnerInfoDto>('/api/docs/owner');
 }

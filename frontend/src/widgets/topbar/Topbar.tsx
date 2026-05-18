@@ -21,9 +21,15 @@ import { userInitials } from '@/entities/user';
 export interface TopbarProps {
   breadcrumb: string;
   user: User | null;
+  /**
+   * Click handler for the topbar's center `Search` pill. Passed in from
+   * the shell layout so the topbar can stay a pure widget — the shell
+   * owns the command-palette mount and forwards the trigger here.
+   */
+  onOpenSearch?: () => void;
 }
 
-export function Topbar({ breadcrumb, user }: TopbarProps) {
+export function Topbar({ breadcrumb, user, onOpenSearch }: TopbarProps) {
   return (
     <header
       className="flex items-center gap-md border-b border-border bg-bg px-[26px] py-[12px]"
@@ -34,7 +40,7 @@ export function Topbar({ breadcrumb, user }: TopbarProps) {
       </nav>
       <div className="hidden min-w-0 flex-1 justify-center md:flex">
         <div className="w-full max-w-[360px]">
-          <SearchPill />
+          <SearchPill onClick={onOpenSearch} />
         </div>
       </div>
       <div className="flex items-center gap-md">

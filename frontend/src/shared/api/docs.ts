@@ -83,6 +83,36 @@ export interface MyDocListResponse {
   nextCursor: string | null;
 }
 
+/** Community-feed + per-author public list response — spec §6.1. */
+export interface DocListResponse {
+  items: DocListItemDto[];
+  nextCursor: string | null;
+}
+
+/** Search hit shape — spec §6.4. `snippet` arrives already with `<mark>` */
+export interface SearchHitDto {
+  documentId: string;
+  title: string;
+  visibility: DocVisibility;
+  path: string | null;
+  author: AuthorDto | null;
+  snippet: string;
+  publishedAt?: string;
+  updatedAt: string;
+}
+
+export interface SearchResponseDto {
+  items: SearchHitDto[];
+  nextCursor: string | null;
+}
+
+export type SearchScope = 'mine' | 'public';
+
+/** Owner-resolution endpoint — spec §6.3. */
+export interface OwnerInfoDto {
+  ownerUserId: string | null;
+}
+
 // -------------------- Result type -----------------------------------------
 
 export type DocsResult<T> =
@@ -90,12 +120,16 @@ export type DocsResult<T> =
   | { kind: 'unauthorized' }
   | { kind: 'not-found' }
   | { kind: 'too-large' }
+  | { kind: 'service-unavailable' }
+  | { kind: 'rate-limited' }
   | { kind: 'error'; status: number; message?: string };
 
 export async function parseResult<T>(res: Response): Promise<DocsResult<T>> {
   if (res.status === 401) return { kind: 'unauthorized' };
   if (res.status === 404) return { kind: 'not-found' };
   if (res.status === 413) return { kind: 'too-large' };
+  if (res.status === 429) return { kind: 'rate-limited' };
+  if (res.status === 503) return { kind: 'service-unavailable' };
   if (res.ok) {
     if (res.status === 204) return { kind: 'ok', value: undefined as unknown as T };
     const value = (await res.json()) as T;
@@ -217,6 +251,65 @@ export async function fetchMyDocs(): Promise<DocsResult<MyDocListResponse>> {
     headers: browserHeaders(),
   });
   return parseResult<MyDocListResponse>(res);
+}
+
+/**
+ * Community-feed fetch — `GET /api/docs` per spec §6.1. Auth-optional.
+ * Pass `cursor` to load the next page; pass `author` to scope to a single
+ * author (used by the home for the owner feed).
+ */
+export async function fetchCommunityFeed(options?: {
+  cursor?: string;
+  author?: string;
+  limit?: number;
+}): Promise<DocsResult<DocListResponse>> {
+  const qs = new URLSearchParams();
+  if (options?.cursor) qs.set('cursor', options.cursor);
+  if (options?.author) qs.set('author', options.author);
+  if (options?.limit !== undefined) qs.set('limit', String(options.limit));
+  const path = qs.toString() ? `/api/docs?${qs.toString()}` : '/api/docs';
+  const res = await fetch(path, {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: browserHeaders(),
+  });
+  return parseResult<DocListResponse>(res);
+}
+
+/**
+ * Full-text search — `GET /api/docs/search` per spec §6.1 / §6.2.
+ * The `mine` scope requires a session; `public` is auth-optional.
+ * Empty `q` is short-circuited at the call site so we never burn a
+ * network round-trip on no-op input.
+ */
+export async function searchDocs(options: {
+  q: string;
+  scope: SearchScope;
+  cursor?: string;
+}): Promise<DocsResult<SearchResponseDto>> {
+  const qs = new URLSearchParams({ q: options.q, scope: options.scope });
+  if (options.cursor) qs.set('cursor', options.cursor);
+  const res = await fetch(`/api/docs/search?${qs.toString()}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: browserHeaders(),
+  });
+  return parseResult<SearchResponseDto>(res);
+}
+
+/**
+ * Owner resolution — `GET /api/docs/owner` per spec §6.3. Returns
+ * `{ ownerUserId: null }` when `PLAYGROUND_OWNER_GOOGLE_SUB` is unset on
+ * the docs service (fail-closed). Callers MUST hide the owner-curated
+ * surface when this returns null.
+ */
+export async function fetchOwner(): Promise<DocsResult<OwnerInfoDto>> {
+  const res = await fetch('/api/docs/owner', {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: browserHeaders(),
+  });
+  return parseResult<OwnerInfoDto>(res);
 }
 
 // -------------------- Body size cap ---------------------------------------

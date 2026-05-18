@@ -1,4 +1,7 @@
+import Link from 'next/link';
 import { TileGrid } from '@/widgets/tile-grid';
+import { CommunityDocCard } from '@/widgets/community-doc-card';
+import type { DocumentListItem } from '@/entities/document';
 import type { User } from '@/entities/user';
 
 /**
@@ -6,13 +9,18 @@ import type { User } from '@/entities/user';
  * subtitle deltas pinned in the M1 design context. Sidebar account
  * footer + topbar account pill are owned by the layout (they swap on
  * `user`); this page changes only the hero subtitle.
+ *
+ * M2 S2 delta: the `Latest documents` section is replaced by the
+ * owner-curated `Latest published docs` section. See
+ * `HomePublicPage` for the full rationale.
  */
 
 export interface HomeSignedInPageProps {
   user: User;
+  latestDocs: DocumentListItem[];
 }
 
-export function HomeSignedInPage({ user }: HomeSignedInPageProps) {
+export function HomeSignedInPage({ user, latestDocs }: HomeSignedInPageProps) {
   return (
     <div className="flex flex-col gap-xl px-[28px] py-[26px]">
       <section className="flex flex-col gap-sm">
@@ -36,36 +44,51 @@ export function HomeSignedInPage({ user }: HomeSignedInPageProps) {
         <TileGrid />
       </section>
 
-      <section className="flex flex-col gap-lg" aria-labelledby="latest-documents">
-        <div className="flex items-baseline justify-between">
-          <h2 id="latest-documents" className="text-h2 text-text">
-            Latest documents
-          </h2>
-          <a
-            href="#all-docs"
-            className="text-small font-medium text-accent hover:text-accent-hover"
-          >
-            All documents &rarr;
-          </a>
-        </div>
+      <LatestDocsSection items={latestDocs} />
+    </div>
+  );
+}
+
+function LatestDocsSection({ items }: { items: DocumentListItem[] }) {
+  return (
+    <section className="flex flex-col gap-lg" aria-labelledby="latest-published-docs">
+      <div className="flex items-baseline justify-between">
+        <h2 id="latest-published-docs" className="text-h2 text-text">
+          Latest published docs
+        </h2>
+        <Link
+          href="/docs"
+          className="text-small font-medium text-accent hover:text-accent-hover"
+        >
+          All documents &rarr;
+        </Link>
+      </div>
+      {items.length === 0 ? (
         <article className="flex flex-col items-center gap-sm rounded-md border border-border bg-surface p-xl text-center shadow-card">
           <p className="text-eyebrow text-accent">M2 — Documents</p>
-          <h3 className="text-h3 text-text">
-            Documents will appear here when the document is online.
-          </h3>
+          <h3 className="text-h3 text-text">No published docs from the owner yet.</h3>
           <p className="max-w-[560px] text-small text-text-muted">
-            Your private documents and the public reader feed both land in M2.
+            Publish your first document from{' '}
+            <Link
+              href="/docs/mine"
+              className="font-medium text-accent hover:text-accent-hover"
+            >
+              My documents
+            </Link>{' '}
+            to fill this slot, or browse{' '}
+            <Link href="/docs" className="font-medium text-accent hover:text-accent-hover">
+              the community feed
+            </Link>
+            .
           </p>
-          <a
-            href="https://github.com/JeekLee/playground/milestones"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-small font-medium text-accent hover:text-accent-hover"
-          >
-            &rarr; Track the M2 milestone on GitHub
-          </a>
         </article>
-      </section>
-    </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((doc, i) => (
+            <CommunityDocCard key={doc.id} doc={doc} index={i} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
