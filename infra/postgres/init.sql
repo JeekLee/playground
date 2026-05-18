@@ -11,3 +11,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- M1 (identity BC) — schema-per-BC per ADR-05. Table DDL is owned by Flyway
 -- (backend/identity/identity-infra/src/main/resources/db/migration/), not here.
 CREATE SCHEMA IF NOT EXISTS identity;
+
+-- M2 (docs BC) — schema-per-BC per ADR-05 (amended by ADR-12). Table DDL
+-- (docs.documents, docs.document_likes, Modulith event_publication) is owned
+-- by Flyway (backend/docs/docs-infra/src/main/resources/db/migration/), not
+-- here. Cross-schema FK to identity.users is forbidden per ADR-12 §8 — the
+-- relationship is enforced at the application layer.
+CREATE SCHEMA IF NOT EXISTS docs;
