@@ -406,3 +406,18 @@ The PRD's "Open questions for the implementer" list (PRD §"Open questions for t
 ---
 
 **End of design context.** The frontend-implementer reads this doc as the canonical specification for Stage 3 frontend work; it does NOT modify the PRD or ADR-14 (those are PM / architect property). If a UI question is genuinely under-specified beyond this doc + the spec + the ADR, the implementer surfaces it as a question to the orchestrator rather than guessing.
+
+## 8. M4 frontend implementation log
+
+Notes from the Stage-3 frontend pass (kept here per CLAUDE.md step 5 — discretionary visual decisions made within the existing token vocabulary, NOT new tokens):
+
+- **Inline `[N]` marker pill (open question #1):** rendered as a `min-width: 18px` button with `accent.soft` bg, `accent` fg, font-mono 10/600, `radius.pill`, ~2 px x-padding. Hover swaps to `accent` bg + `surface` fg for affordance. Clicking scrolls + auto-expands the matching accordion card and applies a brief 2 s highlight ring (`accent.soft` bg on the card row) so the eye can find the answer. Orphan markers (no matching citation row) render as plain `[N]` text per ADR-14 §10 / spec §11 Q7.
+- **Streaming cursor cadence (open question #2):** `chat-cursor` keyframe — `opacity 0.3 ↔ 1.0` over `1.1 s ease-in-out infinite`. The cursor is an `8px × 1em` `accent` block placed at the tail of the streaming text, baseline-aligned. (`tailwind.config.ts` carries the keyframe + animation utility.)
+- **Thinking placeholder:** three staggered dots animating `opacity 0.35 ↔ 1.0` plus a tiny `translateY(-2px)` lift, `chat-dot` keyframe at 1 s with `140 ms` / `280 ms` stagger between siblings. Placed next to the "Thinking…" label, accent-colored.
+- **Tab overflow tiebreaker (open question #3):** sorted by `updatedAt DESC` per spec §7.2; when the active session is outside the top-7 we force-promote it to the head so it stays visible (otherwise the user's current tab would vanish into the dropdown).
+- **Mobile fallback (open question #4):** NOT shipped in M4 P0 per spec §2 "deferred to M4.1". The current layout uses `h-[calc(100vh-57px)]` and the composer / tabs cope down to ~720 px wide; below that the layout will overflow horizontally rather than reflow. M4.1 ticket should land the mobile-first stacked variant.
+- **"Jump to latest" pill (open question #5):** floating bottom-right of the conversation pane, 16 px above the composer's banner area. Pill spec: `accent` border + `surface` bg + `accent` fg + `radius.pill` + `shadow.pop`, 32 px tall, `↓ Jump to latest` label in `font.small` 12 / 600. Appears when the user scrolls more than 50 px above the bottom mid-stream; click resumes auto-scroll + snaps to the latest message.
+- **OG metadata (open question #6):** generic title `Chat · JeekLee's playground` with a short corpus-grounded description. No session titles, no PII.
+- **Citation-marker per-turn scoping (open question #7):** the `ChatMessage` widget receives `citations` as a per-message array; the `[N]` parser builds its lookup map from that array only, so Turn-1's `[1]` and Turn-2's `[1]` are independent.
+
+These decisions stay inside the design system's token vocabulary — no new tokens were introduced. If a future review wants any of them codified into the design system itself, lift them into `docs/superpowers/specs/2026-05-16-playground-design-system.md`.

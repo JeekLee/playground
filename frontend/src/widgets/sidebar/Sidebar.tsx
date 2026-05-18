@@ -1,4 +1,4 @@
-import { Home, FileText, MessageSquare, Activity, Lock, PanelLeftClose } from 'lucide-react';
+import { Home, FileText, MessageSquare, Activity, Lock, LogIn, PanelLeftClose } from 'lucide-react';
 import { Brand } from '@/shared/ui/brand';
 import { Avatar } from '@/shared/ui/avatar';
 import { cn } from '@/shared/lib/cn';
@@ -68,7 +68,16 @@ interface AppsRow {
    * returns true. Defaults to exact match against `href`.
    */
   isActive?: (pathname: string) => boolean;
-  locked?: boolean;
+  /**
+   * Lock state:
+   *  - `milestone` — row is muted, badge reads `Mx 🔒`, click is a no-op.
+   *    Used for un-shipped milestones (e.g., M5 System status).
+   *  - `auth` — row is muted, badge reads `🔒 Sign in`, click → `/login?next=<href>`.
+   *    Per ADR-09 amendment in ADR-14 §G.4: the third sidebar badge state
+   *    distinct from milestone-lock. Visualized in design doc frame `54:575`.
+   *  - omitted — row is active when the path matches, inactive otherwise.
+   */
+  locked?: 'milestone' | 'auth';
   milestone?: string;
   /**
    * Optional numeric badge text rendered alongside the row label. Used
@@ -87,17 +96,19 @@ const APPS_BASE: AppsRow[] = [
     isActive: (path) => path === '/docs' || path.startsWith('/docs/'),
   },
   {
+    // M4 shipped — Chat row is active for `/chat`. Auth-locked for
+    // anonymous callers (per ADR-14 §G.4 amendment to ADR-09; see
+    // design doc M4-rag-chat.md §2.8).
     label: 'Chat',
     icon: MessageSquare,
     href: '/chat',
-    locked: true,
-    milestone: 'M4',
+    isActive: (path) => path === '/chat' || path.startsWith('/chat/'),
   },
   {
     label: 'System status',
     icon: Activity,
     href: '/system-status',
-    locked: true,
+    locked: 'milestone',
     milestone: 'M5',
   },
 ];
@@ -116,11 +127,19 @@ export function Sidebar({
   // chrome, not a route indicator.
   const showDocsBadge =
     docsBadge !== null && (pathname === '/docs' || pathname.startsWith('/docs/'));
-  const apps: AppsRow[] = APPS_BASE.map((row) =>
-    row.label === 'Docs' && showDocsBadge
-      ? { ...row, badge: `${docsBadge.published}/${docsBadge.total}` }
-      : row,
-  );
+  const isAnonymous = user === null;
+  const apps: AppsRow[] = APPS_BASE.map((row) => {
+    // The Chat row is M4-shipped, but auth-only — anonymous callers see
+    // the `🔒 Sign in` badge instead of a destination tab (per ADR-09
+    // amendment in ADR-14 §G.4 + design doc M4-rag-chat.md §2.8).
+    if (row.label === 'Chat' && isAnonymous && !row.locked) {
+      return { ...row, locked: 'auth' as const };
+    }
+    if (row.label === 'Docs' && showDocsBadge) {
+      return { ...row, badge: `${docsBadge.published}/${docsBadge.total}` };
+    }
+    return row;
+  });
   return (
     <aside
       className={cn(
@@ -191,13 +210,29 @@ function AppsRowItem({
   badge,
   collapsed,
 }: AppsRow & { collapsed: boolean; active?: boolean }) {
+  const isLocked = Boolean(locked);
+  const isAuthLocked = locked === 'auth';
+  const isMilestoneLocked = locked === 'milestone';
   const className = cn(
     'flex items-center rounded-md py-[6px] text-small',
     collapsed ? 'h-[32px] w-[32px] justify-center' : 'justify-between px-sm',
     active && 'bg-accent-soft font-semibold text-accent',
-    !active && !locked && 'text-text hover:bg-surface',
-    locked && 'cursor-default text-text-subtle opacity-[0.72]',
+    !active && !isLocked && 'text-text hover:bg-surface',
+    isMilestoneLocked && 'cursor-default text-text-subtle opacity-[0.72]',
+    isAuthLocked && 'text-text-subtle hover:bg-surface',
   );
+
+  const lockBadge = isMilestoneLocked ? (
+    <span className="flex items-center gap-xs text-[10px] uppercase tracking-[0.04em] text-text-subtle">
+      {milestone}
+      <Lock size={11} aria-hidden="true" />
+    </span>
+  ) : isAuthLocked ? (
+    <span className="flex items-center gap-xs text-[10px] uppercase tracking-[0.04em] text-text-subtle">
+      <LogIn size={11} aria-hidden="true" />
+      Sign in
+    </span>
+  ) : null;
 
   const content = collapsed ? (
     <Icon size={16} aria-hidden="true" />
@@ -207,12 +242,7 @@ function AppsRowItem({
         <Icon size={16} aria-hidden="true" />
         <span>{label}</span>
       </span>
-      {locked ? (
-        <span className="flex items-center gap-xs text-[10px] uppercase tracking-[0.04em] text-text-subtle">
-          {milestone}
-          <Lock size={11} aria-hidden="true" />
-        </span>
-      ) : badge ? (
+      {lockBadge ?? (badge ? (
         <span
           className={cn(
             'rounded-pill px-[7px] py-[1px] font-mono text-[10px]',
@@ -226,24 +256,37 @@ function AppsRowItem({
         </span>
       ) : (
         active && <span aria-hidden="true" className="h-[6px] w-[6px] rounded-pill bg-accent" />
-      )}
+      ))}
     </>
   );
 
   const title = collapsed
-    ? locked
+    ? isMilestoneLocked
       ? `${label} — available when ${milestone} ships`
-      : label
-    : locked
+      : isAuthLocked
+        ? `${label} — sign in to use`
+        : label
+    : isMilestoneLocked
       ? `Available when ${milestone} ships`
-      : undefined;
+      : isAuthLocked
+        ? 'Sign in to use Chat'
+        : undefined;
 
   return (
     <li className={collapsed ? 'flex justify-center' : ''}>
-      {locked ? (
+      {isMilestoneLocked ? (
         <div role="link" aria-disabled="true" tabIndex={-1} title={title} className={className}>
           {content}
         </div>
+      ) : isAuthLocked ? (
+        <a
+          href={`/login?next=${encodeURIComponent(href)}`}
+          title={title}
+          className={className}
+          aria-label={`${label} — sign in to use`}
+        >
+          {content}
+        </a>
       ) : active ? (
         <a aria-current="page" href={href} title={title} className={className}>
           {content}

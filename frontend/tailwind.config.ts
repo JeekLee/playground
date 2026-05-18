@@ -147,6 +147,23 @@ const config: Config = {
       transitionTimingFunction: {
         DEFAULT: 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
+      keyframes: {
+        // M4 §4.3: pulsing block cursor while a chat turn is streaming.
+        // Opacity 0.3 ↔ 1.0 at ~1s cadence.
+        'chat-cursor': {
+          '0%, 100%': { opacity: '0.3' },
+          '50%': { opacity: '1' },
+        },
+        // M4 §2.2 "Thinking…" placeholder — 3 staggered dots.
+        'chat-dot': {
+          '0%, 80%, 100%': { opacity: '0.35', transform: 'translateY(0)' },
+          '40%': { opacity: '1', transform: 'translateY(-2px)' },
+        },
+      },
+      animation: {
+        'chat-cursor': 'chat-cursor 1.1s ease-in-out infinite',
+        'chat-dot': 'chat-dot 1s ease-in-out infinite',
+      },
     },
   },
   plugins: [],
