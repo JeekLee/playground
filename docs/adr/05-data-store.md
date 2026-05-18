@@ -176,3 +176,35 @@ when ADR-05's amendment was first authored:
 
 See `docs/adr/12-m2-docs.md` §5 + §6 for the full specification (compose
 service block, JVM heap, security plugin posture, Nori filter chain).
+
+## Amendment (2026-05-18, ADR-13)
+
+ADR-13 (M3 RAG-Ingestion per-milestone) **confirms** the original ADR-05
+pgvector pin (`HNSW (m=16, ef_construction=64)` on cosine distance) for
+the M3 `rag.document_chunks` table — **no change** to the index defaults.
+It adds three complementary commitments:
+
+- **Runtime hint:** M4's retrieval query will set
+  `SET LOCAL hnsw.ef_search = 40;` per query — wide enough for K=10
+  retrieval at >95% recall on the M3 P0 corpus (M4-owned, documented here
+  as part of the M3-enabled retrieval contract).
+- **Chunk DDL adds `body_checksum TEXT NOT NULL`** (SHA-256 hex, carried
+  per row) for ingestion idempotency, plus three secondary B-tree indexes
+  — `(document_id)`, `(visibility)`, `(user_id, visibility)` — that
+  support M3's event handlers (idempotency SELECT, visibility UPDATE,
+  delete cascade) and M4's retrieval predicates (the M2 spec §8 amendment
+  pins `WHERE visibility='public' OR (user_id=? AND visibility='private')`
+  as the single retrieval filter; the composite index covers it).
+- **Corpus-size assumption made explicit:** HNSW is the M3 P0 default
+  for up to ~50k chunks. **IVFFlat remains the documented fallback** per
+  ADR-05's original "IVFFlat is the fallback if HNSW build cost becomes
+  prohibitive at corpus scale" — revisit when total chunks cross ~100k.
+
+The full `rag.document_chunks` DDL (with the HNSW index, the three
+secondary indexes, and the `body_checksum` column) lives in
+`docs/adr/13-m3-rag-ingestion.md` §F. The Flyway migration that creates
+the table lives in
+`backend/rag-ingestion/rag-ingestion-infra/src/main/resources/db/migration/`.
+
+See `docs/adr/13-m3-rag-ingestion.md` §9 + §F + amendment block §G.2 for
+the full specification.

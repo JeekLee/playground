@@ -220,3 +220,35 @@ per-milestone ADR amendment to ADR-08.
 
 See `docs/adr/12-m2-docs.md` §2 (M3 body-fetch) and §8 (owner resolution)
 for the full specification.
+
+## Amendment (2026-05-18, ADR-13) — informational, no new exception
+
+ADR-13 (M3 RAG-Ingestion per-milestone) explicitly **does not** add a new
+BC-to-BC HTTP exception. M3 P0 ships using the two exceptions ADR-12
+already pinned, with no shape change:
+
+- **Exception 1 reuse** (`rag-ingestion` → `docs-api` `/internal/**`):
+  rag-ingestion's WebClient calls `GET /internal/docs/public/{id}/body`
+  for the canonical body and (defensively, on visibility-change) `GET
+  /internal/docs/public/{id}` for current metadata. Reliability discipline
+  pinned by ADR-13 §2 mirrors ADR-12 §2 verbatim — 5 s timeout, 3 attempts,
+  exponential backoff (200 ms, 400 ms, 800 ms base, jitter 0.5),
+  permanent failure → `docs.document.uploaded.dlq` (per ADR-13 §8).
+- **Exception 2 reuse** (`rag-ingestion` → `redis-playground`): Redisson
+  `RLock` on `rag-ingestion:lock:document:{id}`, TTL ≤ 5 minutes.
+  ADR-13 §5 reuses the same lock as the **serialization primitive for the
+  visibility-change-before-uploaded race** — no new namespace, no new
+  TTL cap, no new redis usage shape.
+
+M3's published event `rag.document.ingested` (per ADR-13 §3) goes through
+Kafka — the default sanctioned cross-BC channel. No exception required;
+the topic is added to ADR-03's registry (per ADR-03's 2026-05-18
+amendment).
+
+**Future M3.1 work** (backfill `GET /internal/docs/scan?since=…` on
+docs-api) will require an amendment to this ADR when it lands; it is
+**not** in scope for M3 P0.
+
+See `docs/adr/13-m3-rag-ingestion.md` §2 (retry policies), §5 (race
+resolution via shared lock), §8 (DLQ topology), and amendment block §G.3
+for the full M3 specification.

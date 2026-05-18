@@ -111,3 +111,43 @@ JSON shape on the wire:
 - Negative: Single-broker dev deployment cannot exercise true rebalancing
   scenarios; integration tests use Testcontainers to add a second broker as
   needed.
+
+## Amendment (2026-05-18, ADR-13)
+
+ADR-13 (M3 RAG-Ingestion per-milestone) extends the **topic registry** with
+four M3 topics — one published business event and three DLQs — and supersedes
+the original "1 day" DLQ retention default with **14 days** for the M3-owned
+DLQs (operator triage cadence on a personal-scale system is not daily; 14
+days is the safe inspection window).
+
+### M3 topic registry rows
+
+| Topic | Producer | Consumer(s) | Partitions | Retention | Key |
+|---|---|---|---|---|---|
+| `rag.document.ingested` | rag-ingestion | future (M4 readiness, M5 metrics) | 3 | 7 days | `documentId` |
+| `docs.document.uploaded.dlq` | rag-ingestion (DLQ recoverer) | operator triage | 3 | 14 days | `documentId` |
+| `docs.document.visibility-changed.dlq` | rag-ingestion (DLQ recoverer) | operator triage | 3 | 14 days | `documentId` |
+| `docs.document.deleted.dlq` | rag-ingestion (DLQ recoverer) | operator triage | 3 | 14 days | `documentId` |
+
+The DLQ-routing recoverer publishes the original record body (envelope
+unchanged) with Spring Kafka's three `kafka_dlt-*` headers
+(`exception-class-name`, `exception-message`, `original-topic`). Replay
+tools move the record back by stripping those headers.
+
+### `rag.document.ingested` payload shape (schemaVersion 1)
+
+```json
+{
+  "documentId": "...",
+  "userId": "...",
+  "visibility": "public",
+  "chunkCount": 12,
+  "bodyChecksum": "<sha-256-hex>",
+  "embeddedAt": "2026-05-18T00:00:00Z"
+}
+```
+
+Key: `documentId` (per ADR-03's `key = aggregateId` rule).
+
+See `docs/adr/13-m3-rag-ingestion.md` §3 + §8 + §E + amendment block §G.1
+for the full specification.

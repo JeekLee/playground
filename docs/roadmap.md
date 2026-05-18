@@ -86,20 +86,24 @@
 
 ## M4 — RAG-Chat
 
-**Goal:** Give the user a chatbot that answers questions grounded in their own ingested documents.
+**Goal:** Give any visitor — anonymous or signed-in — a chatbot whose answers are grounded in documents the caller is allowed to read (all community-wide public documents, plus the caller's own private documents when signed in).
 
 **Acceptance:**
-- [ ] Frontend chat UI lets a logged-in user start a conversation, send a message, and stream back a model response
-- [ ] On each user turn, the backend embeds the query (BGE-M3), retrieves top-K chunks from pgvector scoped to that user, and constructs a prompt for Qwen3-32B
+- [ ] Frontend chat UI lets any visitor (anonymous or authenticated) start a conversation, send a message, and stream back a model response
+- [ ] On each user turn, the backend embeds the query (BGE-M3), retrieves top-K chunks from pgvector per the M4 retrieval contract below, and constructs a prompt for Qwen3-32B
 - [ ] Generation runs against `spark-inference-gateway` (Qwen3-32B) using Spring AI; responses stream to the client
-- [ ] Conversation history is persisted server-side and reloadable across sessions
+- [ ] Conversation history is persisted server-side and reloadable across sessions when the caller is authenticated; anonymous sessions are ephemeral (browser-local at best)
 - [ ] Responses cite which document(s) / chunk(s) backed the answer (id + title at minimum)
 
 **Dependencies:** M0, M1, M2, M3.
 
-**Notes:** Retrieval scope must respect M1's `X-User-Id` (a user can never retrieve from someone else's chunks). This is the first milestone that exercises both LLM endpoints of `spark-inference-gateway` end-to-end.
+**Notes:** Retrieval scope is governed by the M4 retrieval contract (see `docs/superpowers/specs/2026-05-16-m2-docs-bc-design.md` §8 + `docs/prd/M3-rag-ingestion.md` §"M4 retrieval contract"): every public chunk is in scope for everyone; private chunks are in scope only for their author when that author is the caller (matched by `X-User-Id`). No caller can ever retrieve another user's private chunks. This is the first milestone that exercises both LLM endpoints of `spark-inference-gateway` end-to-end.
 
-**Public surface (per ADR-09 / design system spec §11):** This milestone ships **two** chat endpoints: `POST /api/rag/chat/public` (anonymous, retrieves only `visibility = 'public'` chunks, capped at `max_tokens=512`, one retrieved chunk, 10 completions/5min/IP + 30 completions/day/anon-cookie) and `POST /api/rag/chat/private` (authenticated, scoped by `X-User-Id`, full limits). A circuit breaker on `spark-inference-gateway` 5xx rate must be implemented; concrete algorithm and library land in the per-milestone ADR.
+**Public surface (per ADR-09 / design system spec §11):** This milestone ships **one** chat endpoint: `POST /api/rag/chat`. The retrieval corpus is switched server-side by the presence of `X-User-Id`:
+- Anonymous (`X-User-Id` absent): `WHERE visibility = 'public'`; tighter limits (`max_tokens=512`, K=1, 10 completions/5min/IP + 30 completions/day/anon-cookie).
+- Authenticated (`X-User-Id` present): `WHERE visibility = 'public' OR (user_id = X-User-Id AND visibility = 'private')`; full limits.
+
+A circuit breaker on `spark-inference-gateway` 5xx rate must be implemented; concrete algorithm, library, and ADR-09 amendment land in the M4 per-milestone ADR.
 
 ---
 
