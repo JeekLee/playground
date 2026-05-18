@@ -1,0 +1,130 @@
+package com.playground.ragchat.application.service;
+
+import com.playground.ragchat.application.dto.SessionDetailView;
+import com.playground.ragchat.application.repository.MessageRepository;
+import com.playground.ragchat.application.repository.SessionRepository;
+import com.playground.ragchat.domain.exception.RagChatErrorCode;
+import com.playground.ragchat.domain.model.ChatSession;
+import com.playground.ragchat.domain.model.Message;
+import com.playground.ragchat.domain.model.MessageCitation;
+import com.playground.ragchat.domain.model.id.MessageId;
+import com.playground.ragchat.domain.model.id.SessionId;
+import com.playground.ragchat.domain.model.id.UserId;
+import com.playground.shared.error.ExceptionCreator;
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Session CRUD per spec §5.3. Ownership enforced at the SQL layer
+ * (every read/write filters on {@code user_id}). 404 ("session not found")
+ * is returned both for "not in DB" and "not yours" per the spec §5.1
+ * existence-leak-neutral wording.
+ */
+@Service
+public class SessionService {
+
+    private final SessionRepository sessionRepository;
+    private final MessageRepository messageRepository;
+    private final Clock clock;
+
+    public SessionService(SessionRepository sessionRepository, MessageRepository messageRepository, Clock clock) {
+        this.sessionRepository = sessionRepository;
+        this.messageRepository = messageRepository;
+        this.clock = clock;
+    }
+
+    @Transactional
+    public ChatSession create(UserId caller) {
+        ChatSession session = ChatSession.newSession(caller, clock.instant());
+        return sessionRepository.save(session);
+    }
+
+    public List<SessionRepository.SessionSummary> list(UserId caller) {
+        return sessionRepository.listForUser(caller);
+    }
+
+    @Transactional
+    public ChatSession rename(SessionId id, UserId caller, String newTitle) {
+        if (newTitle == null || newTitle.isBlank()) {
+            throw ExceptionCreator.of(RagChatErrorCode.SESSION_TITLE_BLANK).build();
+        }
+        boolean updated = sessionRepository.rename(id, caller, newTitle);
+        if (!updated) {
+            throw ExceptionCreator.of(RagChatErrorCode.SESSION_NOT_FOUND).build();
+        }
+        return sessionRepository.findOwned(id, caller)
+                .orElseThrow(() -> ExceptionCreator.of(RagChatErrorCode.SESSION_NOT_FOUND).build());
+    }
+
+    @Transactional
+    public void delete(SessionId id, UserId caller) {
+        boolean deleted = sessionRepository.deleteOwned(id, caller);
+        if (!deleted) {
+            // Idempotent per spec §5.3 — return 200/204 if the session was already gone.
+            // We still validate ownership semantics; "not owned" is indistinguishable
+            // from "already deleted" by design.
+        }
+    }
+
+    /** Resolve session detail (404 if not owned). */
+    public SessionDetailView loadDetail(
+            SessionId id, UserId caller, CitationResolver resolver) {
+        ChatSession session = sessionRepository.findOwned(id, caller)
+                .orElseThrow(() -> ExceptionCreator.of(RagChatErrorCode.SESSION_NOT_FOUND).build());
+
+        List<Message> messages = messageRepository.findBySession(id);
+
+        // Citation rows live keyed by message id; load them all in one batch.
+        List<MessageId> assistantIds = messages.stream()
+                .filter(m -> m.role() == com.playground.ragchat.domain.enums.Role.ASSISTANT)
+                .map(Message::id)
+                .toList();
+        List<MessageCitation> citations = assistantIds.isEmpty()
+                ? List.of()
+                : messageRepository.findCitationsForMessages(assistantIds);
+
+        Map<MessageId, List<MessageCitation>> citationsByMessage = new HashMap<>();
+        for (MessageCitation c : citations) {
+            citationsByMessage.computeIfAbsent(c.messageId(), k -> new ArrayList<>()).add(c);
+        }
+
+        // Enrich each citation with title + excerpt via the resolver (deleted-doc
+        // case yields title=null + deleted=true).
+        List<SessionDetailView.MessageView> views = new ArrayList<>(messages.size());
+        for (Message m : messages) {
+            List<MessageCitation> raw = citationsByMessage.getOrDefault(m.id(), List.of());
+            List<SessionDetailView.CitationView> enrichedCitations = new ArrayList<>(raw.size());
+            for (MessageCitation rc : raw) {
+                CitationResolver.Resolved r = resolver.resolve(rc.documentId(), rc.chunkIndex());
+                enrichedCitations.add(new SessionDetailView.CitationView(
+                        rc.position(), rc.documentId(), rc.chunkIndex(),
+                        r.title(), r.excerpt(), r.deleted()));
+            }
+            views.add(new SessionDetailView.MessageView(
+                    m.id(), m.role(), m.content(), m.createdAt(), m.tokensIn(), m.tokensOut(),
+                    enrichedCitations));
+        }
+        return new SessionDetailView(session.id(), session.title(), views);
+    }
+
+    /** Pluggable citation resolver; the infra wires the cross-schema JOIN adapter. */
+    public interface CitationResolver {
+        Resolved resolve(com.playground.ragchat.domain.model.id.DocumentId documentId, int chunkIndex);
+
+        record Resolved(String title, String excerpt, boolean deleted) {
+
+            public static Resolved present(String title, String excerpt) {
+                return new Resolved(title, excerpt, false);
+            }
+
+            public static Resolved markDeleted() {
+                return new Resolved(null, null, true);
+            }
+        }
+    }
+}

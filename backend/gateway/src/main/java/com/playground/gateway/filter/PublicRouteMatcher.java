@@ -70,7 +70,8 @@ public class PublicRouteMatcher {
             // are NOT in this allowlist — gateway 401's them when the session
             // is missing per the default authenticated() catch-all.
             new Rule(HttpMethod.POST, "/api/docs/{id}/view", DOCS_VIEW_UUID),
-            new Rule(HttpMethod.POST, "/api/rag/chat/public"),
+            // ADR-14 §G.4: /api/rag/chat/** is auth-only (the legacy /public row
+            // is permanently removed). No allowlist entries here.
             new Rule(HttpMethod.GET, "/api/metrics/**"),
             new Rule(null, "/_next/**"),
             new Rule(null, "/favicon.ico"),

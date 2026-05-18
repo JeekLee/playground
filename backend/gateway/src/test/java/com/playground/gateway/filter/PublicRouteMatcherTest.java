@@ -38,13 +38,21 @@ class PublicRouteMatcherTest {
     }
 
     @Test
-    void post_to_public_chat_is_public() {
-        assertThat(matcher.isPublic(exchange(HttpMethod.POST, "/api/rag/chat/public"))).isTrue();
+    void post_to_public_chat_is_no_longer_public() {
+        // ADR-14 §G.4 — the legacy /api/rag/chat/public allowlist entry is removed;
+        // the entire /api/rag/chat/** surface is auth-only.
+        assertThat(matcher.isPublic(exchange(HttpMethod.POST, "/api/rag/chat/public"))).isFalse();
     }
 
     @Test
     void post_to_private_chat_is_not_public() {
         assertThat(matcher.isPublic(exchange(HttpMethod.POST, "/api/rag/chat/private"))).isFalse();
+    }
+
+    @Test
+    void post_to_chat_endpoint_is_not_public() {
+        // ADR-14 §G.4 — POST /api/rag/chat is auth-only.
+        assertThat(matcher.isPublic(exchange(HttpMethod.POST, "/api/rag/chat"))).isFalse();
     }
 
     @Test
