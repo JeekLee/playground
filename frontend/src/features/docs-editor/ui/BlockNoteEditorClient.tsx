@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { BlockNoteEditor, type Block, type PartialBlock } from '@blocknote/core';
 import { BlockNoteView } from '@blocknote/mantine';
 import { useCreateBlockNote } from '@blocknote/react';
+import { MantineProvider } from '@mantine/core';
+import '@mantine/core/styles.css';
 import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
 
@@ -85,7 +87,18 @@ export default function BlockNoteEditorClient({
 
   return (
     <div className={ready ? '' : 'opacity-0'}>
-      <BlockNoteView editor={editor} editable={editable} theme="light" />
+      {/*
+        BlockNote 0.51's @blocknote/mantine variant uses Mantine 8 components
+        for the slash menu, formatting toolbar, side menu, etc. Mantine 8
+        requires a MantineProvider somewhere up the tree — without it nested
+        Mantine components emit malformed DOM specs and ProseMirror's
+        renderSpec throws "Invalid array passed to renderSpec" at view-
+        creation time. The provider stays scoped to this editor surface
+        so the rest of the app keeps using our own design system tokens.
+      */}
+      <MantineProvider>
+        <BlockNoteView editor={editor} editable={editable} theme="light" />
+      </MantineProvider>
     </div>
   );
 }
