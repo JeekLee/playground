@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/widgets/sidebar';
 import { Topbar } from '@/widgets/topbar';
+import { CommandPalette, openCommandPalette } from '@/widgets/command-palette';
 import type { User } from '@/entities/user';
 
 /**
- * ShellChrome — client wrapper that owns the sidebar collapsed state.
+ * ShellChrome — client wrapper that owns the sidebar collapsed state +
+ * mounts the global ⌘K command palette on every shelled route.
  *
  * The Next.js App Router layout is a server component (it awaits
  * `loadMe`), so the interactive toggle plus the keyboard shortcut have
@@ -18,9 +20,14 @@ import type { User } from '@/entities/user';
  * 232px expanded mode and the 64px icon-only rail, mirroring
  * Obsidian / VSCode.
  *
- * Shortcut: ⌘\ on macOS / Ctrl+\ on Windows / Linux toggles collapsed.
- * Sidebar starts expanded; M1 keeps the choice in-memory only (no
- * localStorage persistence — that's a follow-up).
+ * Shortcuts handled here:
+ *  - ⌘\ / Ctrl+\ — toggle sidebar collapsed state.
+ *  - ⌘K / Ctrl+K — open the command palette (handled by the palette
+ *    itself via `useCommandPalette`; the topbar search pill click also
+ *    calls `openCommandPalette` to surface the same overlay).
+ *
+ * The palette is mounted on every shelled route, authed or anonymous —
+ * anonymous callers get a public-scope-only palette per spec §6.1.
  */
 export interface ShellChromeProps {
   user: User | null;
@@ -45,17 +52,20 @@ export function ShellChrome({ user, children }: ShellChromeProps) {
   }, [toggle]);
 
   // Topbar breadcrumb adapts to the current route. Top-level destinations
-  // pin a short label; the (shell) group's nested routes (`/docs/*`)
-  // carry their own breadcrumb logic at the view layer, but the topbar
-  // surface itself reads a friendly default so SSR stays stable.
+  // pin a short label; the (shell) group's nested routes carry their own
+  // breadcrumb logic at the view layer, but the topbar surface itself
+  // reads a friendly default so SSR stays stable.
   const breadcrumb = useMemo(() => {
     if (pathname === '/') return 'Home';
+    if (pathname === '/docs') return 'Documents';
     if (pathname === '/docs/mine') return 'My documents';
     if (pathname === '/docs/new') return 'Documents / New';
+    if (pathname === '/docs/search') return 'Documents / Search';
     if (pathname.startsWith('/docs/')) return 'Documents';
-    if (pathname === '/docs') return 'Documents';
     return 'Home';
   }, [pathname]);
+
+  const isAuthenticated = user !== null;
 
   return (
     <div className="flex min-h-screen">
@@ -66,9 +76,14 @@ export function ShellChrome({ user, children }: ShellChromeProps) {
         pathname={pathname}
       />
       <div className="flex min-h-screen flex-1 flex-col">
-        <Topbar breadcrumb={breadcrumb} user={user} />
+        <Topbar
+          breadcrumb={breadcrumb}
+          user={user}
+          onOpenSearch={openCommandPalette}
+        />
         <main className="flex-1">{children}</main>
       </div>
+      <CommandPalette isAuthenticated={isAuthenticated} />
     </div>
   );
 }

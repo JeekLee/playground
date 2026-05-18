@@ -21,7 +21,10 @@ import type {
   DocListItemDto,
   DocVisibility,
   MyDocListItemDto,
+  OwnerInfoDto,
   PatchDocRequestDto,
+  SearchHitDto,
+  SearchScope,
 } from '@/shared/api/docs';
 
 export type Visibility = DocVisibility;
@@ -31,6 +34,34 @@ export type DocumentListItem = DocListItemDto;
 export type MyDocumentListItem = MyDocListItemDto;
 export type CreateDocumentRequest = CreateDocRequestDto;
 export type PatchDocumentRequest = PatchDocRequestDto;
+export type SearchHit = SearchHitDto;
+export type OwnerInfo = OwnerInfoDto;
+export type DocSearchScope = SearchScope;
+
+/**
+ * Resolve initials for an author avatar fallback. The design system
+ * specifies a khaki circle with 1-2 uppercase initials per design
+ * doc §"Document detail" + multi-author rows (community feed / search
+ * results / ⌘K palette). Empty / one-token / multi-token display names
+ * all map to a sensible 2-char fallback.
+ */
+export function authorInitials(author: Author): string {
+  return displayInitials(author.displayName);
+}
+
+export function displayInitials(displayName: string): string {
+  const tokens = displayName.split(/[\s-]+/).filter(Boolean);
+  if (tokens.length === 0) return '?';
+  if (tokens.length === 1) {
+    const head = tokens[0] ?? '';
+    if (head.length === 0) return '?';
+    return head.slice(0, 2).toUpperCase();
+  }
+  return tokens
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 /**
  * Format an ISO-8601 timestamp as `Apr 12, 2026` for meta rows.
