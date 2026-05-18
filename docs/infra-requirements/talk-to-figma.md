@@ -1,28 +1,32 @@
 # Talk to Figma MCP — Setup
 
-> Why: the official `claude_ai_Figma` MCP is rate-limited on the Starter plan and blocked all our screenshot + metadata calls during the M1 design regen. `cursor-talk-to-figma-mcp` (by sonnylazuardi) bypasses Figma Cloud API entirely — it bridges Claude ⇄ a local WebSocket server ⇄ a Figma plugin running inside the user's Figma session. No Cloud-API quota involvement.
+> Why: the official `claude_ai_Figma` MCP is rate-limited on the Starter plan and blocked all our screenshot + metadata calls during the M1 design regen. `cursor-talk-to-figma-mcp` (by sonnylazuardi) bypasses Figma Cloud API entirely — it bridges Claude ⇄ a local WebSocket server ⇄ a Figma plugin running inside an actual Figma session. No Cloud-API quota involvement.
 
 ## Architecture
 
+Everything runs on the same host (Spark). Claude Code, the MCP server, the WebSocket bridge, and the Figma session (via the host's Firefox) all share `localhost`. No SSH port forwarding required.
+
 ```
-Claude Code (SSH host)
-     │
-     │ stdio
-     ▼
-bunx cursor-talk-to-figma-mcp@latest        ← MCP server (auto-launched by Claude per .mcp.json)
-     │
-     │ WebSocket → localhost:3055
-     ▼
-bun socket                                  ← WebSocket bridge (manual, run on SSH host)
-     ▲
-     │ WebSocket → localhost:3055           ← user must SSH-forward this port
-     │
-Cursor MCP Plugin in Figma desktop/web app  ← user installs + opens + joins channel
+Spark (SSH host)
+├── Claude Code
+│     │ stdio
+│     ▼
+│   bunx cursor-talk-to-figma-mcp@latest    ← MCP server (auto-launched per .mcp.json)
+│     │
+│     │ WebSocket → localhost:3055
+│     ▼
+│   bun socket                              ← WebSocket bridge (manual, persistent)
+│     ▲
+│     │ WebSocket → localhost:3055
+│     │
+└── Firefox  →  figma.com  →  Cursor MCP Plugin (loaded inside the Figma web session)
 ```
 
-The MCP server sends commands to the bridge; the plugin picks them up and executes them inside the user's actual Figma session. No Figma Cloud API in the path.
+The MCP server sends commands to the bridge; the plugin (running in the Spark-side Firefox tab) picks them up and executes them inside the Figma web session. No Figma Cloud API in the path.
 
-## One-time setup on the SSH host
+> Earlier flow ran Figma on the user's *local* machine and used `ssh -NL 3055:localhost:3055` to reach the bridge on Spark. That still works, but the Spark-local flow below is the current default — it removes the per-session port-forward step.
+
+## One-time setup on Spark
 
 1. **Install bun** (the JS runtime the socket + MCP server both use):
    ```bash
@@ -38,36 +42,38 @@ The MCP server sends commands to the bridge; the plugin picks them up and execut
    bun install
    ```
 
-3. **Run the WebSocket bridge.** Default port is 3055, hostname defaults to localhost (the `0.0.0.0` line in `src/socket.ts` is commented out and we leave it that way — port-forwarding handles remote access more safely).
+3. **Run the WebSocket bridge.** Default port is 3055, hostname defaults to localhost. Since Figma also lives on Spark, localhost is fine — no need to flip `0.0.0.0` in `src/socket.ts`.
    ```bash
    cd ~/tools/talk-to-figma
    bun socket           # logs "WebSocket server running on port 3055"
    ```
-   Keep the terminal open. For background use, run inside `tmux`/`screen` or:
+   For background use, run inside `tmux`/`screen` or:
    ```bash
    nohup bun socket > /tmp/talk-to-figma-socket.log 2>&1 &
    ```
 
-## One-time setup on the user's local machine
+4. **Make sure a desktop session + Firefox are available on Spark.** Any GUI access path works:
+   - X11 forwarding from a local SSH client (`ssh -X spark` then `firefox &`),
+   - VNC / xrdp into a Spark desktop session,
+   - a noVNC / xpra browser bridge.
 
-1. **Install the Figma plugin** from the community page:
+   The Firefox process runs on Spark; only the pixels leave. The plugin's WebSocket connection stays on Spark `localhost`.
+
+5. **Install the Cursor MCP Plugin** in the Spark-side Firefox Figma session (one time per Figma account):
    https://www.figma.com/community/plugin/1485687494525374295/cursor-talk-to-figma-mcp-plugin
-
-2. **Open Figma** (desktop or web) and create or open the design file you want Claude to edit.
-
-3. **Run the plugin** (`Plugins → Cursor MCP Plugin`). It will show a connection panel — leave it on `ws://localhost:3055` (default).
 
 ## Per-session setup
 
-1. **From local terminal**, forward port 3055 from the SSH host:
-   ```bash
-   ssh -NL 3055:localhost:3055 <ssh-host-alias>
-   ```
-   Same pattern as the brainstorm visual companion. Leave that terminal open for the session.
+No port forwarding needed.
 
-2. **In the Figma plugin**, click `Connect`. It should turn green and show "Connected to WebSocket server."
+1. **Confirm `bun socket` is up on Spark** (`ss -tlnp | grep 3055`). If not, start it (`nohup bun socket …`).
 
-3. **Pick a channel name** (any string, e.g. `playground-m1`). In the plugin, type the channel and click `Join`.
+2. **In Spark Firefox**, open Figma → the file you want Claude to edit → `Plugins → Cursor MCP Plugin`.
+
+3. In the plugin panel:
+   - WebSocket URL: `ws://localhost:3055` (default; this is Spark's loopback).
+   - Click `Connect` → should turn green / "Connected to WebSocket server."
+   - Pick a channel name (any string, e.g. a generated 8-char id) → click `Join`.
 
 4. **Tell Claude the channel name** when you ask it to do design work — Claude's first MCP call must be `join_channel` with the same name. (The product-designer agent prompt should be parameterized with the channel.)
 
@@ -112,7 +118,18 @@ The MCP server exposes ~30 tools. The product-designer agent's `tools:` allowlis
 
 ## Troubleshooting
 
-- **Plugin shows "disconnected" after connecting:** the SSH port-forward dropped. Re-run `ssh -NL 3055:localhost:3055 …`.
+- **Plugin shows "disconnected" after connecting:** `bun socket` process died on Spark. `ss -tlnp | grep 3055` to confirm, then restart it (`nohup bun socket > /tmp/talk-to-figma-socket.log 2>&1 &`).
 - **Claude reports `mcp__TalkToFigma__*` tool not found:** Claude Code session predates `.mcp.json` change. Restart the session.
 - **`bun: command not found` when re-dispatching:** the `bunx` invocation in `.mcp.json` runs on the SSH host where Claude Code is. Make sure bun is on PATH for the user/shell Claude Code launched under (`echo $PATH | grep bun`). If not, edit `.mcp.json` to use the absolute path: `"command": "/home/<user>/.bun/bin/bunx"`.
-- **All commands hang:** the plugin hasn't joined a channel yet, or it's joined a different channel than Claude is calling. Confirm the channel name matches.
+- **All commands hang:** the plugin hasn't joined a channel yet, or it's joined a different channel than Claude is calling. Confirm the channel name matches the one passed to `join_channel`.
+- **Plugin can't reach `ws://localhost:3055`:** Firefox is running somewhere other than Spark (e.g., your local laptop). Either move Firefox onto Spark, or fall back to the legacy `ssh -NL 3055:localhost:3055 spark` flow.
+
+## Legacy flow — Figma on a separate local machine
+
+If for some reason Figma must run on a different machine than `bun socket` (e.g., Spark has no GUI access, or the user prefers their local Figma desktop), the original flow still works:
+
+1. Spark: run `bun socket` as above.
+2. Local terminal: `ssh -NL 3055:localhost:3055 <spark-host-alias>`. Keep the terminal open for the session.
+3. Local Figma desktop/web: install the plugin once, open the target file, `Plugins → Cursor MCP Plugin`, `Connect` to `ws://localhost:3055` (the forwarded port), pick a channel, `Join`.
+
+Everything else (channel name handoff to Claude, restart instructions, tool surface) is identical.
