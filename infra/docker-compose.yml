@@ -139,7 +139,10 @@ services:
   # disabled for dev (single-node, compose-internal); re-enable for any public
   # deployment via a future per-milestone ADR.
   opensearch-playground:
-    image: opensearchproject/opensearch:2.18.0
+    build:
+      context: ./opensearch
+      dockerfile: Dockerfile
+    image: playground/opensearch:2.18.0-nori
     container_name: opensearch-playground
     environment:
       cluster.name: opensearch-playground
