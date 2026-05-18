@@ -234,7 +234,7 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
           </div>
         )}
 
-        <div className="mx-auto w-full max-w-[720px] px-md py-xl">
+        <div className="mx-auto w-full max-w-[1100px] px-md py-xl">
           <input
             type="text"
             value={title}

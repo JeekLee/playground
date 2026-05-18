@@ -6,7 +6,7 @@
  */
 export function EditorSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-[720px] py-xl" aria-hidden="true">
+    <div className="mx-auto w-full max-w-[1100px] py-xl" aria-hidden="true">
       <div className="h-9 w-3/4 animate-pulse rounded-sm bg-surface-soft" />
       <div className="mt-lg flex flex-col gap-sm">
         <div className="h-4 w-full animate-pulse rounded-sm bg-surface-soft" />
