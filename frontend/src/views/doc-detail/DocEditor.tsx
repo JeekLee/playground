@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
-import { BlockNoteEditor } from '@/features/docs-editor';
+import { BlockNoteEditor, useSaveShortcut } from '@/features/docs-editor';
 import { FolderPicker } from '@/features/folder-picker';
 import { ConfirmModal } from '@/widgets/confirm-modal';
 import {
@@ -106,6 +106,34 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [body, doc.id, doc.title, doc.body, pristine, router, title, saveState.kind]);
+
+  // ⌘+S / Ctrl+S immediate save — complements the debounced loop above.
+  useSaveShortcut(
+    useCallback(async () => {
+      if (pristine) return;
+      if (bodyByteSize(body) > MAX_BODY_BYTES) {
+        setSaveState({ kind: 'too-large' });
+        return;
+      }
+      setSaveState({ kind: 'saving' });
+      const result = await patchDocument(doc.id, {
+        title: title.trim().length > 0 ? title.trim() : undefined,
+        body,
+      });
+      if (result.kind === 'ok') {
+        setSaveState({ kind: 'saved', at: Date.now() });
+      } else if (result.kind === 'too-large') {
+        setSaveState({ kind: 'too-large' });
+      } else if (result.kind === 'unauthorized') {
+        router.push('/login?next=' + encodeURIComponent(`/docs/${doc.id}`));
+      } else if (result.kind === 'not-found') {
+        setSaveState({ kind: 'error', message: 'Document not found' });
+      } else {
+        setSaveState({ kind: 'error', message: 'Save failed — retry' });
+      }
+    }, [body, doc.id, pristine, router, title]),
+    saveState.kind !== 'too-large' && !publishing,
+  );
 
   const onPublish = useCallback(async () => {
     if (publishing) return;
