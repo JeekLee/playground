@@ -28,3 +28,14 @@ CREATE SCHEMA IF NOT EXISTS docs;
 -- idempotent against the existing extension via `CREATE EXTENSION IF NOT
 -- EXISTS vector SCHEMA rag` when it lands.
 CREATE SCHEMA IF NOT EXISTS rag;
+
+-- M4 (rag-chat BC) — schema-per-BC per ADR-05 (amended by ADR-14 §3 + §G.3).
+-- Table DDL (chat.sessions, chat.messages, chat.message_citations) is owned
+-- by Flyway (backend/rag-chat/rag-chat-infra/src/main/resources/db/migration/),
+-- not here. Per ADR-14 §3 + §3.1, the rag-chat-api Hikari connection sets
+-- `search_path` to `chat,docs,rag,identity,public` at session start to support
+-- the first sanctioned cross-schema SELECT exception: per-turn vector retrieval
+-- against `rag.document_chunks`, citation enrichment via `docs.documents`, and
+-- the display-name lookup via `identity.users`. Cross-schema writes remain
+-- forbidden — rag-chat writes only to the `chat` schema.
+CREATE SCHEMA IF NOT EXISTS chat;
