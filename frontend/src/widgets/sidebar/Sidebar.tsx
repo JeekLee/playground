@@ -7,6 +7,19 @@ import { userInitials } from '@/entities/user';
 import { SignOutButton } from '@/features/sign-out';
 
 /**
+ * The Apps section drives which top-level destination is highlighted. Per
+ * M2 spec v5 §7.1, the `Docs` row ships with M2 and lights up `accent.soft`
+ * for any route under `/docs`, `/docs/mine`, `/docs/{id}`, `/docs/new`, or
+ * `/docs/search`. The active row's target adapts to auth: signed-in users
+ * route to `/docs/mine`, anonymous users route to `/docs` (community feed,
+ * S2). In S1 we only ship the signed-in target — anonymous users see the
+ * Docs row in its shipped-but-inactive state with the public destination
+ * (`/docs`, which is S2 — but the route is still wired through the
+ * gateway so the link does not 404; it will land on the eventual community
+ * feed page once S2 ships).
+ */
+
+/**
  * Sidebar — left column that always renders, but flips between a wide
  * 232px "expanded" mode and a narrow 64px icon-only "rail" mode, the
  * way Obsidian / VSCode handle their primary sidebars.
@@ -30,24 +43,54 @@ export interface SidebarProps {
   user: User | null;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /**
+   * Current pathname — used to compute which Apps row is active. Passed
+   * from the client shell which already owns the React render. Defaults
+   * to `/` so SSR snapshots render Home-active.
+   */
+  pathname?: string;
 }
 
 interface AppsRow {
   label: string;
   icon: typeof Home;
-  active?: boolean;
+  /** Static route the row links to when shipped. */
+  href: string;
+  /**
+   * Predicate over the current pathname. The Apps row lights up when this
+   * returns true. Defaults to exact match against `href`.
+   */
+  isActive?: (pathname: string) => boolean;
   locked?: boolean;
   milestone?: string;
 }
 
 const APPS: AppsRow[] = [
-  { label: 'Home', icon: Home, active: true },
-  { label: 'Docs', icon: FileText, locked: true, milestone: 'M2' },
-  { label: 'Chat', icon: MessageSquare, locked: true, milestone: 'M4' },
-  { label: 'System status', icon: Activity, locked: true, milestone: 'M5' },
+  { label: 'Home', icon: Home, href: '/' },
+  {
+    label: 'Docs',
+    icon: FileText,
+    href: '/docs/mine',
+    // M2 spec §7.1: any route under /docs lights this row.
+    isActive: (path) => path === '/docs' || path.startsWith('/docs/'),
+  },
+  {
+    label: 'Chat',
+    icon: MessageSquare,
+    href: '/chat',
+    locked: true,
+    milestone: 'M4',
+  },
+  {
+    label: 'System status',
+    icon: Activity,
+    href: '/system-status',
+    locked: true,
+    milestone: 'M5',
+  },
 ];
 
-export function Sidebar({ user, collapsed, onToggleCollapsed }: SidebarProps) {
+export function Sidebar({ user, collapsed, onToggleCollapsed, pathname = '/' }: SidebarProps) {
   return (
     <aside
       className={cn(
@@ -85,9 +128,17 @@ export function Sidebar({ user, collapsed, onToggleCollapsed }: SidebarProps) {
       <nav aria-label="Apps" className="flex w-full flex-col gap-sm">
         {!collapsed && <span className="px-sm text-eyebrow text-text-subtle">Apps</span>}
         <ul className="flex flex-col gap-xs">
-          {APPS.map((row) => (
-            <AppsRowItem key={row.label} collapsed={collapsed} {...row} />
-          ))}
+          {APPS.map((row) => {
+            const active = !row.locked && (row.isActive?.(pathname) ?? pathname === row.href);
+            return (
+              <AppsRowItem
+                key={row.label}
+                collapsed={collapsed}
+                active={active}
+                {...row}
+              />
+            );
+          })}
         </ul>
       </nav>
       <div className="flex-1" />
@@ -103,11 +154,12 @@ export function Sidebar({ user, collapsed, onToggleCollapsed }: SidebarProps) {
 function AppsRowItem({
   label,
   icon: Icon,
+  href,
   active,
   locked,
   milestone,
   collapsed,
-}: AppsRow & { collapsed: boolean }) {
+}: AppsRow & { collapsed: boolean; active?: boolean }) {
   const className = cn(
     'flex items-center rounded-md py-[6px] text-small',
     collapsed ? 'h-[32px] w-[32px] justify-center' : 'justify-between px-sm',
@@ -149,11 +201,11 @@ function AppsRowItem({
           {content}
         </div>
       ) : active ? (
-        <div aria-current="page" title={title} className={className}>
+        <a aria-current="page" href={href} title={title} className={className}>
           {content}
-        </div>
+        </a>
       ) : (
-        <a href={`/${label.toLowerCase()}`} title={title} className={className}>
+        <a href={href} title={title} className={className}>
           {content}
         </a>
       )}
