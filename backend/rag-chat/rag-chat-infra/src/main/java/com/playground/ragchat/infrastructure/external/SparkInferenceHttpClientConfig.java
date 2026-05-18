@@ -7,22 +7,31 @@ import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 
 /**
  * Force every Spring AI RestClient (used for the non-streaming chat
- * auto-title call + the query embedding sync call) to use Apache
- * HttpClient5 → HTTP/1.1.
+ * auto-title call + the query embedding sync call) onto Apache
+ * HttpClient5 with a buffered request body so the wire request carries
+ * {@code Content-Length} instead of {@code Transfer-Encoding: chunked}.
  *
- * <p>Same workaround as rag-ingestion: on Spring Boot 3.3.5 the
- * auto-configured {@code RestClient.Builder} can resolve to JDK
- * HttpClient (HTTP/2 default) even when {@code httpclient5} is on the
- * classpath; vLLM 0.19's uvicorn rejects the h2c upgrade with
- * {@code Invalid HTTP request received.} → HTTP 400. Streaming
- * {@code .stream()} is unaffected — it goes through WebClient on
- * Reactor Netty.
+ * <p>Same workaround as rag-ingestion: vLLM 0.19's uvicorn rejects
+ * chunked POSTs with {@code HTTP 400 - Invalid HTTP request received.};
+ * {@link
+ * HttpComponentsClientHttpRequestFactory#setBufferRequestBody(boolean)
+ * setBufferRequestBody(true)} pre-buffers the entity and emits
+ * {@code Content-Length}. Streaming {@code .stream()} is unaffected — it
+ * goes through WebClient on Reactor Netty, which already negotiates
+ * HTTP/1.1 with chunked responses (not chunked requests).
  */
 @Configuration
 class SparkInferenceHttpClientConfig {
 
     @Bean
     RestClientCustomizer httpComponentsRestClientCustomizer() {
-        return builder -> builder.requestFactory(new HttpComponentsClientHttpRequestFactory());
+        return builder -> builder.requestFactory(bufferingHttpComponentsFactory());
+    }
+
+    @SuppressWarnings("deprecation")
+    private static HttpComponentsClientHttpRequestFactory bufferingHttpComponentsFactory() {
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
+        factory.setBufferRequestBody(true);
+        return factory;
     }
 }
