@@ -1,8 +1,16 @@
+'use client';
+
+import { Children, isValidElement, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { Components } from 'react-markdown';
 import { cn } from '@/shared/lib/cn';
+import {
+  getSharedHighlighter,
+  SHIKI_THEME,
+  SUPPORTED_LANGS,
+} from '@/shared/lib/shiki';
 
 /**
  * MarkdownReader — server-renderable Markdown reader pipeline.
@@ -31,6 +39,57 @@ import { cn } from '@/shared/lib/cn';
 export interface MarkdownReaderProps {
   body: string;
   className?: string;
+}
+
+/**
+ * Block-level fenced-code renderer with shiki syntax highlighting.
+ * Loads the shared highlighter on mount, renders a plain monospace
+ * fallback while it warms up, then swaps to shiki's tokenized HTML
+ * via `dangerouslySetInnerHTML`. Shiki's output is fully escaped +
+ * structured so XSS isn't a concern.
+ */
+function ShikiCodeBlock({ language, code }: { language: string; code: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getSharedHighlighter().then((highlighter) => {
+      if (cancelled) return;
+      const resolvedLang = (SUPPORTED_LANGS as readonly string[]).includes(language)
+        ? language
+        : 'text';
+      try {
+        const out = highlighter.codeToHtml(code, {
+          lang: resolvedLang,
+          theme: SHIKI_THEME,
+        });
+        setHtml(out);
+      } catch {
+        // Unsupported lang or runtime hiccup — keep the fallback.
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [language, code]);
+
+  if (html) {
+    // Shiki wraps the output in its own `<pre class="shiki ...">` with
+    // inline background. Our outer wrapper provides the surface-soft
+    // background + padding consistent with the rest of the prose; the
+    // inline shiki bg gets neutralized via the Tailwind arbitrary
+    // descendant selectors below.
+    return (
+      <div
+        className="mt-md overflow-x-auto rounded-md bg-surface-soft p-md text-[13px] leading-[1.5] [&_pre]:!m-0 [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!font-mono"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+  return (
+    <pre className="mt-md overflow-x-auto rounded-md bg-surface-soft p-md font-mono text-[13px] leading-[1.5] text-text">
+      <code>{code}</code>
+    </pre>
+  );
 }
 
 // `rehype-sanitize` ships a default schema that filters out scripts +
@@ -85,7 +144,10 @@ const components: Components = {
     const isBlock =
       typeof className === 'string' && className.startsWith('language-');
     if (isBlock) {
-      // Block-level renders inside a `<pre>` (provided by react-markdown).
+      // Block-level is intercepted by the `pre` handler below so it can
+      // run shiki on the raw text. The `code` element is left as a thin
+      // passthrough — keeping the language class so any tools that
+      // inspect the rendered DOM still see it.
       return (
         <code className={cn('font-mono text-[13px] leading-[1.5] text-text', className)} {...rest}>
           {children}
@@ -98,11 +160,32 @@ const components: Components = {
       </code>
     );
   },
-  pre: ({ children }) => (
-    <pre className="mt-md overflow-x-auto rounded-md bg-surface-soft p-md font-mono text-[13px] leading-[1.5] text-text">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    // react-markdown gives us a single `<code>` child for fenced blocks.
+    // Pull the language hint off its className and the raw text off its
+    // children, then hand both to the shiki-backed renderer.
+    const codeElement = Children.toArray(children).find(
+      (child): child is ReactElement<{ className?: string; children?: ReactNode }> =>
+        isValidElement(child) && (child as ReactElement<{ type?: string }>).type === 'code',
+    );
+    if (codeElement) {
+      const className = codeElement.props.className ?? '';
+      const langMatch = /language-(\S+)/.exec(className);
+      const language = langMatch?.[1] ?? 'text';
+      const inner = codeElement.props.children;
+      const code = typeof inner === 'string'
+        ? inner.replace(/\n$/, '')
+        : Array.isArray(inner)
+          ? inner.filter((c) => typeof c === 'string').join('').replace(/\n$/, '')
+          : '';
+      return <ShikiCodeBlock language={language} code={code} />;
+    }
+    return (
+      <pre className="mt-md overflow-x-auto rounded-md bg-surface-soft p-md font-mono text-[13px] leading-[1.5] text-text">
+        {children}
+      </pre>
+    );
+  },
   table: ({ children }) => (
     <div className="mt-md overflow-x-auto">
       <table className="w-full border-collapse text-small text-text">{children}</table>

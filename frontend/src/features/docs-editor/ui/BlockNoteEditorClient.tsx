@@ -7,6 +7,10 @@ import { useCreateBlockNote } from '@blocknote/react';
 import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
 import { playgroundTheme } from '../lib/playgroundTheme';
+import {
+  BLOCKNOTE_SUPPORTED_LANGUAGES,
+  getSharedHighlighter,
+} from '@/shared/lib/shiki';
 
 /**
  * BlockNote editor — client-only component, dynamic-imported from the
@@ -37,7 +41,23 @@ export default function BlockNoteEditorClient({
   onChange,
   editable = true,
 }: BlockNoteEditorClientProps) {
-  const editor = useCreateBlockNote();
+  // Code-block syntax highlighting wired via shiki — BlockNote 0.31's
+  // CodeBlock optionally calls `createHighlighter` once and then uses the
+  // returned HighlighterGeneric to render token spans inline. Shared
+  // singleton across the app so the editor and the reader pipeline use
+  // the same highlighter instance + theme.
+  const editor = useCreateBlockNote({
+    codeBlock: {
+      indentLineWithTab: true,
+      defaultLanguage: 'text',
+      supportedLanguages: BLOCKNOTE_SUPPORTED_LANGUAGES,
+      // Shiki's bundled `Highlighter` is structurally compatible with
+      // BlockNote's generic HighlighterGeneric<any, any>, but TS's
+      // structural check rejects the slightly narrower type. Cast at the
+      // boundary — the runtime shape is fine.
+      createHighlighter: getSharedHighlighter as () => Promise<never>,
+    },
+  });
   const [ready, setReady] = useState(false);
   const initialBodyRef = useRef(initialBody);
 
