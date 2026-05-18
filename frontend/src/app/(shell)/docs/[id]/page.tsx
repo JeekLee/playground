@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
 
 type PageProps = {
   params: { id: string };
-  searchParams: { published?: string; as?: string };
+  searchParams: { published?: string; mode?: string };
 };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -78,19 +78,21 @@ export default async function DocByIdRoute({ params, searchParams }: PageProps) 
     me.kind === 'authenticated' &&
     (doc.author ? me.user.id === doc.author.id : me.user.id === doc.authorId);
 
-  // Owner-initiated preview: the editor's "→ View public" link adds
-  // `?as=reader` so the owner can see the public surface their readers
-  // see. Without this gate the page would re-render DocEditor because
-  // `isOwner` is still true on the same URL, defeating the preview.
-  const previewAsReader = searchParams.as === 'reader';
+  // Default rendering is the public reader for everyone — including the
+  // owner — so navigating to /docs/{id} always lands on the read surface
+  // the audience sees. The owner opts into the editor with `?mode=edit`
+  // (the Edit button in DocReader and the deep-link from /docs/mine both
+  // append it). Non-owners can't reach the editor regardless of mode.
+  const wantsEditor = searchParams.mode === 'edit';
 
-  if (isOwner && !previewAsReader) {
+  if (isOwner && wantsEditor) {
     return <DocEditor doc={doc} publishedFlash={searchParams.published === '1'} />;
   }
   return (
     <DocReader
       doc={doc}
       isAuthenticated={me.kind === 'authenticated'}
+      isOwner={isOwner}
     />
   );
 }

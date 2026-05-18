@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Copy, Eye } from 'lucide-react';
+import { Copy, Eye, Pencil } from 'lucide-react';
 import { Avatar } from '@/shared/ui/avatar';
 import { Chip } from '@/shared/ui/chip';
 import { MarkdownReader } from '@/features/docs-reader';
@@ -35,9 +35,15 @@ export interface DocReaderProps {
   doc: Document;
   /** Caller's authenticated status; drives the LikeButton's branch. */
   isAuthenticated: boolean;
+  /**
+   * Caller owns the document — surface an Edit affordance that deep-
+   * links to `?mode=edit`. Non-owners never see the button regardless of
+   * authentication state.
+   */
+  isOwner?: boolean;
 }
 
-export function DocReader({ doc, isAuthenticated }: DocReaderProps) {
+export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderProps) {
   const [copied, setCopied] = useState(false);
   const url =
     typeof window === 'undefined'
@@ -96,15 +102,27 @@ export function DocReader({ doc, isAuthenticated }: DocReaderProps) {
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={copyLink}
-            className="inline-flex items-center gap-sm rounded-pill border border-border bg-surface px-md py-[6px] font-mono text-[11px] text-text-subtle transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-            aria-label="Copy document link"
-          >
-            <Copy size={12} aria-hidden="true" />
-            <span>/docs/{doc.id}</span>
-          </button>
+          <div className="flex items-center gap-sm">
+            {isOwner && (
+              <Link
+                href={`/docs/${doc.id}?mode=edit`}
+                className="inline-flex items-center gap-xs rounded-pill border border-accent bg-accent-soft px-md py-[6px] text-small font-medium text-accent transition-colors duration-[140ms] hover:bg-accent hover:text-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                aria-label="Edit this document"
+              >
+                <Pencil size={12} aria-hidden="true" />
+                <span>Edit</span>
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={copyLink}
+              className="inline-flex items-center gap-sm rounded-pill border border-border bg-surface px-md py-[6px] font-mono text-[11px] text-text-subtle transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+              aria-label="Copy document link"
+            >
+              <Copy size={12} aria-hidden="true" />
+              <span>/docs/{doc.id}</span>
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-md">
           <span className="inline-flex items-center gap-xs text-small text-text-muted">

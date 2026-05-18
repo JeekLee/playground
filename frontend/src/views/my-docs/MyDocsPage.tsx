@@ -206,7 +206,7 @@ export function MyDocsPage({
               {filtered.map((doc, i) => (
                 <Link
                   key={doc.id}
-                  href={`/docs/${doc.id}`}
+                  href={`/docs/${doc.id}?mode=edit`}
                   className={
                     'block focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ' +
                     (i > 0 ? 'border-t border-border' : '')
