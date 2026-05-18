@@ -84,7 +84,7 @@ spring:
         options:
           # The gateway's served model name; override at deploy if the
           # vLLM launch script used a different id (per ADR-04 + ADR-13 §10).
-          model: ${SPRING_AI_EMBEDDING_MODEL:BGE-M3}
+          model: ${SPRING_AI_EMBEDDING_MODEL:bge-m3}
     retry:
       # ADR-13 §2 — embedding retry curve. Spring AI's built-in retry advisor
       # uses these to wrap RestClient calls to the OpenAI-compatible endpoint.

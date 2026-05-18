@@ -53,13 +53,13 @@ spring:
       api-key: ${SPRING_AI_OPENAI_API_KEY:dummy-not-used}
       chat:
         options:
-          model: ${SPRING_AI_CHAT_MODEL:Qwen3-32B}
+          model: ${SPRING_AI_CHAT_MODEL:qwen3-32b}
           # ADR-14 §B — default chat temperature. Auto-title overrides to 0.1
           # at call site per ADR-14 §6.
           temperature: 0.2
       embedding:
         options:
-          model: ${SPRING_AI_EMBEDDING_MODEL:BGE-M3}
+          model: ${SPRING_AI_EMBEDDING_MODEL:bge-m3}
     retry:
       # ADR-13 §2 retry curve — applies to both chat and embedding via the
       # Spring AI starter's retry advisor.
