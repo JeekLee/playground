@@ -18,3 +18,13 @@ CREATE SCHEMA IF NOT EXISTS identity;
 -- here. Cross-schema FK to identity.users is forbidden per ADR-12 §8 — the
 -- relationship is enforced at the application layer.
 CREATE SCHEMA IF NOT EXISTS docs;
+
+-- M3 (rag-ingestion BC) — schema-per-BC per ADR-05 (amended by ADR-13).
+-- Table DDL (rag.document_chunks with pgvector(1024) + HNSW index, Modulith
+-- event_publication for `rag.document.ingested`) is owned by Flyway
+-- (backend/rag-ingestion/rag-ingestion-infra/src/main/resources/db/migration/),
+-- not here. The `vector` extension is created at the top of this file (M2
+-- bootstrapped it for the docs corpus); ADR-13 §F's Flyway migration is
+-- idempotent against the existing extension via `CREATE EXTENSION IF NOT
+-- EXISTS vector SCHEMA rag` when it lands.
+CREATE SCHEMA IF NOT EXISTS rag;

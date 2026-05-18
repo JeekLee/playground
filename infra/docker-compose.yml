@@ -229,6 +229,50 @@ services:
       timeout: 10s
       retries: 10
 
+  # --- M3: rag-ingestion-api (RAG-Ingestion BC quadruplet runnable per ADR-01 v2 + ADR-13) ---
+  # No host port — rag-ingestion has no public HTTP surface; only `/actuator/**`
+  # on the compose-internal 18083 port (ADR-08 + ADR-13 §A). Listens on three
+  # docs.* topics, publishes `rag.document.ingested`. Calls docs-api
+  # `/internal/docs/public/{id}/body` (ADR-08 Exception 1) and the host's
+  # spark-inference-gateway for BGE-M3 embeddings (ADR-04 + ADR-13 §10).
+  rag-ingestion-api:
+    build:
+      context: ../backend
+      dockerfile: rag-ingestion/rag-ingestion-api/Dockerfile
+    container_name: rag-ingestion-api
+    depends_on:
+      postgres-playground:
+        condition: service_healthy
+      kafka-playground:
+        condition: service_healthy
+      redis-playground:
+        condition: service_healthy
+      docs-api:
+        condition: service_healthy   # body-fetch dependency per ADR-08 Exception 1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # per ADR-04 — reach spark-inference-gateway
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-playground}
+      POSTGRES_USER: ${POSTGRES_USER:-playground}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
+      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      DOCS_API_BASE_URL: ${DOCS_API_BASE_URL:-http://docs-api:18082}
+      # Spark-inference-gateway via the OpenAI-compatible vLLM endpoint (ADR-04 + ADR-13 §10).
+      # Default targets the host-process gateway at http://host.docker.internal:10080.
+      SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
+      SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:18083/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    # NO `ports:` block — rag-ingestion-api is compose-internal only (ADR-08).
+
   # --- M1: frontend (Next.js SSR) per ADR-06 + ADR-07 forwarding map ---
   # No host port — gateway routes `/**` here.
   frontend:
