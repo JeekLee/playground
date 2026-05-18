@@ -35,4 +35,13 @@ include(":docs:docs-app")
 include(":docs:docs-domain")
 include(":docs:docs-infra")
 
-// M3 (rag-ingestion), M4 (rag-chat), M5 (metrics): same pattern.
+// M3 — rag-ingestion quadruplet (ADR-01 v2 + ADR-13). Backend-only BC: no
+// public HTTP surface (ADR-13 §A — actuator-only on 18083). Consumes the
+// three docs.document.* topics, writes pgvector chunks, emits
+// rag.document.ingested.
+include(":rag-ingestion:rag-ingestion-api")
+include(":rag-ingestion:rag-ingestion-app")
+include(":rag-ingestion:rag-ingestion-domain")
+include(":rag-ingestion:rag-ingestion-infra")
+
+// M4 (rag-chat), M5 (metrics): same pattern.
