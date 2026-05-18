@@ -34,3 +34,6 @@ out/
 
 # Docker volumes
 **/volumes/
+
+# Playwright MCP scratch dir (browser session snapshots / console logs).
+.playwright-mcp/
