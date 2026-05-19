@@ -237,6 +237,15 @@ rag-chat (M4) gains the ability to invoke external tools via LLM function-callin
   data: { "name": "generate_massing", "code": "TIMEOUT|5XX|...", "message": "..." }
   ```
 - ADR-08 amendment adding **Exception 4** (`rag-chat` → tool BCs HTTP). Subsequent tool BC additions become sub-rows of Exception 4.
+- **Frontend `tool_result` rendering — structured tool-result card.** When the SSE stream emits a `tool_result` event, the chat UI renders a structured card **below** the LLM's natural-language assistant message that triggered the tool. The card contains:
+  - Tool display name (e.g., `📁 generate_massing`)
+  - The `summary` field (one-line description)
+  - A primary action button — typically **Download** when the payload carries `outputUrl`, but may vary per tool (e.g., `Open document`, `Preview`)
+  - Optional `programJson` / metadata expandable accordion (per-tool design choice)
+
+  The card co-exists with the LLM's natural-language text — the LLM still describes what it did in prose; the card surfaces the artifact handle. Visual design (file icon, spacing, color tokens, hover state) is **each tool's Stage-2 design responsibility** — M8 Stage-2 design pins the `generate_massing` card visual; future tool BCs (e.g., `slide-gen`, `image-gen`) each pin their own.
+
+  Backend contract: `outputUrl` in the `tool_result` payload **must** be a relative URL like `/api/arch/outputs/{id}` so the browser's session cookie (gateway-issued from M1) carries `X-User-Id` to the tool BC's download endpoint automatically. The Download button is a plain `<a href={outputUrl} download>` — no JS fetch needed.
 
 ### Scope (out — M7.1)
 - Parallel tool calls in one chat turn
@@ -298,7 +307,8 @@ First domain-specific tool BC. Exposes a `generate_massing` tool that converts a
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
   );
   ```
-- File download endpoint `GET /api/arch/outputs/{id}` (authenticated, owner-only). Returns `application/octet-stream` with appropriate `Content-Disposition` filename.
+- File download endpoint `GET /api/arch/outputs/{id}` (authenticated, owner-only). Returns `application/octet-stream` with `Content-Disposition: attachment; filename="massing-<briefSlug>-<timestamp>.3dm"` header so the browser triggers a download dialog rather than inline render.
+- **Tool result card surface in /chat**: per M7's frontend rendering contract, the `tool_result` event from `generate_massing` materializes a card below the LLM message containing tool name, summary (e.g., "12 rooms, 3 floors, 480 m² total"), and a **Download .3dm** button linking to `outputUrl`. M8 Stage-2 design pins the exact card visual (file icon, accent token, summary field layout). The LLM still produces natural-language commentary above the card; the card just gives the click target.
 - `Rhino3dmAdapter` (in `-infra`) calls the `rhino3dm-bridge` sidecar (Node 18 + `rhino3dm` npm package) via HTTP. Adapter sends JSON `[{x,y,w,d,h}, ...]`; sidecar returns `.3dm` binary.
 - `rhino3dm-bridge` sidecar container added to `infra/docker-compose.yml`:
   - Image: build from `node:18-alpine` + `rhino3dm` package
