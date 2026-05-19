@@ -85,7 +85,7 @@ public final class WindowNormalizer {
         int sizeTokens = policy.sizeTokens();
         List<Node> buf = new ArrayList<>();
         int bufTokens = 0;
-        int sectionChunkIndex = 0;
+        int sectionStart = out.size();
 
         for (Node block : section.blocks()) {
             String rendered = renderBlock(block);
@@ -93,16 +93,15 @@ public final class WindowNormalizer {
 
             if (bt > sizeTokens) {
                 if (!buf.isEmpty()) {
-                    out.add(buildDraft(section, buf, sectionChunkIndex++));
+                    out.add(buildDraft(section, buf));
                     buf.clear();
                     bufTokens = 0;
                 }
-                emitOversize(section, block, sectionChunkIndex, out);
-                sectionChunkIndex = out.size() - countSectionChunks(out, section);
+                emitOversize(section, block, 0, out);
                 continue;
             }
             if (bufTokens + bt > sizeTokens) {
-                out.add(buildDraft(section, buf, sectionChunkIndex++));
+                out.add(buildDraft(section, buf));
                 buf.clear();
                 bufTokens = 0;
             }
@@ -110,31 +109,57 @@ public final class WindowNormalizer {
             bufTokens += bt;
         }
         if (!buf.isEmpty()) {
-            out.add(buildDraft(section, buf, sectionChunkIndex++));
+            out.add(buildDraft(section, buf));
         }
-    }
 
-    private int countSectionChunks(List<ChunkDraft> out, Section section) {
-        int n = 0;
-        for (int i = out.size() - 1; i >= 0; i--) {
-            if (out.get(i).headingPath().equals(section.headingPath())) {
-                n++;
-            } else {
-                break;
+        // Apply heading-aware prefix to chunks 2..N of this section.
+        if (policy.preserveHeadingPath() && !section.headingPath().isEmpty()) {
+            for (int i = sectionStart + 1; i < out.size(); i++) {
+                ChunkDraft d = out.get(i);
+                String prefix = renderHeadingPrefix(section.headingPath());
+                String body = d.text().value();
+                String prefixed = prefix + "\n\n" + body;
+                out.set(i, new ChunkDraft(ChunkText.of(prefixed), section.headingPath()));
             }
         }
-        return n;
+
+        // Trailing-merge: if last chunk in this section is shorter than
+        // minChunkTokens AND another chunk in this section exists, merge it.
+        if (out.size() - sectionStart >= 2) {
+            ChunkDraft last = out.get(out.size() - 1);
+            if (tokenCount(last.text().value()) < policy.minChunkTokens()) {
+                ChunkDraft prev = out.get(out.size() - 2);
+                String merged = prev.text().value() + "\n\n" + last.text().value();
+                out.set(out.size() - 2, new ChunkDraft(ChunkText.of(merged), section.headingPath()));
+                out.remove(out.size() - 1);
+            }
+        }
     }
 
-    private ChunkDraft buildDraft(Section section, List<Node> blocks, int sectionChunkIndex) {
+    private ChunkDraft buildDraft(Section section, List<Node> blocks) {
         StringBuilder sb = new StringBuilder();
         for (Node b : blocks) {
             if (sb.length() > 0) sb.append("\n\n");
             sb.append(renderBlock(b));
         }
-        // Heading-aware prefix is added in Task 6c. For now leave the body as-is.
-        String text = sb.toString();
-        return new ChunkDraft(ChunkText.of(text), section.headingPath());
+        return new ChunkDraft(ChunkText.of(sb.toString()), section.headingPath());
+    }
+
+    private String renderHeadingPrefix(List<String> headingPath) {
+        int budget = policy.overlapTokens();
+        // Start from the full path; drop top-level entries until the
+        // rendered prefix fits the budget.
+        int from = 0;
+        while (from < headingPath.size()) {
+            String candidate = "> Context: " + String.join(" > ", headingPath.subList(from, headingPath.size()));
+            if (tokenCount(candidate) <= budget) {
+                return candidate;
+            }
+            from++;
+        }
+        // All single-heading prefixes exceeded the budget — emit the deepest only.
+        String deepest = headingPath.get(headingPath.size() - 1);
+        return "> Context: " + deepest;
     }
 
     private void emitOversize(Section section, Node block, int sectionChunkIndex, List<ChunkDraft> out) {
