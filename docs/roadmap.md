@@ -75,7 +75,7 @@
 - [ ] `rag-ingestion` service consumes `document.uploaded` from Kafka and acks idempotently (re-delivery does not double-insert)
 - [ ] Documents are split into chunks (size + overlap configurable) before embedding
 - [ ] Each chunk is embedded via `spark-inference-gateway` using BGE-M3 at `host.docker.internal:10080`
-- [ ] Chunks + vectors are stored in pgvector with `(document_id, chunk_index, user_id, embedding, text)` and a vector index suitable for cosine similarity
+- [ ] Chunks + vectors are stored in pgvector with `(document_id, chunk_index, user_id, embedding, text, heading_path)` and a vector index suitable for cosine similarity (`heading_path text[]` added by the M3.1 markdown-aware chunker amendment, 2026-05-19 — see ADR-13 §1)
 - [ ] An ingestion-complete signal (event or DB flag) is emitted so M4 can know which documents are queryable
 
 **Dependencies:** M0, M2.
