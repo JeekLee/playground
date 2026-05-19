@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, isValidElement, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
@@ -39,6 +39,19 @@ import {
 export interface MarkdownReaderProps {
   body: string;
   className?: string;
+  /**
+   * Optional citation-pill replacement. When provided, any inline
+   * `[N]` marker in the rendered text whose {@code N} appears in this
+   * set is swapped for a clickable pill (style + click handler owned
+   * by the caller). Used by the chat surface so the LLM's
+   * `[1][2][3]` markers in the assistant body become accordion-card
+   * anchors. Pass {@code undefined} (the default) to render `[N]`
+   * verbatim as text.
+   */
+  citationPill?: {
+    validNs: ReadonlySet<number>;
+    render: (n: number) => ReactNode;
+  };
 }
 
 /**
@@ -105,14 +118,57 @@ const sanitizeSchema = {
   },
 };
 
-const components: Components = {
-  h1: ({ children }) => <h1 className="mt-xl text-h1 text-text">{children}</h1>,
-  h2: ({ children }) => <h2 className="mt-xl text-h2 text-text">{children}</h2>,
-  h3: ({ children }) => <h3 className="mt-lg text-h3 text-text">{children}</h3>,
+/**
+ * Walk a children array and, for every string child, split on the
+ * citation `[N]` marker regex — replacing any N that's in {@code validNs}
+ * with the caller-supplied pill component. String children that have no
+ * markers pass through unchanged, and non-string children (already-
+ * rendered elements like inline code, links, etc.) are returned as-is.
+ */
+function citationPillsInChildren(
+  children: ReactNode,
+  pill: MarkdownReaderProps['citationPill'],
+): ReactNode {
+  if (!pill) return children;
+  const out: ReactNode[] = [];
+  let keyCounter = 0;
+  const handleNode = (node: ReactNode): void => {
+    if (typeof node === 'string') {
+      const regex = /\[(\d+)\]/g;
+      let lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(node)) !== null) {
+        const n = Number(m[1]);
+        const before = node.slice(lastIndex, m.index);
+        if (before) out.push(<Fragment key={`t-${keyCounter++}`}>{before}</Fragment>);
+        if (pill.validNs.has(n)) {
+          out.push(<Fragment key={`p-${keyCounter++}-${n}`}>{pill.render(n)}</Fragment>);
+        } else {
+          out.push(<Fragment key={`o-${keyCounter++}`}>{m[0]}</Fragment>);
+        }
+        lastIndex = m.index + m[0].length;
+      }
+      if (lastIndex < node.length) {
+        out.push(<Fragment key={`t-${keyCounter++}`}>{node.slice(lastIndex)}</Fragment>);
+      }
+      return;
+    }
+    out.push(<Fragment key={`n-${keyCounter++}`}>{node}</Fragment>);
+  };
+  Children.forEach(children, handleNode);
+  return out;
+}
+
+function buildComponents(pill: MarkdownReaderProps['citationPill']): Components {
+  const w = (c: ReactNode) => citationPillsInChildren(c, pill);
+  return {
+  h1: ({ children }) => <h1 className="mt-xl text-h1 text-text">{w(children)}</h1>,
+  h2: ({ children }) => <h2 className="mt-xl text-h2 text-text">{w(children)}</h2>,
+  h3: ({ children }) => <h3 className="mt-lg text-h3 text-text">{w(children)}</h3>,
   h4: ({ children }) => (
-    <h4 className="mt-lg text-[15px] font-semibold leading-snug text-text">{children}</h4>
+    <h4 className="mt-lg text-[15px] font-semibold leading-snug text-text">{w(children)}</h4>
   ),
-  p: ({ children }) => <p className="mt-md text-body text-text">{children}</p>,
+  p: ({ children }) => <p className="mt-md text-body text-text">{w(children)}</p>,
   ul: ({ children }) => (
     <ul className="mt-md ml-lg flex list-disc flex-col gap-xs text-body text-text marker:text-text-muted">
       {children}
@@ -123,10 +179,10 @@ const components: Components = {
       {children}
     </ol>
   ),
-  li: ({ children }) => <li className="leading-[1.6]">{children}</li>,
+  li: ({ children }) => <li className="leading-[1.6]">{w(children)}</li>,
   blockquote: ({ children }) => (
     <blockquote className="mt-md border-l-[3px] border-border-strong pl-md text-body text-text-muted">
-      {children}
+      {w(children)}
     </blockquote>
   ),
   hr: () => <hr className="my-xl border-0 border-t border-border" />,
@@ -193,9 +249,9 @@ const components: Components = {
   ),
   thead: ({ children }) => <thead className="bg-surface-soft text-text-muted">{children}</thead>,
   th: ({ children }) => (
-    <th className="border border-border px-sm py-xs text-left font-semibold">{children}</th>
+    <th className="border border-border px-sm py-xs text-left font-semibold">{w(children)}</th>
   ),
-  td: ({ children }) => <td className="border border-border px-sm py-xs">{children}</td>,
+  td: ({ children }) => <td className="border border-border px-sm py-xs">{w(children)}</td>,
   img: ({ src, alt }) => {
     // Spec §9: external URLs only. Reject data: and protocol-relative URLs.
     if (!src || typeof src !== 'string') return null;
@@ -203,9 +259,13 @@ const components: Components = {
     // eslint-disable-next-line @next/next/no-img-element -- external user-supplied URL, intentionally unoptimized
     return <img src={src} alt={alt ?? ''} className="mt-md max-w-full rounded-md" />;
   },
-};
+  em: ({ children }) => <em>{w(children)}</em>,
+  strong: ({ children }) => <strong>{w(children)}</strong>,
+  };
+}
 
-export function MarkdownReader({ body, className }: MarkdownReaderProps) {
+export function MarkdownReader({ body, className, citationPill }: MarkdownReaderProps) {
+  const components = useMemo(() => buildComponents(citationPill), [citationPill]);
   return (
     <div className={cn('text-body text-text', className)}>
       <ReactMarkdown

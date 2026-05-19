@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
+import { MarkdownReader } from '@/features/docs-reader';
 import { isStaleCitation, type Citation } from '@/entities/chat';
 
 /**
@@ -40,6 +41,14 @@ const STALE_KOREAN = '이 문서는 더 이상 사용할 수 없습니다';
 
 export function CitationAccordion({ citations, defaultOpen = false, focusN = null }: CitationAccordionProps) {
   const [open, setOpen] = useState(defaultOpen || citations.length === 0);
+  // Reactively open the accordion when the parent message reports a
+  // newly-clicked `[N]`. `defaultOpen` only seeds the initial state;
+  // subsequent prop changes wouldn't otherwise flip `open` back to true.
+  useEffect(() => {
+    if (focusN !== null && focusN !== undefined) {
+      setOpen(true);
+    }
+  }, [focusN]);
   const count = citations.length;
   const isEmpty = count === 0;
 
@@ -132,7 +141,17 @@ function CitationCard({ citation, focused }: CitationCardProps) {
         )}
       </div>
       {!stale && citation.excerpt && (
-        <p className="line-clamp-2 text-[12px] leading-snug text-text-muted">{citation.excerpt}</p>
+        // Excerpts are slices of the source Markdown chunk, so render
+        // them through the same pipeline as the doc body so backticks,
+        // **bold**, etc. don't bleed through as raw text. The
+        // `line-clamp` here is approximate — block elements (code
+        // fences) inside an excerpt look odd, but excerpts are ≤ ~160
+        // chars so they rarely contain a full code fence. Citation
+        // pills are disabled here ({@code citationPill} omitted) — the
+        // excerpt is source text, not a place to nest other citations.
+        <div className="line-clamp-3 text-[12px] leading-snug text-text-muted [&>*:first-child]:mt-0">
+          <MarkdownReader body={citation.excerpt} />
+        </div>
       )}
     </li>
   );
