@@ -8,6 +8,7 @@ import com.playground.metrics.domain.Range;
 import com.playground.metrics.domain.Step;
 import com.playground.metrics.domain.TimeseriesPoint;
 import com.playground.metrics.infra.config.MetricsHttpProperties;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -32,21 +33,23 @@ import reactor.core.publisher.Mono;
 public class PrometheusAdapter implements PrometheusPort {
 
     private final WebClient webClient;
+    private final String baseUrl;
     private final Duration timeout;
 
     public PrometheusAdapter(WebClient.Builder builder, MetricsHttpProperties props) {
-        this.webClient = builder.baseUrl(props.prometheus().baseUrl()).build();
+        this.baseUrl = props.prometheus().baseUrl();
+        this.webClient = builder.baseUrl(this.baseUrl).build();
         this.timeout = Duration.ofMillis(props.prometheus().timeoutMs());
     }
 
     @Override
     public Mono<List<PrometheusSample>> instantQuery(String promql) {
-        // PromQL contains literal `{`/`}` braces (label selectors). Spring's
-        // UriBuilder otherwise treats braces as URI template placeholders.
-        // We hand-build a fully-encoded query string to bypass that parsing.
-        String encoded = "/api/v1/query?query=" + urlEncode(promql);
+        // PromQL contains literal `{`/`}` braces (label selectors). Build a
+        // fully-encoded URI and feed it to WebClient as a `URI` (not a
+        // `String`) so Spring does not re-process it as a URI template.
+        URI uri = URI.create(baseUrl + "/api/v1/query?query=" + urlEncode(promql));
         return webClient.get()
-                .uri(encoded)
+                .uri(uri)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
@@ -58,13 +61,13 @@ public class PrometheusAdapter implements PrometheusPort {
     public Mono<List<PrometheusSeries>> rangeQuery(String promql, Range range, Step step) {
         Instant end = Instant.now();
         Instant start = end.minus(range.duration());
-        String encoded = "/api/v1/query_range"
+        URI uri = URI.create(baseUrl + "/api/v1/query_range"
                 + "?query=" + urlEncode(promql)
                 + "&start=" + start.getEpochSecond()
                 + "&end=" + end.getEpochSecond()
-                + "&step=" + urlEncode(step.duration().getSeconds() + "s");
+                + "&step=" + urlEncode(step.duration().getSeconds() + "s"));
         return webClient.get()
-                .uri(encoded)
+                .uri(uri)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
