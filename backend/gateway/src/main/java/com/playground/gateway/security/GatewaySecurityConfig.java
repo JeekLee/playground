@@ -123,8 +123,11 @@ public class GatewaySecurityConfig {
                         // BEFORE the catch-all metrics permitAll.
                         .pathMatchers("/api/metrics/logs", "/api/metrics/logs/**").authenticated()
                         .pathMatchers(HttpMethod.GET, "/api/metrics/**").permitAll()
-                        // Next.js static assets.
-                        .pathMatchers("/_next/**", "/favicon.ico", "/static/**").permitAll()
+                        // Next.js static assets. `/icon` is the file-based metadata
+                        // route emitted by `frontend/src/app/icon.tsx`; the browser
+                        // fetches it without auth context, so it must be public to
+                        // avoid 302→OAuth on the login / 401 / public-home pages.
+                        .pathMatchers("/_next/**", "/favicon.ico", "/icon", "/static/**").permitAll()
                         // Default: authenticated.
                         .anyExchange().authenticated())
                 .oauth2Login(Customizer.withDefaults())
