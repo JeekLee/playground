@@ -64,7 +64,7 @@ class IngestionServiceTest {
     void setup() {
         clock = Clock.fixed(Instant.parse("2026-05-20T12:00:00Z"), ZoneOffset.UTC);
         // Small chunker so a short test body still produces multiple chunks.
-        chunker = new MarkdownChunker(new ChunkingPolicy(8, 2, 2, "cl100k-base"));
+        chunker = new MarkdownChunker(new ChunkingPolicy(8, 2, 2, "cl100k-base", 8, true));
         service = new IngestionService(
                 chunkRepository, bodyFetchPort, embeddingPort, lockPort, chunker, events, clock);
         // The lock adapter runs the supplier inline for unit tests.

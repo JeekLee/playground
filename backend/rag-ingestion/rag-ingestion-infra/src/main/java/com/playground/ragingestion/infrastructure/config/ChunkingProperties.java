@@ -56,6 +56,6 @@ public class ChunkingProperties {
     }
 
     public ChunkingPolicy toPolicy() {
-        return new ChunkingPolicy(sizeTokens, overlapTokens, minChunkTokens, tokenizer);
+        return new ChunkingPolicy(sizeTokens, overlapTokens, minChunkTokens, tokenizer, 800, true);
     }
 }

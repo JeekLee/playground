@@ -71,7 +71,7 @@ class MarkdownChunkerTest {
 
     @Test
     void custom_policy_overrides_size_and_overlap() {
-        ChunkingPolicy small = new ChunkingPolicy(20, 4, 4, "cl100k-base");
+        ChunkingPolicy small = new ChunkingPolicy(20, 4, 4, "cl100k-base", 20, true);
         MarkdownChunker chunker = new MarkdownChunker(small);
         String body = "alpha beta gamma delta epsilon zeta eta theta iota kappa "
                 + "lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega.";
@@ -95,28 +95,28 @@ class MarkdownChunkerTest {
     @Test
     void chunking_policy_rejects_invalid_inputs() {
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> new ChunkingPolicy(0, 0, 0, "cl100k-base"))
+                .assertThatThrownBy(() -> new ChunkingPolicy(0, 0, 0, "cl100k-base", 800, true))
                 .isInstanceOf(IllegalArgumentException.class);
         // overlapTokens == sizeTokens — invalid per the policy invariant.
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> new ChunkingPolicy(800, 800, 64, "cl100k-base"))
+                .assertThatThrownBy(() -> new ChunkingPolicy(800, 800, 64, "cl100k-base", 800, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("overlap");
         // minChunkTokens must be strictly less than sizeTokens.
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> new ChunkingPolicy(800, 120, 800, "cl100k-base"))
+                .assertThatThrownBy(() -> new ChunkingPolicy(800, 120, 800, "cl100k-base", 800, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("minChunkTokens");
         // Blank tokenizer.
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> new ChunkingPolicy(800, 120, 64, "  "))
+                .assertThatThrownBy(() -> new ChunkingPolicy(800, 120, 64, "  ", 800, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("tokenizer");
     }
 
     @Test
     void unknown_tokenizer_fails_at_chunker_construction() {
-        ChunkingPolicy unknown = new ChunkingPolicy(800, 120, 64, "no-such-tokenizer");
+        ChunkingPolicy unknown = new ChunkingPolicy(800, 120, 64, "no-such-tokenizer", 800, true);
         org.assertj.core.api.Assertions
                 .assertThatThrownBy(() -> new MarkdownChunker(unknown))
                 .isInstanceOf(IllegalArgumentException.class)
