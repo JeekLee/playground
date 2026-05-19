@@ -318,6 +318,40 @@ services:
     # NO `ports:` block — rag-chat-api is compose-internal only (ADR-08).
     # Browser traffic reaches it via gateway:18080 → /api/rag/chat/** → http://rag-chat-api:18084.
 
+  # --- M5 s1: metrics-api (read-only BC over Prometheus + Loki) per ADR-15 §1 ---
+  # WebFlux app on port 18085, gateway-routable. No Postgres / no Kafka.
+  # Probes spark-inference-gateway via host.docker.internal (ADR-04).
+  metrics-api:
+    build:
+      context: ../backend
+      dockerfile: metrics/metrics-api/Dockerfile
+    container_name: metrics-api
+    depends_on:
+      prometheus-playground:
+        condition: service_healthy
+      loki-playground:
+        condition: service_healthy
+      redis-playground:
+        condition: service_healthy     # reserved for slice-2 rate limiter
+      gateway:
+        condition: service_started     # gateway must be up for /api/metrics/** routing
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # per ADR-04 — reach spark-inference-gateway probe
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
+      METRICS_PROMETHEUS_BASE_URL: http://prometheus-playground:9090
+      METRICS_LOKI_BASE_URL: http://loki-playground:3100
+      METRICS_SPARK_GATEWAY_BASE_URL: http://host.docker.internal:10080
+      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:18085/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    # NO `ports:` block — metrics-api is compose-internal only (ADR-08 / ADR-15 §A).
+    # Browser traffic reaches it via gateway:18080 → /api/metrics/** → http://metrics-api:18085.
+
   # --- M1: frontend (Next.js SSR) per ADR-06 + ADR-07 forwarding map ---
   # No host port — gateway routes `/**` here.
   frontend:
