@@ -118,6 +118,20 @@ public final class WindowNormalizer {
             out.add(buildDraft(section, buf));
         }
 
+        // Trailing-merge: if last chunk in this section is shorter than
+        // minChunkTokens AND another chunk in this section exists, merge it.
+        // Must run BEFORE heading-prefix injection so the merge sees raw
+        // block-packed text and the surviving chunk gets at most one prefix.
+        if (out.size() - sectionStart >= 2) {
+            ChunkDraft last = out.get(out.size() - 1);
+            if (tokenCount(last.text().value()) < policy.minChunkTokens()) {
+                ChunkDraft prev = out.get(out.size() - 2);
+                String merged = prev.text().value() + "\n\n" + last.text().value();
+                out.set(out.size() - 2, new ChunkDraft(ChunkText.of(merged), section.headingPath()));
+                out.remove(out.size() - 1);
+            }
+        }
+
         // Apply heading-aware prefix to chunks 2..N of this section.
         if (policy.preserveHeadingPath() && !section.headingPath().isEmpty()) {
             for (int i = sectionStart + 1; i < out.size(); i++) {
@@ -126,18 +140,6 @@ public final class WindowNormalizer {
                 String body = d.text().value();
                 String prefixed = prefix + "\n\n" + body;
                 out.set(i, new ChunkDraft(ChunkText.of(prefixed), section.headingPath()));
-            }
-        }
-
-        // Trailing-merge: if last chunk in this section is shorter than
-        // minChunkTokens AND another chunk in this section exists, merge it.
-        if (out.size() - sectionStart >= 2) {
-            ChunkDraft last = out.get(out.size() - 1);
-            if (tokenCount(last.text().value()) < policy.minChunkTokens()) {
-                ChunkDraft prev = out.get(out.size() - 2);
-                String merged = prev.text().value() + "\n\n" + last.text().value();
-                out.set(out.size() - 2, new ChunkDraft(ChunkText.of(merged), section.headingPath()));
-                out.remove(out.size() - 1);
             }
         }
     }
