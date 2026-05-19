@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.playground.metrics.app.port.LokiPort;
 import com.playground.metrics.domain.LogEntry;
 import com.playground.metrics.infra.config.MetricsHttpProperties;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -31,10 +32,12 @@ import reactor.core.publisher.Mono;
 public class LokiAdapter implements LokiPort {
 
     private final WebClient webClient;
+    private final String baseUrl;
     private final Duration timeout;
 
     public LokiAdapter(WebClient.Builder builder, MetricsHttpProperties props) {
-        this.webClient = builder.baseUrl(props.loki().baseUrl()).build();
+        this.baseUrl = props.loki().baseUrl();
+        this.webClient = builder.baseUrl(this.baseUrl).build();
         this.timeout = Duration.ofMillis(props.loki().timeoutMs());
     }
 
@@ -42,17 +45,17 @@ public class LokiAdapter implements LokiPort {
     public Mono<List<LogEntry>> queryRange(String logql, Duration since, int limit) {
         Instant end = Instant.now();
         Instant start = end.minus(since);
-        // LogQL contains literal `{`/`}` braces (label selectors); UriBuilder
-        // would treat them as URI template placeholders. Hand-build the URI
-        // with URL-encoded values to bypass template parsing entirely.
-        String encoded = "/loki/api/v1/query_range"
+        // LogQL contains literal `{`/`}` braces (label selectors); feed
+        // WebClient a `URI` (not a `String`) so Spring does not re-process
+        // the already-encoded path as a URI template.
+        URI uri = URI.create(baseUrl + "/loki/api/v1/query_range"
                 + "?query=" + urlEncode(logql)
                 + "&start=" + (start.toEpochMilli() * 1_000_000L)
                 + "&end=" + (end.toEpochMilli() * 1_000_000L)
                 + "&limit=" + limit
-                + "&direction=backward";
+                + "&direction=backward");
         return webClient.get()
-                .uri(encoded)
+                .uri(uri)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
