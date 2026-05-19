@@ -122,25 +122,33 @@ public class BuildDashboardUseCase {
         Mono<Double> diskPct = prometheus.instantQuery(PromQlTemplate.hostDiskUsedPct())
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        Mono<Double> load1 = prometheus.instantQuery(PromQlTemplate.hostLoad1m())
+        Mono<Double> diskUsedGb = prometheus.instantQuery(PromQlTemplate.hostDiskUsedGb())
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        Mono<Double> load5 = prometheus.instantQuery(PromQlTemplate.hostLoad5m())
+        Mono<Double> diskTotalGb = prometheus.instantQuery(PromQlTemplate.hostDiskTotalGb())
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        Mono<Double> load15 = prometheus.instantQuery(PromQlTemplate.hostLoad15m())
-                .map(BuildDashboardUseCase::firstValueOrZero)
-                .onErrorReturn(0.0);
+        Mono<List<Double>> loads = Mono.zip(
+                        prometheus.instantQuery(PromQlTemplate.hostLoad1m())
+                                .map(BuildDashboardUseCase::firstValueOrZero)
+                                .onErrorReturn(0.0),
+                        prometheus.instantQuery(PromQlTemplate.hostLoad5m())
+                                .map(BuildDashboardUseCase::firstValueOrZero)
+                                .onErrorReturn(0.0),
+                        prometheus.instantQuery(PromQlTemplate.hostLoad15m())
+                                .map(BuildDashboardUseCase::firstValueOrZero)
+                                .onErrorReturn(0.0))
+                .map(t -> List.of(t.getT1(), t.getT2(), t.getT3()));
 
-        return Mono.zip(cpu, memUsed, memTotal, diskPct, load1, load5, load15)
+        return Mono.zip(cpu, memUsed, memTotal, diskPct, diskUsedGb, diskTotalGb, loads)
                 .map(t -> new HostCell(
                         t.getT1(),
                         t.getT2(),
                         t.getT3(),
                         t.getT4(),
-                        null,
-                        null,
-                        List.of(t.getT5(), t.getT6(), t.getT7())));
+                        t.getT5(),
+                        t.getT6(),
+                        t.getT7()));
     }
 
     private Mono<SparkGatewayCell> sparkCell() {

@@ -130,7 +130,11 @@ function MemoryCard({ host }: { host: HostSummary | null }) {
   return (
     <CardShell eyebrow="Memory">
       <BigNumber
-        value={host ? `${host.memUsedGb.toFixed(1)} / ${host.memTotalGb} GB` : '—'}
+        value={
+          host
+            ? `${host.memUsedGb.toFixed(1)} / ${host.memTotalGb.toFixed(1)} GB`
+            : '—'
+        }
         loading={!host}
       />
       <ProgressBar pct={usedPct} loading={!host} />
@@ -140,12 +144,14 @@ function MemoryCard({ host }: { host: HostSummary | null }) {
 
 function DiskCard({ host }: { host: HostSummary | null }) {
   const usedPct = host ? Math.min(100, host.diskUsedPct) : 0;
+  const value = host
+    ? Number.isFinite(host.diskUsedGb)
+      ? `${host.diskUsedPct.toFixed(1)}% · ${host.diskUsedGb.toFixed(1)} GB`
+      : `${host.diskUsedPct.toFixed(1)}%`
+    : '—';
   return (
     <CardShell eyebrow="Disk">
-      <BigNumber
-        value={host ? `${host.diskUsedPct}% · ${host.diskUsedGb} GB` : '—'}
-        loading={!host}
-      />
+      <BigNumber value={value} loading={!host} />
       <ProgressBar pct={usedPct} loading={!host} />
     </CardShell>
   );

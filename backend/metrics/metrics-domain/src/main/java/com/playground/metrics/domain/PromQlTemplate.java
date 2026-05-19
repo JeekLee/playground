@@ -52,10 +52,25 @@ public final class PromQlTemplate {
                 "host-mem-total",
                 "node_memory_MemTotal_bytes / 1073741824",
                 SubstitutionKind.NONE, "GB"));
+        // Disk metrics aggregate via max() over ext4 filesystems because the
+        // Alloy unix exporter runs inside a container and reports per-mount
+        // rows for the container's mount namespace (e.g. /etc/alloy/...),
+        // never the host root. All those rows back the same physical device,
+        // so max(size) and max(avail) recover the underlying device totals.
         m.put("host-disk-used-pct", new Template(
                 "host-disk-used-pct",
-                "(1 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})) * 100",
+                "(1 - max(node_filesystem_avail_bytes{fstype=\"ext4\"})"
+                        + " / max(node_filesystem_size_bytes{fstype=\"ext4\"})) * 100",
                 SubstitutionKind.NONE, "%"));
+        m.put("host-disk-used-gb", new Template(
+                "host-disk-used-gb",
+                "(max(node_filesystem_size_bytes{fstype=\"ext4\"})"
+                        + " - max(node_filesystem_avail_bytes{fstype=\"ext4\"})) / 1073741824",
+                SubstitutionKind.NONE, "GB"));
+        m.put("host-disk-total-gb", new Template(
+                "host-disk-total-gb",
+                "max(node_filesystem_size_bytes{fstype=\"ext4\"}) / 1073741824",
+                SubstitutionKind.NONE, "GB"));
         m.put("host-load-1m", new Template(
                 "host-load-1m", "node_load1", SubstitutionKind.NONE, "n"));
         m.put("host-load-5m", new Template(
@@ -287,6 +302,14 @@ public final class PromQlTemplate {
 
     public static String hostDiskUsedPct() {
         return TEMPLATES.get("host-disk-used-pct").promql();
+    }
+
+    public static String hostDiskUsedGb() {
+        return TEMPLATES.get("host-disk-used-gb").promql();
+    }
+
+    public static String hostDiskTotalGb() {
+        return TEMPLATES.get("host-disk-total-gb").promql();
     }
 
     public static String hostLoad1m() {

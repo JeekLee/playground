@@ -48,8 +48,8 @@ class BuildDashboardUseCaseTest {
         assertThat(response.sparkGateway()).isNotNull();
         assertThat(response.sparkGateway().url()).isEqualTo("host.docker.internal:10080");
         assertThat(response.sparkGateway().modelsLoaded()).contains("BGE-M3", "Qwen3-32B");
-        // 4 JVM cells
-        assertThat(response.jvm()).hasSize(4);
+        // 6 JVM cells — every JVM-bearing service in the stack (5 BCs + gateway)
+        assertThat(response.jvm()).hasSize(6);
         // 3 HTTP rate cells
         assertThat(response.httpRate()).hasSize(3);
     }
