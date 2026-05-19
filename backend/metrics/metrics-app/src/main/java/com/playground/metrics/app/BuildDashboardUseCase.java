@@ -169,19 +169,22 @@ public class BuildDashboardUseCase {
         Mono<Double> heap = prometheus.instantQuery(PromQlTemplate.jvmHeap(svc))
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
+        Mono<Double> heapMax = prometheus.instantQuery(PromQlTemplate.jvmHeapMax(svc))
+                .map(BuildDashboardUseCase::firstValueOrZero)
+                .onErrorReturn(0.0);
         Mono<Double> threads = prometheus.instantQuery(PromQlTemplate.jvmThreads(svc))
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
         Mono<Double> gcPause = prometheus.instantQuery(PromQlTemplate.jvmGcPause(svc))
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        return Mono.zip(heap, threads, gcPause)
+        return Mono.zip(heap, heapMax, threads, gcPause)
                 .map(t -> new JvmCell(
                         svc,
                         t.getT1(),
-                        null,
-                        (int) Math.round(t.getT2()),
-                        t.getT3() * 1000.0));
+                        t.getT2(),
+                        (int) Math.round(t.getT3()),
+                        t.getT4() * 1000.0));
     }
 
     private Mono<List<HttpRateCell>> httpRateCells() {

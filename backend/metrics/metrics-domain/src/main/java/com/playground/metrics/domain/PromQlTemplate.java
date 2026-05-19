@@ -73,6 +73,10 @@ public final class PromQlTemplate {
                 "jvm-heap",
                 "jvm_memory_used_bytes{area=\"heap\",service=\"%s\"} / 1048576",
                 SubstitutionKind.SERVICE, "MB"));
+        m.put("jvm-heap-max", new Template(
+                "jvm-heap-max",
+                "jvm_memory_max_bytes{area=\"heap\",service=\"%s\"} / 1048576",
+                SubstitutionKind.SERVICE, "MB"));
         m.put("jvm-nonheap", new Template(
                 "jvm-nonheap",
                 "jvm_memory_used_bytes{area=\"nonheap\",service=\"%s\"} / 1048576",
@@ -220,6 +224,10 @@ public final class PromQlTemplate {
 
     public static String jvmHeap(String svc) {
         return resolve("jvm-heap-" + svc);
+    }
+
+    public static String jvmHeapMax(String svc) {
+        return resolve("jvm-heap-max-" + svc);
     }
 
     public static String jvmNonheap(String svc) {

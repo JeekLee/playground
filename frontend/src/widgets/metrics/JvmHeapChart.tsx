@@ -131,10 +131,30 @@ export interface JvmHeapRowProps {
   pollKey: number | null;
 }
 
+/**
+ * SSR initial-paint fallback. Must mirror the backend's
+ * `BuildDashboardUseCase.JVM_SERVICES` list (and order). Only consulted
+ * on the very first paint, before the dashboard payload has arrived —
+ * once `jvm[]` is non-null the row iterates that array verbatim, so the
+ * backend stays the source of truth for which services appear.
+ */
+const JVM_SLUGS_SSR_FALLBACK: ReadonlyArray<string> = [
+  'gateway',
+  'identity-api',
+  'docs-api',
+  'rag-ingestion-api',
+  'rag-chat-api',
+  'metrics-api',
+];
+
 export function JvmHeapRow({ jvm, range, pollKey }: JvmHeapRowProps) {
-  // Backend orders `jvm[]` deterministically (BuildDashboardUseCase.JVM_SERVICES).
-  // Render in that order so card positions stay stable across polls.
-  const services = jvm ?? [];
+  // After hydrate, iterate the dashboard payload's `jvm[]` directly so
+  // slugs always match backend's emission. During SSR / initial paint
+  // `jvm` is still null and we render the fallback skeleton list above
+  // so the section doesn't collapse to zero cards.
+  const items: ReadonlyArray<{ slug: string; summary: JvmSummary | null }> = jvm
+    ? jvm.map((j) => ({ slug: j.service, summary: j }))
+    : JVM_SLUGS_SSR_FALLBACK.map((slug) => ({ slug, summary: null }));
 
   return (
     <section aria-labelledby="metrics-jvm" className="flex flex-col gap-sm">
@@ -142,11 +162,11 @@ export function JvmHeapRow({ jvm, range, pollKey }: JvmHeapRowProps) {
         JVM heap per BC
       </h2>
       <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {services.map((entry) => (
+        {items.map((item) => (
           <JvmHeapChart
-            key={entry.service}
-            service={entry.service}
-            jvm={entry}
+            key={item.slug}
+            service={item.slug}
+            jvm={item.summary}
             range={range}
             pollKey={pollKey}
           />
