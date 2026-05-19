@@ -8,14 +8,23 @@ import com.knuddels.jtokkit.api.IntArrayList;
 import com.playground.ragingestion.domain.model.vo.ChunkDraft;
 import com.playground.ragingestion.domain.model.vo.ChunkText;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.tables.TableBlock;
+import org.commonmark.ext.gfm.tables.TableBody;
+import org.commonmark.ext.gfm.tables.TableCell;
+import org.commonmark.ext.gfm.tables.TableHead;
+import org.commonmark.ext.gfm.tables.TableRow;
+import org.commonmark.ext.gfm.tables.TablesExtension;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.Node;
 import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
+import org.commonmark.renderer.markdown.MarkdownRenderer;
 import org.commonmark.renderer.text.TextContentRenderer;
 
 /**
@@ -37,6 +46,7 @@ public final class WindowNormalizer {
     private final SentenceSplitter sentenceSplitter;
     private final Encoding encoding;
     private final TextContentRenderer textRenderer;
+    private final MarkdownRenderer markdownRenderer;
 
     public WindowNormalizer(ChunkingPolicy policy, SentenceSplitter sentenceSplitter) {
         this.policy = policy;
@@ -49,7 +59,15 @@ public final class WindowNormalizer {
                     "Unknown JTokkit encoding: " + policy.tokenizer());
         };
         this.encoding = registry.getEncoding(type);
-        this.textRenderer = TextContentRenderer.builder().build();
+        var extensions = Arrays.asList(
+                TablesExtension.create(),
+                StrikethroughExtension.create());
+        this.textRenderer = TextContentRenderer.builder()
+                .extensions(extensions)
+                .build();
+        this.markdownRenderer = MarkdownRenderer.builder()
+                .extensions(extensions)
+                .build();
     }
 
     public List<ChunkDraft> normalize(List<Section> sections) {
@@ -119,11 +137,218 @@ public final class WindowNormalizer {
         return new ChunkDraft(ChunkText.of(text), section.headingPath());
     }
 
-    // Stub — completed in Task 6b.
     private void emitOversize(Section section, Node block, int sectionChunkIndex, List<ChunkDraft> out) {
-        // Fallback: tokenize the block's text and slide a fixed window. Task 6b
-        // replaces this with per-block-type handling.
-        String text = renderBlock(block);
+        if (block instanceof FencedCodeBlock fcb) {
+            splitOversizeFence(fcb, section, out);
+        } else if (block instanceof TableBlock tb) {
+            splitOversizeTable(tb, section, out);
+        } else if (block instanceof Paragraph p) {
+            splitOversizeParagraph(p, section, out);
+        } else if (block instanceof BulletList || block instanceof OrderedList) {
+            splitOversizeList(block, section, out);
+        } else {
+            // Generic fallback for BlockQuote / IndentedCodeBlock / unknown:
+            // tokenize the rendered text and slide a fixed window.
+            tokenWindowSlice(renderBlock(block), section, out);
+        }
+    }
+
+    private void splitOversizeFence(FencedCodeBlock fcb, Section section, List<ChunkDraft> out) {
+        String info = fcb.getInfo() == null ? "" : fcb.getInfo();
+        String literal = fcb.getLiteral() == null ? "" : fcb.getLiteral();
+        int total = tokenCount(literal);
+        int maxFence = policy.maxOversizeFenceTokens();
+
+        if (total <= maxFence) {
+            // Atomic — emit as one chunk even if larger than sizeTokens.
+            String text = "```" + info + "\n" + literal + "```";
+            out.add(new ChunkDraft(ChunkText.of(text), section.headingPath()));
+            return;
+        }
+
+        // Line-group split. Budget per chunk = sizeTokens minus the fence
+        // markers' overhead (a handful of tokens).
+        String[] lines = literal.split("\n", -1);
+        int sz = policy.sizeTokens() - 16;  // budget for ```lang\n + \n```
+        List<String> buf = new ArrayList<>();
+        int bufTok = 0;
+        for (String line : lines) {
+            int lt = tokenCount(line + "\n");
+            if (!buf.isEmpty() && bufTok + lt > sz) {
+                flushFenceBuf(buf, info, section, out);
+                buf.clear();
+                bufTok = 0;
+            }
+            buf.add(line);
+            bufTok += lt;
+        }
+        if (!buf.isEmpty()) flushFenceBuf(buf, info, section, out);
+    }
+
+    private void flushFenceBuf(List<String> lines, String info, Section section, List<ChunkDraft> out) {
+        String body = String.join("\n", lines);
+        String text = "```" + info + "\n" + body + "\n```";
+        out.add(new ChunkDraft(ChunkText.of(text), section.headingPath()));
+    }
+
+    private void splitOversizeTable(TableBlock tb, Section section, List<ChunkDraft> out) {
+        // Use manual renderer for splitting: it guarantees pipe-delimited rows
+        // with space-padded cells ("| col1 | col2 |") regardless of how the
+        // MarkdownRenderer formats them.
+        String rendered = renderTableManually(tb);
+        String[] lines = rendered.split("\n", -1);
+        if (lines.length <= 2) {
+            out.add(new ChunkDraft(ChunkText.of(rendered), section.headingPath()));
+            return;
+        }
+        String header = lines[0] + "\n" + lines[1];
+        int sz = policy.sizeTokens() - tokenCount(header + "\n");
+        List<String> buf = new ArrayList<>();
+        int bufTok = 0;
+        for (int i = 2; i < lines.length; i++) {
+            String line = lines[i];
+            if (line.isBlank()) continue;
+            int lt = tokenCount(line + "\n");
+            if (!buf.isEmpty() && bufTok + lt > sz) {
+                flushTableBuf(buf, header, section, out);
+                buf.clear();
+                bufTok = 0;
+            }
+            buf.add(line);
+            bufTok += lt;
+        }
+        if (!buf.isEmpty()) flushTableBuf(buf, header, section, out);
+    }
+
+    private void flushTableBuf(List<String> rows, String header, Section section, List<ChunkDraft> out) {
+        String text = header + "\n" + String.join("\n", rows);
+        out.add(new ChunkDraft(ChunkText.of(text), section.headingPath()));
+    }
+
+    /**
+     * Renders a {@link TableBlock} as GFM pipe-delimited Markdown.
+     * Uses {@link MarkdownRenderer} with {@link TablesExtension} as the primary
+     * path; falls back to manual cell walking if the rendered output is blank
+     * (guard against renderer edge-cases).
+     */
+    private String renderTableAsMarkdown(TableBlock tb) {
+        String rendered = markdownRenderer.render(tb).trim();
+        if (!rendered.isBlank()) {
+            return rendered;
+        }
+        // Manual fallback: walk TableHead / TableBody children.
+        return renderTableManually(tb);
+    }
+
+    private String renderTableManually(TableBlock tb) {
+        StringBuilder sb = new StringBuilder();
+        for (Node child = tb.getFirstChild(); child != null; child = child.getNext()) {
+            if (child instanceof TableHead head) {
+                String headerRow = renderTableRow(head.getFirstChild());
+                sb.append(headerRow).append("\n");
+                // Build separator row based on number of pipes
+                long cols = headerRow.chars().filter(c -> c == '|').count() - 1;
+                sb.append("|");
+                for (long i = 0; i < cols; i++) sb.append("---|");
+                sb.append("\n");
+            } else if (child instanceof TableBody body) {
+                for (Node row = body.getFirstChild(); row != null; row = row.getNext()) {
+                    sb.append(renderTableRow(row)).append("\n");
+                }
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private String renderTableRow(Node rowNode) {
+        if (!(rowNode instanceof TableRow)) return "";
+        StringBuilder sb = new StringBuilder("|");
+        for (Node cell = rowNode.getFirstChild(); cell != null; cell = cell.getNext()) {
+            if (cell instanceof TableCell) {
+                // Render children of the cell (inline text, code, etc.) to avoid
+                // picking up the pipe separator that TableTextContentNodeRenderer
+                // appends when rendering the TableCell node itself.
+                StringBuilder cellText = new StringBuilder();
+                for (Node child = cell.getFirstChild(); child != null; child = child.getNext()) {
+                    cellText.append(textRenderer.render(child).trim());
+                }
+                sb.append(" ").append(cellText).append(" |");
+            }
+        }
+        return sb.toString();
+    }
+
+    private void splitOversizeParagraph(Paragraph p, Section section, List<ChunkDraft> out) {
+        String text = textRenderer.render(p);
+        List<String> sentences = sentenceSplitter.split(text, Locale.KOREAN);
+        if (sentences.isEmpty()) {
+            tokenWindowSlice(text, section, out);
+            return;
+        }
+
+        int sz = policy.sizeTokens();
+        List<String> buf = new ArrayList<>();
+        int bufTok = 0;
+        for (String sentence : sentences) {
+            int st = tokenCount(sentence);
+            if (st > sz) {
+                if (!buf.isEmpty()) {
+                    out.add(new ChunkDraft(ChunkText.of(String.join("", buf)), section.headingPath()));
+                    buf.clear();
+                    bufTok = 0;
+                }
+                tokenWindowSlice(sentence, section, out);
+                continue;
+            }
+            if (!buf.isEmpty() && bufTok + st > sz) {
+                out.add(new ChunkDraft(ChunkText.of(String.join("", buf)), section.headingPath()));
+                buf.clear();
+                bufTok = 0;
+            }
+            buf.add(sentence);
+            bufTok += st;
+        }
+        if (!buf.isEmpty()) {
+            out.add(new ChunkDraft(ChunkText.of(String.join("", buf)), section.headingPath()));
+        }
+    }
+
+    private void splitOversizeList(Node list, Section section, List<ChunkDraft> out) {
+        int sz = policy.sizeTokens();
+        List<String> buf = new ArrayList<>();
+        int bufTok = 0;
+        for (Node item = list.getFirstChild(); item != null; item = item.getNext()) {
+            String rendered = textRenderer.render(item);
+            int it = tokenCount(rendered);
+            if (it > sz) {
+                if (!buf.isEmpty()) {
+                    out.add(new ChunkDraft(ChunkText.of(String.join("\n", buf)), section.headingPath()));
+                    buf.clear();
+                    bufTok = 0;
+                }
+                for (Node inner = item.getFirstChild(); inner != null; inner = inner.getNext()) {
+                    if (tokenCount(renderBlock(inner)) > sz) {
+                        emitOversize(section, inner, 0, out);
+                    } else {
+                        out.add(new ChunkDraft(ChunkText.of(renderBlock(inner)), section.headingPath()));
+                    }
+                }
+                continue;
+            }
+            if (!buf.isEmpty() && bufTok + it > sz) {
+                out.add(new ChunkDraft(ChunkText.of(String.join("\n", buf)), section.headingPath()));
+                buf.clear();
+                bufTok = 0;
+            }
+            buf.add(rendered);
+            bufTok += it;
+        }
+        if (!buf.isEmpty()) {
+            out.add(new ChunkDraft(ChunkText.of(String.join("\n", buf)), section.headingPath()));
+        }
+    }
+
+    private void tokenWindowSlice(String text, Section section, List<ChunkDraft> out) {
         var tokens = encoding.encode(text);
         int total = tokens.size();
         int sz = policy.sizeTokens();
@@ -159,35 +384,14 @@ public final class WindowNormalizer {
             String text = textRenderer.render(h);
             return "#".repeat(Math.max(1, Math.min(6, h.getLevel()))) + " " + text;
         }
-        // Paragraph / BulletList / OrderedList / BlockQuote / TableBlock
+        if (block instanceof TableBlock tb) {
+            return renderTableAsMarkdown(tb);
+        }
+        // Paragraph / BulletList / OrderedList / BlockQuote
         return textRenderer.render(block);
     }
 
     int tokenCount(String text) {
         return encoding.encode(text).size();
-    }
-
-    @SuppressWarnings("unused")
-    private void splitOversizeParagraph(Paragraph p, Section section, List<ChunkDraft> out) {
-        // implemented in Task 6b
-        throw new UnsupportedOperationException();
-    }
-
-    @SuppressWarnings("unused")
-    private void splitOversizeFence(FencedCodeBlock fcb, Section section, List<ChunkDraft> out) {
-        // implemented in Task 6b
-        throw new UnsupportedOperationException();
-    }
-
-    @SuppressWarnings("unused")
-    private void splitOversizeTable(TableBlock tb, Section section, List<ChunkDraft> out) {
-        // implemented in Task 6b
-        throw new UnsupportedOperationException();
-    }
-
-    @SuppressWarnings("unused")
-    private void splitOversizeList(Node list, Section section, List<ChunkDraft> out) {
-        // implemented in Task 6b
-        throw new UnsupportedOperationException();
     }
 }
