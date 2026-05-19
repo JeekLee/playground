@@ -1,6 +1,7 @@
 package com.playground.ragchat.application.service;
 
 import com.playground.ragchat.application.dto.ChatTurnRequest;
+import com.playground.ragchat.application.dto.CitationDto;
 import com.playground.ragchat.application.port.ChatGenerationPort;
 import com.playground.ragchat.application.port.ChunkRetrievalPort;
 import com.playground.ragchat.application.port.ConcurrentStreamLockPort;
@@ -200,16 +201,16 @@ public class ChatTurnService {
                 prep.retrieved(), prep.truncatedHistory(), request.message(),
                 properties.perChunkTokenBudget());
 
-        // Wire compat note: shared-kernel grammar uses `Phase` with a
-        // `step` discriminator; PR A keeps the wire SSE event name
-        // `retrieval` (controller maps Phase(step="retrieval") → SSE event
-        // "retrieval" with citations payload). PR B will rename the wire
-        // event and lift the citation set to the terminal Done.
+        // Spec §5.2 (revised in PR B): the retrieval phase now ships just
+        // a count, not the candidate chunk list — the citation cards land
+        // exclusively at terminal `done` once the marker-extraction step
+        // narrows the set to the actually-cited subset. UI uses this
+        // event for the "N개 청크 확인 중…" progress label.
         Flux<ChatStreamEvent> retrievalEvent = Flux.just(
                 (ChatStreamEvent) new ChatStreamEvent.Phase(
                         "retrieval",
-                        "Retrieving chunks",
-                        java.util.Map.of("chunks", prep.retrieved())));
+                        "참고 문서 확인 중",
+                        java.util.Map.of("count", prep.retrieved().size())));
 
         Flux<ChatStreamEvent> tokens = chatGenerationPort
                 .stream(prompt, properties.maxCompletionTokens())
@@ -310,13 +311,24 @@ public class ChatTurnService {
                     tokensIn, tokensOut, retrievalK, clock.instant());
             Message persisted = messageRepository.save(assistant);
 
-            // Persist only the cited subset per ADR-14 §10.
+            // Persist only the cited subset per ADR-14 §10. Reuse the same
+            // ordered filter to build the wire citation list for the
+            // terminal `done` event — keeps the persisted rows and the
+            // shipped citation cards 1:1.
             List<MessageCitation> toPersist = new java.util.ArrayList<>();
+            List<CitationDto> wireCitations = new java.util.ArrayList<>();
             Set<Integer> seenPositions = new HashSet<>();
             for (RetrievedChunk c : prep.retrieved()) {
                 if (cited.contains(c.position()) && seenPositions.add(c.position())) {
                     toPersist.add(new MessageCitation(
                             persisted.id(), c.position(), c.documentId(), c.chunkIndex()));
+                    wireCitations.add(new CitationDto(
+                            c.position(),
+                            c.documentId().value().toString(),
+                            c.chunkIndex(),
+                            c.title(),
+                            shortExcerpt(c.text()),
+                            c.visibility().wireValue()));
                 }
             }
             if (!toPersist.isEmpty()) {
@@ -331,12 +343,17 @@ public class ChatTurnService {
                     + " tokensOut=" + tokensOut
                     + " cited=" + toPersist.size());
 
-            // PR A: citations field stays null in the wire (NON_NULL strip
-            // in the SSE mapper). PR B will populate it with the cited
-            // subset and drop the legacy `retrieval` payload.
             return (ChatStreamEvent) new ChatStreamEvent.Done(
-                    persisted.id().value().toString(), tokensIn, tokensOut, null);
+                    persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** Wire-shape excerpt — first ~160 chars, matches the old retrieval payload. */
+    private static String shortExcerpt(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() > 160 ? text.substring(0, 160) : text;
     }
 
     private static boolean isCircuitOpen(Throwable err) {

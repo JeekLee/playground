@@ -87,15 +87,20 @@ export interface SessionMessagesResponse {
   messages: MessageDto[];
 }
 
-// -------------------- SSE event payloads (spec §5.2) ---------------------
+// -------------------- SSE event payloads (spec §5.2 revised in PR B) -----
 
 /**
- * `event: retrieval` — emitted first per spec §5.2. Drives the citation
- * accordion skeleton. Always sent, even when `citations` is empty
- * (`RETRIEVAL_EMPTY` case — the accordion renders `▾ Citations · none`).
+ * `event: phase` — progress / status update during a chat turn. The
+ * frontend renders the {@link label} verbatim while the stream
+ * accumulates; {@link step} is the machine-readable discriminator the
+ * UI may use to pick a specific icon (retrieval, tool_call, thinking,
+ * generating…). {@link data} is BC-specific — rag-chat's
+ * {@code retrieval} step carries {@code { count: number }}.
  */
-export interface RetrievalEventPayload {
-  citations: MessageCitationDto[];
+export interface PhaseEventPayload {
+  step: string;
+  label: string;
+  data?: Record<string, unknown>;
 }
 
 /** `event: token` — streamed token delta from the model. */
@@ -103,11 +108,16 @@ export interface TokenEventPayload {
   delta: string;
 }
 
-/** `event: done` — terminal success. */
+/**
+ * `event: done` — terminal success. Citations now arrive here
+ * (cited subset only — see spec §5.2 / §6.1 step 12 revised
+ * 2026-05-19); the legacy `event: retrieval` is gone.
+ */
 export interface DoneEventPayload {
   messageId: string;
   tokensIn: number;
   tokensOut: number;
+  citations?: MessageCitationDto[];
 }
 
 /** `event: error` — terminal failure. Codes per spec §6.5. */

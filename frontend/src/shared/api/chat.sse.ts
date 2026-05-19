@@ -10,9 +10,10 @@
  * - This also lets us pass `AbortSignal` directly, which is the entire
  *   Stop-button contract (P95 ≤ 200ms abort per spec §12 / ADR-14 §13).
  *
- * Wire grammar per spec §5.2:
- *   one `retrieval` event, ≥0 `token` events, exactly one terminal
- *   (`done` OR `error`).
+ * Wire grammar per spec §5.2 (revised in PR B):
+ *   ≥0 `phase` events (progress / status — retrieval, tool_call,
+ *   thinking, generating, …), ≥0 `token` events, exactly one terminal
+ *   `done` or `error`. The cited subset rides on the terminal `done`.
  *
  * Consumers (the React hook in `features/chat-stream/`) get a single
  * callback `onEvent(parsed)` for every emitted event and a Promise that
@@ -30,14 +31,18 @@
 import type {
   DoneEventPayload,
   ErrorEventPayload,
-  RetrievalEventPayload,
+  PhaseEventPayload,
   SseErrorCode,
   TokenEventPayload,
 } from './chat';
 
-/** Discriminated union of the four SSE event types per spec §5.2. */
+/**
+ * Discriminated union of the SSE event types per spec §5.2 (revised
+ * in PR B). The legacy `retrieval` event is gone — progress info now
+ * ships as `phase`, and citation cards land in the terminal `done`.
+ */
 export type ChatStreamEvent =
-  | { type: 'retrieval'; payload: RetrievalEventPayload }
+  | { type: 'phase'; payload: PhaseEventPayload }
   | { type: 'token'; payload: TokenEventPayload }
   | { type: 'done'; payload: DoneEventPayload }
   | { type: 'error'; payload: ErrorEventPayload };
@@ -119,8 +124,8 @@ function parseFrame(rawFrame: string): ChatStreamEvent | null {
     return null;
   }
   switch (eventName) {
-    case 'retrieval':
-      return { type: 'retrieval', payload: parsed as RetrievalEventPayload };
+    case 'phase':
+      return { type: 'phase', payload: parsed as PhaseEventPayload };
     case 'token':
       return { type: 'token', payload: parsed as TokenEventPayload };
     case 'done':

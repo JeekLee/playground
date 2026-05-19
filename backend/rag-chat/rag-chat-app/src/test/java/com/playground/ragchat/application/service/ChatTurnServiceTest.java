@@ -161,14 +161,21 @@ class ChatTurnServiceTest {
         assertThat(events.get(0)).isInstanceOf(ChatStreamEvent.Phase.class);
         ChatStreamEvent.Phase retrieval = (ChatStreamEvent.Phase) events.get(0);
         assertThat(retrieval.step()).isEqualTo("retrieval");
-        @SuppressWarnings("unchecked")
-        java.util.List<?> chunks = (java.util.List<?>) retrieval.data().get("chunks");
-        assertThat(chunks).hasSize(3);
+        // PR B grammar: phase data carries the candidate count only, not
+        // the chunk list. Citation cards arrive via the terminal Done.
+        assertThat(retrieval.data()).containsEntry("count", 3);
         assertThat(events.get(1)).isInstanceOf(ChatStreamEvent.Token.class);
         assertThat(((ChatStreamEvent.Token) events.get(1)).delta()).startsWith("Per [1]");
         assertThat(events.get(2)).isInstanceOf(ChatStreamEvent.Token.class);
         assertThat(((ChatStreamEvent.Token) events.get(2)).delta()).contains("[3]");
         assertThat(events.get(3)).isInstanceOf(ChatStreamEvent.Done.class);
+        ChatStreamEvent.Done done = (ChatStreamEvent.Done) events.get(3);
+        @SuppressWarnings("unchecked")
+        List<com.playground.ragchat.application.dto.CitationDto> citedDtos =
+                (List<com.playground.ragchat.application.dto.CitationDto>) done.citations();
+        assertThat(citedDtos).hasSize(2);
+        assertThat(citedDtos).extracting(com.playground.ragchat.application.dto.CitationDto::n)
+                .containsExactly(1, 3);
 
         // 2 messages saved (user + assistant). Citations: only [1] and [3]; [2] is dropped.
         verify(messageRepository, times(2)).save(any());

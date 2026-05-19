@@ -34,6 +34,13 @@ export interface ChatMessageProps {
   citations: Citation[];
   /** Assistant streaming/aborted decorations. Defaults to 'done'. */
   status?: ChatMessageStatus;
+  /**
+   * Server-supplied progress label from the latest `phase` SSE event
+   * (PR B grammar) — rendered next to the thinking spinner while the
+   * assistant body is still empty. Falls back to "Thinking…" when not
+   * provided. Null once tokens start filling in.
+   */
+  phaseLabel?: string;
   /** Called when user clicks an inline `[N]` pill. */
   onCitationClick?: (n: number) => void;
   /** Hooked up only for assistant + streaming — Stop button. */
@@ -52,6 +59,7 @@ export function ChatMessage({
   content,
   citations,
   status = 'done',
+  phaseLabel,
   onCitationClick,
   onStop,
   accordion = null,
@@ -93,6 +101,7 @@ export function ChatMessage({
           isAborted={isAborted}
           onCitationClick={onCitationClick}
           isThinking={status === 'thinking'}
+          phaseLabel={phaseLabel}
         />
         {isAssistant && status === 'streaming' && onStop && (
           <div className="mt-md flex justify-end">
@@ -123,6 +132,7 @@ interface MessageBodyProps {
   isStreaming: boolean;
   isAborted: boolean;
   isThinking: boolean;
+  phaseLabel?: string;
   onCitationClick?: (n: number) => void;
 }
 
@@ -133,14 +143,19 @@ function MessageBody({
   isStreaming,
   isAborted,
   isThinking,
+  phaseLabel,
   onCitationClick,
 }: MessageBodyProps) {
-  // The "thinking" placeholder before the first token / retrieval event.
+  // The "thinking" placeholder before the first token. PR B grammar:
+  // every progress update sets `phaseLabel`; we render that verbatim so
+  // the UI says e.g. "참고 문서 확인 중" / "공개 문서 검색 중" / "사고 중"
+  // instead of a single static "Thinking…". Falls back to the legacy
+  // label when no phase event has fired yet.
   if (isThinking && content.length === 0) {
     return (
       <div className="flex items-center gap-sm text-body text-text-muted">
         <ThinkingDots />
-        <span>Thinking…</span>
+        <span>{phaseLabel ?? 'Thinking…'}</span>
       </div>
     );
   }

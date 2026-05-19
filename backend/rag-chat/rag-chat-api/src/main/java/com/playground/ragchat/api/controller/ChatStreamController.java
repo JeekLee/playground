@@ -4,15 +4,12 @@ import com.playground.ragchat.api.dto.ChatTurnRequestBody;
 import com.playground.ragchat.application.dto.ChatTurnRequest;
 import com.playground.ragchat.application.service.ChatTurnService;
 import com.playground.ragchat.domain.exception.RagChatErrorCode;
-import com.playground.ragchat.domain.model.RetrievedChunk;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import jakarta.validation.Valid;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -75,18 +72,10 @@ public class ChatStreamController {
 
     static ServerSentEvent<Object> toSse(ChatStreamEvent evt) {
         if (evt instanceof ChatStreamEvent.Phase p) {
-            // PR-A wire compat: the retrieval phase is still serialised as
-            // SSE `event: retrieval` with the existing `{citations: [...]}`
-            // payload so the frontend SSE consumer doesn't have to change.
-            // PR B will rename the wire event to `phase` and move citations
-            // to the terminal `done` payload.
-            if ("retrieval".equals(p.step())) {
-                @SuppressWarnings("unchecked")
-                List<RetrievedChunk> chunks =
-                        (List<RetrievedChunk>) p.data().getOrDefault("chunks", List.of());
-                return ServerSentEvent.<Object>builder(retrievalPayload(chunks)).event("retrieval").build();
-            }
-            // Generic phase passthrough — reserved for PR B onward.
+            // Wire grammar revision (PR B / spec §5.2 revised): every
+            // progress event ships as SSE `event: phase`. The legacy
+            // `event: retrieval` is gone — citation cards now arrive
+            // only on the terminal `done` event.
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("step", p.step());
             data.put("label", p.label());
@@ -105,8 +94,8 @@ public class ChatStreamController {
             data.put("messageId", d.messageId());
             data.put("tokensIn", d.tokensIn());
             data.put("tokensOut", d.tokensOut());
-            // `citations` left out of the wire when null (PR A); PR B
-            // will start populating with the cited subset.
+            // PR B: cited subset arrives with the terminal event. The
+            // BC's CitationDto record serializes naturally via Jackson.
             if (d.citations() != null) {
                 data.put("citations", d.citations());
             }
@@ -126,33 +115,4 @@ public class ChatStreamController {
                 .event("error").build();
     }
 
-    private static Map<String, Object> retrievalPayload(List<RetrievedChunk> chunks) {
-        List<Map<String, Object>> citations = new java.util.ArrayList<>(chunks.size());
-        for (RetrievedChunk c : chunks) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("n", c.position());
-            m.put("documentId", c.documentId().value().toString());
-            m.put("chunkIndex", c.chunkIndex());
-            m.put("title", c.title());
-            m.put("excerpt", excerpt(c.text()));
-            m.put("visibility", c.visibility().wireValue());
-            citations.add(m);
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("citations", citations);
-        return payload;
-    }
-
-    private static String excerpt(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.length() > 160 ? text.substring(0, 160) : text;
-    }
-
-    // UUID import resolution helper to avoid unused-import warnings.
-    @SuppressWarnings("unused")
-    private static UUID forceUuidImport() {
-        return null;
-    }
 }

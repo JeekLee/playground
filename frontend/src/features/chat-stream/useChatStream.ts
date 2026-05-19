@@ -201,11 +201,14 @@ function makeOnEvent(
 ): (ev: ChatStreamEvent) => void {
   let accumulated = '';
   return (ev) => {
-    if (ev.type === 'retrieval') {
-      const citations: Citation[] = ev.payload.citations;
+    if (ev.type === 'phase') {
+      // Progress update — display the server-supplied label inline
+      // while the assistant body is still empty (spec §5.2 revised).
+      // We stay in `thinking` status until the first token arrives.
+      const label = ev.payload.label;
       setTurn((prev) =>
         prev && prev.clientId === clientId
-          ? { ...prev, citations, status: 'streaming' }
+          ? { ...prev, phaseLabel: label, status: 'thinking' }
           : prev,
       );
     } else if (ev.type === 'token') {
@@ -213,13 +216,19 @@ function makeOnEvent(
       const snapshot = accumulated;
       setTurn((prev) =>
         prev && prev.clientId === clientId
-          ? { ...prev, content: snapshot, status: 'streaming' }
+          ? { ...prev, content: snapshot, status: 'streaming', phaseLabel: undefined }
           : prev,
       );
     } else if (ev.type === 'done') {
+      // Cited subset arrives with the terminal event (PR B). Apply it
+      // to the streaming turn so the just-completed bubble shows its
+      // citation cards before ChatPage swaps to the loaded history row.
+      const citations: Citation[] = ev.payload.citations ?? [];
       state.terminalStatus = 'done';
       setTurn((prev) =>
-        prev && prev.clientId === clientId ? { ...prev, status: 'done' } : prev,
+        prev && prev.clientId === clientId
+          ? { ...prev, citations, status: 'done', phaseLabel: undefined }
+          : prev,
       );
     } else if (ev.type === 'error') {
       const terminalStatus: StreamingTurnStatus =
@@ -228,7 +237,12 @@ function makeOnEvent(
       state.terminalStatus = terminalStatus;
       setTurn((prev) =>
         prev && prev.clientId === clientId
-          ? { ...prev, status: terminalStatus, error: terminalError }
+          ? {
+              ...prev,
+              status: terminalStatus,
+              error: terminalError,
+              phaseLabel: undefined,
+            }
           : prev,
       );
     }
