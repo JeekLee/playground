@@ -107,6 +107,17 @@ playground:
       overlap-tokens: 120
       min-chunk-tokens: 64
       tokenizer: cl100k-base
+      # ADR-13 §1 (M3.1 amendment) — markdown-aware chunker tunables.
+      max-oversize-fence-tokens: 800
+      preserve-heading-path: true
+    # ADR-13 §7 (M3.1 amendment) — `reembed` Spring profile tunables.
+    # Only consumed when the application boots with
+    # `--spring.profiles.active=reembed`.
+    reembed:
+      scope: all
+      user-id: null
+      document-id: null
+      inter-document-delay-millis: 0
 
 management:
   endpoints:
