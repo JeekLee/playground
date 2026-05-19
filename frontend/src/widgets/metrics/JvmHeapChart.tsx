@@ -58,11 +58,16 @@ export function JvmHeapChart({ service, jvm, range, pollKey }: JvmHeapChartProps
   const data = points.map(([t, v]) => ({ t, v }));
 
   const isDegraded = series.status === 'error';
-  const valueText = jvm
-    ? `${jvm.heapUsedMb} / ${jvm.heapMaxMb} MB`
-    : isDegraded
-      ? '— / — MB'
-      : '— MB';
+  // Spring Boot's `jvm_memory_max_bytes` reports -1 when the JVM has no
+  // explicit -Xmx and no cgroup memory limit; suppress the denominator
+  // in that case rather than rendering "144 / -0 MB". Used is always
+  // rounded to a whole MB for legibility.
+  const valueText = (() => {
+    if (!jvm) return isDegraded ? '— / — MB' : '— MB';
+    const used = Math.round(jvm.heapUsedMb);
+    const max = jvm.heapMaxMb ?? 0;
+    return max > 0 ? `${used} / ${Math.round(max)} MB` : `${used} MB`;
+  })();
 
   return (
     <div
