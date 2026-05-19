@@ -60,6 +60,14 @@ public class DashboardController {
             return comma > 0 ? forwarded.substring(0, comma).trim() : forwarded.trim();
         }
         var remote = exchange.getRequest().getRemoteAddress();
-        return remote == null ? "unknown" : remote.getAddress().getHostAddress();
+        if (remote == null) {
+            return "unknown";
+        }
+        // InetSocketAddress can be unresolved (hostname-only) when the request
+        // arrives through a reverse proxy that hasn't set X-Forwarded-For —
+        // guard the inner getAddress() too. Without this the dashboard 500s
+        // with NPE on every gateway-proxied call.
+        var addr = remote.getAddress();
+        return addr == null ? remote.getHostString() : addr.getHostAddress();
     }
 }
