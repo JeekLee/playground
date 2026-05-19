@@ -8,7 +8,9 @@
 | M3 | RAG-Ingestion | Kafka consumer for `document.uploaded` → chunk → embed (BGE-M3 via spark-inference-gateway) → store in pgvector | planned |
 | M4 | RAG-Chat | Chatbot UI + retrieval + generation (Qwen3-32B via spark-inference-gateway), conversation history | planned |
 | M5 | Metrics | Spark REST polling + Docker container status dashboard | planned |
-| M6+ | Agents | TBD (future cycles) | deferred |
+| M6 | Docs (PDF support) | M2 docs BC accepts PDF; Apache PDFBox text extraction feeds M3 unchanged | planned |
+| M7 | RAG-Chat (tool-calling) | rag-chat invokes external tool BCs via Spring AI 1.0 function-calling; generic infra | planned |
+| M8 | massing-gen | New BC: brief PDF → room program → basic massing → .3dm via rhino3dm sidecar | planned |
 
 ---
 
@@ -125,12 +127,58 @@ Per-user token bucket (60/hour, 200/day), `max_tokens=4000`, K=6 retrieved chunk
 
 ---
 
-## M6+ — Agents
+## M6 — Docs (PDF support)
 
-**Goal:** TBD — reserved for later cycles once M1–M5 are stable and the methodology experiment has produced enough signal to design the agent surface area.
+**Goal:** Extend M2's docs BC to accept `.pdf` uploads. Server extracts text via Apache PDFBox and stores it in the existing `body` column; M3 RAG ingestion (Kafka consumer + chunking + embedding) processes the extracted text unchanged.
 
-**Acceptance:** to be defined when the milestone is opened for design.
+**Acceptance:**
+- [ ] `POST /api/docs/upload` accepts `application/pdf` MIME type
+- [ ] `docs.documents.mime_type` column added (default `text/markdown`); PDF uploads set `application/pdf`
+- [ ] Extracted text appears in `body` and M3 ingests it identically to MD content
+- [ ] Frontend `/docs/new` file picker accepts `.pdf`; doc detail page shows `(PDF)` indicator
+- [ ] Apache PDFBox runs in-process (no new container needed)
 
-**Dependencies:** M1–M5.
+**Dependencies:** M0, M2.
 
-**Notes:** Deferred. No issues are seeded under this milestone yet beyond a single placeholder so the milestone exists in GitHub.
+**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §4. Per-milestone ADR-16 closes open questions (PDFBox version pin, Korean PDF test corpus, corrupted-PDF error semantic, original-binary storage decision).
+
+---
+
+## M7 — RAG-Chat (tool-calling)
+
+**Goal:** Give rag-chat (M4) the ability to invoke external tool BCs via LLM function-calling. Generic infrastructure — domain-neutral — so any future tool BC plugs in via the same pattern.
+
+**Acceptance:**
+- [ ] `ToolCatalog` constants class in `rag-chat-domain` lists registered tools (name, description, parameter schema, endpoint URL, timeout)
+- [ ] `ToolDispatcher` adapter in `rag-chat-infra` invokes tool BCs via Spring WebClient with Resilience4j circuit breaker per tool
+- [ ] `ChatTurnUseCase` extended with Spring AI 1.0 `ChatClient.tools(...)` — handles multi-turn tool_call → tool_result → token flow
+- [ ] SSE event grammar gains `tool_call` / `tool_result` / `tool_error` event types (amends ADR-14 §5.2)
+- [ ] ADR-08 Exception 4 added (rag-chat → tool BCs HTTP for LLM function-calling)
+- [ ] Maximum tool-call depth (default 5) enforced; exceeded depth emits `tool_error` with code `MAX_DEPTH_EXCEEDED`
+- [ ] WireMock-stubbed end-to-end test validates the full flow without a real tool BC
+
+**Dependencies:** M0, M1, M2, M3, M4.
+
+**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §5. Per-milestone ADR-17 closes open questions (Spring AI 1.0 API stability, tool error retry policy, max-depth default, tool result max size, SSE event ordering during multi-turn). M7 itself adds no user-visible feature — it enables M8.
+
+---
+
+## M8 — massing-gen
+
+**Goal:** Ship the first domain-specific tool BC — given a brief PDF document ID, extract the room program via LLM, run a basic massing algorithm, and return a Rhino `.3dm` file URL.
+
+**Acceptance:**
+- [ ] New BC `massing-gen-{api,app,domain,infra}` quadruplet (port 18086 candidate, ADR-18 confirms)
+- [ ] `POST /internal/tools/generate-massing` accepts `{ briefDocId, siteWidth?, siteDepth?, floorHeight? }` and returns `{ fileUrl, programJson, totalAreaM2, floorCount, summary }`
+- [ ] Brief reading via M2's existing `/internal/docs/{id}/body` (ADR-08 Exception 1 widened — see ADR-18)
+- [ ] LLM call (Qwen3-32B via spark-inference-gateway) extracts structured room program JSON from brief text
+- [ ] `MassingAlgorithm` in `-domain` (Spring-free) implements rectangular first-fit + area balance
+- [ ] `rhino3dm-bridge` Node sidecar container serializes box list → `.3dm` binary
+- [ ] New Postgres schema `arch` + table `arch.outputs` stores file_bytes (BYTEA), program_json (JSONB), brief_doc_id, user_id, total_area_m2, floor_count, created_at
+- [ ] `GET /api/arch/outputs/{id}` authenticated owner-only download endpoint
+- [ ] Tool descriptor registered in `rag-chat-domain.ToolCatalog`
+- [ ] Generated `.3dm` opens in Rhino without errors; total box area ≥ sum of required room areas
+
+**Dependencies:** M0, M1, M2 (extended by M6), M3, M4, M7.
+
+**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §6. Per-milestone ADR-18 closes open questions (`.3dm` library pin, Korean brief extraction prompt, output JSON Schema, over-area handling, file storage BYTEA vs object storage, orphan cleanup, BC name finalize, per-user rate limit).

@@ -19,7 +19,9 @@ In parallel, the project doubles as a **methodology experiment** in multi-agent 
 | **M3** | RAG-Ingestion | `document.uploaded` Kafka consumer → chunk → embed (BGE-M3 via spark-inference-gateway) → pgvector |
 | **M4** | RAG-Chat | Chatbot UI + retrieval + generation (Qwen3-32B via spark-inference-gateway) |
 | **M5** | Metrics | Spark REST polling + Docker container status dashboard |
-| **M6+** | Agents | TBD (later cycles) |
+| **M6** | Docs (PDF support) | M2 docs BC accepts PDF; Apache PDFBox text extraction feeds M3 unchanged |
+| **M7** | RAG-Chat (tool-calling) | rag-chat invokes external tool BCs via Spring AI 1.0 function-calling |
+| **M8** | massing-gen | brief PDF → room program → basic massing → .3dm via rhino3dm sidecar |
 
 ## Architecture — Multi-Module MSA with API Gateway
 
