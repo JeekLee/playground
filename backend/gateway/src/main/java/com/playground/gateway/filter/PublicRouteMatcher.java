@@ -83,6 +83,7 @@ public class PublicRouteMatcher {
             new Rule(HttpMethod.GET, "/api/metrics/**"),
             new Rule(null, "/_next/**"),
             new Rule(null, "/favicon.ico"),
+            new Rule(null, "/icon"),
             new Rule(null, "/static/**"));
 
     public boolean isPublic(ServerWebExchange exchange) {

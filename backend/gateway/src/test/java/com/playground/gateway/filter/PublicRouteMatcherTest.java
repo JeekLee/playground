@@ -60,6 +60,14 @@ class PublicRouteMatcherTest {
         assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/favicon.ico"))).isTrue();
     }
 
+    @Test
+    void next_icon_route_is_public() {
+        // `frontend/src/app/icon.tsx` is served at `/icon` (with a `?hash`
+        // query for cache busting). Must be public so the browser fetches
+        // it without auth context on /login and /401.
+        assertThat(matcher.isPublic(exchange(HttpMethod.GET, "/icon"))).isTrue();
+    }
+
     // --- M2 S1 / ADR-12 amendment to ADR-09 ---
 
     @Test
