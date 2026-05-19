@@ -135,7 +135,7 @@ function BottomMixedRow({
   range: ReturnType<typeof resolveRangeFromUrl>;
   pollKey: number | null;
 }) {
-  const sparkUptime = data?.services.find((s) => s.name === 'spark-inference')?.uptimeSec ?? null;
+  const sparkUptime = data?.services.find((s) => s.name === 'spark-inference-gateway')?.uptimeSec ?? null;
   return (
     <section
       aria-labelledby="metrics-traffic"
