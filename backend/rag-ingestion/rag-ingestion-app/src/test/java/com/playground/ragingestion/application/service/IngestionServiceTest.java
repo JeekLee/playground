@@ -249,6 +249,70 @@ class IngestionServiceTest {
         soft.assertAll();
     }
 
+    @Test
+    void handleUploaded_propagates_distinct_heading_paths_for_two_h1_siblings() {
+        // Given — body with two sibling H1 sections, each with enough text to
+        // produce at least one chunk under the small ChunkingPolicy(8 tokens)
+        // used in setup(). The trailing-merge guard requires minChunkTokens=2,
+        // so even a short paragraph is safe.
+        DocumentId docId = DocumentId.of(UUID.randomUUID());
+        AuthorId userId = AuthorId.of(UUID.randomUUID());
+        String body = "# Section A\n\n"
+                + "one two three four five six seven eight nine.\n\n"
+                + "# Section B\n\n"
+                + "alpha beta gamma delta epsilon zeta eta theta iota.";
+        String checksum = BodyChecksum.compute(body).value();
+
+        when(chunkRepository.findBodyChecksum(docId)).thenReturn(Optional.empty());
+        when(bodyFetchPort.fetchBody(docId)).thenReturn(new DocumentBody(
+                docId, body, BodyChecksum.of(checksum), Instant.now(clock)));
+        when(embeddingPort.embed(anyList())).thenAnswer(invocation -> {
+            List<ChunkText> texts = invocation.getArgument(0);
+            return texts.stream().map(t -> dummyEmbedding(1.0f)).toList();
+        });
+
+        DocumentUploadedEvent event = new DocumentUploadedEvent(
+                docId, userId, Visibility.PUBLIC, "two-sections", "/", checksum);
+        service.handleUploaded(event);
+
+        ArgumentCaptor<List<DocumentChunk>> cap = ArgumentCaptor.forClass(List.class);
+        verify(chunkRepository).replaceAll(eq(docId), cap.capture());
+        List<DocumentChunk> chunks = cap.getValue();
+
+        // At least one chunk per section — 2 sections, so ≥ 2 total.
+        assertThat(chunks).hasSizeGreaterThanOrEqualTo(2);
+
+        // Every chunk must belong exclusively to one of the two sections.
+        chunks.forEach(c -> {
+            List<String> hp = c.headingPath();
+            boolean isSectionA = hp.equals(List.of("Section A"));
+            boolean isSectionB = hp.equals(List.of("Section B"));
+            assertThat(isSectionA || isSectionB)
+                    .as("headingPath must be [Section A] or [Section B], got %s", hp)
+                    .isTrue();
+        });
+
+        // At least one chunk carries "Section A" and at least one carries "Section B"
+        // — proving both sections contributed chunks.
+        assertThat(chunks)
+                .as("at least one chunk from Section A")
+                .anyMatch(c -> c.headingPath().equals(List.of("Section A")));
+        assertThat(chunks)
+                .as("at least one chunk from Section B")
+                .anyMatch(c -> c.headingPath().equals(List.of("Section B")));
+
+        // Ordering invariant: all Section-A chunks precede all Section-B chunks
+        // (SectionBuilder + WindowNormalizer preserve document order).
+        int lastA = -1;
+        int firstB = Integer.MAX_VALUE;
+        for (int i = 0; i < chunks.size(); i++) {
+            if (chunks.get(i).headingPath().equals(List.of("Section A"))) lastA = i;
+            if (chunks.get(i).headingPath().equals(List.of("Section B")) && i < firstB) firstB = i;
+        }
+        assertThat(lastA).as("last Section-A chunk index (%d) < first Section-B chunk index (%d)", lastA, firstB)
+                .isLessThan(firstB);
+    }
+
     private static Embedding dummyEmbedding(float value) {
         float[] v = new float[Embedding.DIMENSION];
         v[0] = value;
