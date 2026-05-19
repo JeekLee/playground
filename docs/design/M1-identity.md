@@ -257,6 +257,10 @@ Every value is sourced verbatim from `docs/superpowers/specs/2026-05-16-playgrou
 
 **Verification note:** the only hex values in this document are the ones listed above. Each appears exactly in the design system spec at §3.1 / §3.2 / §3.3 / §5.3. No new tokens were invented; no spec hex was substituted with a near-miss.
 
+## Post-ship amendments
+
+- **Favicon (added 2026-05-20):** browser tab icon rendered from `frontend/src/app/icon.tsx` via Next 14 `ImageResponse` — a 32×32 mirror of the §2.2 brand glyph (`accent` bg, `surface` fg, proportional ~9px corner radius, bold `J` at 22px). No `public/favicon.ico` and no `metadata.icons` override — the file-based icon convention auto-injects `<link rel="icon">` at build time. Sources the accent + surface hexes from `frontend/src/shared/ui/tokens/color.ts` so the favicon stays in lockstep with the brand color if it ever shifts.
+
 ## Out of scope (this milestone)
 
 Same deferrals as the v1 design doc, plus the changes implied by the new public-home composition:

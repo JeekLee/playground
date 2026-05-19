@@ -7,9 +7,8 @@ export const metadata: Metadata = {
   title: "JeekLee's playground",
   description:
     "A personal workshop, open to read. Documents, chat, and system status as each milestone ships.",
-  icons: {
-    icon: '/favicon.ico',
-  },
+  // Favicon comes from the file-based `src/app/icon.tsx` convention —
+  // Next 14 auto-injects the `<link rel="icon">` tag at build time.
 };
 
 /**
