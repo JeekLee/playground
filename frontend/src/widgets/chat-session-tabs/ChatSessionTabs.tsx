@@ -3,11 +3,15 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type RefObject,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronDown,
   Edit2,
@@ -152,54 +156,27 @@ export function ChatSessionTabs({
             const isActive = s.id === activeSessionId;
             const isRenaming = renamingId === s.id;
             return (
-              <div key={s.id} className="relative flex shrink-0 items-center">
-                {isActive ? (
-                  <ActiveTab
-                    session={s}
-                    isRenaming={isRenaming}
-                    renameDraft={renameDraft}
-                    setRenameDraft={setRenameDraft}
-                    commitRename={commitRename}
-                    cancelRename={() => setRenamingId(null)}
-                    onMenuToggle={() =>
-                      setMenuOpenFor((cur) => (cur === s.id ? null : s.id))
-                    }
-                  />
-                ) : (
-                  <InactiveTab session={s} onClick={() => onSelect(s.id)} />
-                )}
-                {menuOpenFor === s.id && (
-                  <div
-                    ref={menuRef}
-                    role="menu"
-                    aria-label="Tab actions"
-                    className="absolute left-0 top-[40px] z-30 w-[180px] overflow-hidden rounded-md border border-border bg-surface shadow-pop"
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => startRename(s)}
-                      className="flex w-full items-center gap-sm px-md py-sm text-left text-[13px] font-medium text-text transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
-                    >
-                      <Edit2 size={13} aria-hidden="true" />
-                      <span>Rename</span>
-                    </button>
-                    <div role="separator" className="h-px bg-border" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpenFor(null);
-                        onDeleteRequest(s.id);
-                      }}
-                      className="flex w-full items-center gap-sm px-md py-sm text-left text-[13px] font-medium text-danger transition-colors duration-[140ms] hover:bg-danger-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-danger"
-                    >
-                      <Trash2 size={13} aria-hidden="true" />
-                      <span>Delete…</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+              <TabRow
+                key={s.id}
+                session={s}
+                isActive={isActive}
+                isRenaming={isRenaming}
+                renameDraft={renameDraft}
+                setRenameDraft={setRenameDraft}
+                commitRename={commitRename}
+                cancelRename={() => setRenamingId(null)}
+                onMenuToggle={() =>
+                  setMenuOpenFor((cur) => (cur === s.id ? null : s.id))
+                }
+                onSelect={() => onSelect(s.id)}
+                isMenuOpen={menuOpenFor === s.id}
+                menuRef={menuRef}
+                onRename={() => startRename(s)}
+                onDelete={() => {
+                  setMenuOpenFor(null);
+                  onDeleteRequest(s.id);
+                }}
+              />
             );
           })
         )}
@@ -263,6 +240,130 @@ export function ChatSessionTabs({
         <Plus size={15} aria-hidden="true" />
       </button>
     </div>
+  );
+}
+
+/**
+ * Per-tab row. The {@code ⋯} menu is rendered into a body-level portal
+ * with absolute coordinates anchored to the tab — necessary because the
+ * tab-strip's scroll wrapper has {@code overflow-x: auto}, which (per
+ * CSS spec) forces overflow-y to {@code auto} as well and clips any
+ * descendant whose absolute box would extend below the strip. The
+ * portal escapes the clipping while keeping the open/close state owned
+ * by the parent.
+ */
+function TabRow({
+  session,
+  isActive,
+  isRenaming,
+  renameDraft,
+  setRenameDraft,
+  commitRename,
+  cancelRename,
+  onMenuToggle,
+  onSelect,
+  isMenuOpen,
+  menuRef,
+  onRename,
+  onDelete,
+}: {
+  session: ChatSession;
+  isActive: boolean;
+  isRenaming: boolean;
+  renameDraft: string;
+  setRenameDraft: (text: string) => void;
+  commitRename: () => void;
+  cancelRename: () => void;
+  onMenuToggle: () => void;
+  onSelect: () => void;
+  isMenuOpen: boolean;
+  menuRef: RefObject<HTMLDivElement | null>;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div ref={anchorRef} className="relative flex shrink-0 items-center">
+      {isActive ? (
+        <ActiveTab
+          session={session}
+          isRenaming={isRenaming}
+          renameDraft={renameDraft}
+          setRenameDraft={setRenameDraft}
+          commitRename={commitRename}
+          cancelRename={cancelRename}
+          onMenuToggle={onMenuToggle}
+        />
+      ) : (
+        <InactiveTab session={session} onClick={onSelect} />
+      )}
+      {isMenuOpen && (
+        <TabActionsMenu anchorRef={anchorRef} menuRef={menuRef}>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={onRename}
+            className="flex w-full items-center gap-sm px-md py-sm text-left text-[13px] font-medium text-text transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+          >
+            <Edit2 size={13} aria-hidden="true" />
+            <span>Rename</span>
+          </button>
+          <div role="separator" className="h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={onDelete}
+            className="flex w-full items-center gap-sm px-md py-sm text-left text-[13px] font-medium text-danger transition-colors duration-[140ms] hover:bg-danger-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-danger"
+          >
+            <Trash2 size={13} aria-hidden="true" />
+            <span>Delete…</span>
+          </button>
+        </TabActionsMenu>
+      )}
+    </div>
+  );
+}
+
+function TabActionsMenu({
+  anchorRef,
+  menuRef,
+  children,
+}: {
+  anchorRef: RefObject<HTMLDivElement | null>;
+  menuRef: RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchorRef.current) return;
+    const update = () => {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (rect) {
+        setPos({ top: rect.bottom + 4, left: rect.left });
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchorRef]);
+
+  if (typeof window === 'undefined' || pos === null) return null;
+  return createPortal(
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label="Tab actions"
+      style={{ position: 'fixed', top: pos.top, left: pos.left }}
+      className="z-50 w-[180px] overflow-hidden rounded-md border border-border bg-surface shadow-pop"
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 
