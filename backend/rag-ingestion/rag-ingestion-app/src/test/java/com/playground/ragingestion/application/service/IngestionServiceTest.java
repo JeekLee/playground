@@ -26,7 +26,8 @@ import com.playground.ragingestion.domain.model.vo.BodyChecksum;
 import com.playground.ragingestion.domain.model.vo.ChunkText;
 import com.playground.ragingestion.domain.model.vo.Embedding;
 import com.playground.ragingestion.domain.service.ChunkingPolicy;
-import com.playground.ragingestion.domain.service.MarkdownChunker;
+import com.playground.ragingestion.domain.service.JdkBreakIteratorSentenceSplitter;
+import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -57,14 +58,16 @@ class IngestionServiceTest {
     ApplicationEventPublisher events;
 
     Clock clock;
-    MarkdownChunker chunker;
+    MarkdownAwareChunker chunker;
     IngestionService service;
 
     @BeforeEach
     void setup() {
         clock = Clock.fixed(Instant.parse("2026-05-20T12:00:00Z"), ZoneOffset.UTC);
         // Small chunker so a short test body still produces multiple chunks.
-        chunker = new MarkdownChunker(new ChunkingPolicy(8, 2, 2, "cl100k-base", 8, true));
+        chunker = new MarkdownAwareChunker(
+                new ChunkingPolicy(8, 2, 2, "cl100k-base", 8, true),
+                new JdkBreakIteratorSentenceSplitter());
         service = new IngestionService(
                 chunkRepository, bodyFetchPort, embeddingPort, lockPort, chunker, events, clock);
         // The lock adapter runs the supplier inline for unit tests.

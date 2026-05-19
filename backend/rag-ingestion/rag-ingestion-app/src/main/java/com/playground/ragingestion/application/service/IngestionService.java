@@ -15,7 +15,7 @@ import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.domain.model.vo.BodyChecksum;
 import com.playground.ragingestion.domain.model.vo.ChunkText;
 import com.playground.ragingestion.domain.model.vo.Embedding;
-import com.playground.ragingestion.domain.service.MarkdownChunker;
+import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,7 +66,7 @@ public class IngestionService {
     private final BodyFetchPort bodyFetchPort;
     private final EmbeddingPort embeddingPort;
     private final DistributedLockPort lockPort;
-    private final MarkdownChunker chunker;
+    private final MarkdownAwareChunker chunker;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
@@ -75,7 +75,7 @@ public class IngestionService {
             BodyFetchPort bodyFetchPort,
             EmbeddingPort embeddingPort,
             DistributedLockPort lockPort,
-            MarkdownChunker chunker,
+            MarkdownAwareChunker chunker,
             ApplicationEventPublisher events,
             Clock clock) {
         this.chunkRepository = chunkRepository;
@@ -134,7 +134,10 @@ public class IngestionService {
                     eventChecksum, fetchedChecksum, event.documentId()));
         }
 
-        List<ChunkText> texts = chunker.chunk(body.body());
+        // TEMPORARY (Task 14 will clean up): adapt MarkdownAwareChunker → List<ChunkText> shim.
+        List<ChunkText> texts = chunker.chunk(body.body()).stream()
+                .map(com.playground.ragingestion.domain.model.vo.ChunkDraft::text)
+                .toList();
         if (texts.isEmpty()) {
             // Empty body: purge any stale chunks and emit ingested with 0
             // count so downstream can render "queryable (but empty)" state.
