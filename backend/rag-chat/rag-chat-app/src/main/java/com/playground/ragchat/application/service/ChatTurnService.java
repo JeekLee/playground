@@ -18,7 +18,6 @@ import com.playground.ragchat.domain.model.RetrievedChunk;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
 import com.playground.ragchat.domain.model.vo.TokenCount;
-import com.playground.ragchat.domain.service.CitationExtractor;
 import com.playground.ragchat.domain.service.HistoryTruncator;
 import com.playground.ragchat.domain.service.PromptTemplate;
 import com.playground.ragchat.domain.service.TokenCounter;
@@ -26,10 +25,8 @@ import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Service;
@@ -66,7 +63,6 @@ public class ChatTurnService {
     private final ChatGenerationPort chatGenerationPort;
     private final HistoryTruncator historyTruncator;
     private final TokenCounter tokenCounter;
-    private final CitationExtractor citationExtractor;
     private final PromptTemplate promptTemplate;
     private final AutoTitleService autoTitleService;
     private final ActiveTurnRegistry activeTurnRegistry;
@@ -83,7 +79,6 @@ public class ChatTurnService {
             ChatGenerationPort chatGenerationPort,
             HistoryTruncator historyTruncator,
             TokenCounter tokenCounter,
-            CitationExtractor citationExtractor,
             PromptTemplate promptTemplate,
             AutoTitleService autoTitleService,
             ActiveTurnRegistry activeTurnRegistry,
@@ -98,7 +93,6 @@ public class ChatTurnService {
         this.chatGenerationPort = chatGenerationPort;
         this.historyTruncator = historyTruncator;
         this.tokenCounter = tokenCounter;
-        this.citationExtractor = citationExtractor;
         this.promptTemplate = promptTemplate;
         this.autoTitleService = autoTitleService;
         this.activeTurnRegistry = activeTurnRegistry;
@@ -296,40 +290,38 @@ public class ChatTurnService {
                 // empty assistant message so the message count remains paired.
             }
 
-            // Extract [N] markers and filter the retrieved list to just those cited.
-            Set<Integer> cited = citationExtractor.extractMarkers(accumulatedText);
+            // Renumber the [N] markers so the cited subset is rendered as
+            // a dense [1][2]… sequence regardless of which positions in
+            // the original retrieval window the LLM actually used. The
+            // assistant text shipped to the client (and persisted) gets
+            // its markers rewritten to the new sequence; the per-row
+            // citation cards line up 1:1.
+            CitationRenumber renumber = renumberCitations(accumulatedText, prep.retrieved());
 
             // Approximate token counts — we don't get them from the streaming
             // ChatResponse uniformly; the assistant counter is the byte/token
             // count of the accumulated text via JTokkit.
             int tokensIn = tokenCounter.count(prep.lastUserMessageContent(request)).value();
-            int tokensOut = tokenCounter.count(accumulatedText).value();
+            int tokensOut = tokenCounter.count(renumber.text).value();
             int retrievalK = prep.retrieved().size();
 
             Message assistant = Message.newAssistantTurn(
-                    prep.session().id(), request.caller(), accumulatedText,
+                    prep.session().id(), request.caller(), renumber.text,
                     tokensIn, tokensOut, retrievalK, clock.instant());
             Message persisted = messageRepository.save(assistant);
 
-            // Persist only the cited subset per ADR-14 §10. Reuse the same
-            // ordered filter to build the wire citation list for the
-            // terminal `done` event — keeps the persisted rows and the
-            // shipped citation cards 1:1.
             List<MessageCitation> toPersist = new java.util.ArrayList<>();
             List<CitationDto> wireCitations = new java.util.ArrayList<>();
-            Set<Integer> seenPositions = new HashSet<>();
-            for (RetrievedChunk c : prep.retrieved()) {
-                if (cited.contains(c.position()) && seenPositions.add(c.position())) {
-                    toPersist.add(new MessageCitation(
-                            persisted.id(), c.position(), c.documentId(), c.chunkIndex()));
-                    wireCitations.add(new CitationDto(
-                            c.position(),
-                            c.documentId().value().toString(),
-                            c.chunkIndex(),
-                            c.title(),
-                            shortExcerpt(c.text()),
-                            c.visibility().wireValue()));
-                }
+            for (CitedChunk c : renumber.cited) {
+                toPersist.add(new MessageCitation(
+                        persisted.id(), c.newN, c.chunk.documentId(), c.chunk.chunkIndex()));
+                wireCitations.add(new CitationDto(
+                        c.newN,
+                        c.chunk.documentId().value().toString(),
+                        c.chunk.chunkIndex(),
+                        c.chunk.title(),
+                        shortExcerpt(c.chunk.text()),
+                        c.chunk.visibility().wireValue()));
             }
             if (!toPersist.isEmpty()) {
                 messageRepository.saveCitations(toPersist);
@@ -347,6 +339,49 @@ public class ChatTurnService {
                     persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
         }).subscribeOn(Schedulers.boundedElastic());
     }
+
+    /**
+     * Walk the accumulated text in order, find each {@code [N]} marker
+     * whose {@code N} corresponds to a retrieved chunk, assign new
+     * dense sequence numbers in first-encounter order, and rewrite the
+     * text so the rendered cards read [1][2][3] regardless of which
+     * original retrieval positions the LLM picked. Markers that don't
+     * match any retrieved chunk (hallucinations) are left untouched so
+     * the trail of bad LLM output is still visible.
+     */
+    private static CitationRenumber renumberCitations(String text, List<RetrievedChunk> retrieved) {
+        if (text == null || text.isEmpty()) {
+            return new CitationRenumber("", List.of());
+        }
+        java.util.Map<Integer, RetrievedChunk> byPosition = new java.util.HashMap<>();
+        for (RetrievedChunk c : retrieved) {
+            byPosition.put(c.position(), c);
+        }
+        java.util.LinkedHashMap<Integer, Integer> remap = new java.util.LinkedHashMap<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[(\\d+)\\]").matcher(text);
+        while (m.find()) {
+            int orig = Integer.parseInt(m.group(1));
+            if (byPosition.containsKey(orig) && !remap.containsKey(orig)) {
+                remap.put(orig, remap.size() + 1);
+            }
+        }
+        String rewritten = m.reset().replaceAll(match -> {
+            int orig = Integer.parseInt(match.group(1));
+            Integer mapped = remap.get(orig);
+            return mapped == null ? java.util.regex.Matcher.quoteReplacement(match.group(0)) : "[" + mapped + "]";
+        });
+        List<CitedChunk> cited = new java.util.ArrayList<>(remap.size());
+        for (java.util.Map.Entry<Integer, Integer> e : remap.entrySet()) {
+            cited.add(new CitedChunk(e.getValue(), byPosition.get(e.getKey())));
+        }
+        return new CitationRenumber(rewritten, cited);
+    }
+
+    /** Re-numbered text + the cited chunk list in dense [1..N] order. */
+    private record CitationRenumber(String text, List<CitedChunk> cited) {}
+
+    /** A retrieved chunk paired with its new dense citation number. */
+    private record CitedChunk(int newN, RetrievedChunk chunk) {}
 
     /** Wire-shape excerpt — first ~160 chars, matches the old retrieval payload. */
     private static String shortExcerpt(String text) {

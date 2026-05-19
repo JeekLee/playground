@@ -86,7 +86,6 @@ class ChatTurnServiceTest {
                 chatGenerationPort,
                 historyTruncator,
                 tokenCounter,
-                citationExtractor,
                 promptTemplate,
                 autoTitleService,
                 new ActiveTurnRegistry(),
@@ -174,16 +173,19 @@ class ChatTurnServiceTest {
         List<com.playground.ragchat.application.dto.CitationDto> citedDtos =
                 (List<com.playground.ragchat.application.dto.CitationDto>) done.citations();
         assertThat(citedDtos).hasSize(2);
+        // PR — renumbered citations: original [1] and [3] become [1] and [2]
+        // in first-encounter order; [2] never appeared in the text.
         assertThat(citedDtos).extracting(com.playground.ragchat.application.dto.CitationDto::n)
-                .containsExactly(1, 3);
+                .containsExactly(1, 2);
 
-        // 2 messages saved (user + assistant). Citations: only [1] and [3]; [2] is dropped.
+        // 2 messages saved (user + assistant). Persisted citations carry
+        // the new dense positions to match the rewritten message text.
         verify(messageRepository, times(2)).save(any());
         verify(messageRepository, times(1)).saveCitations(argThat((List<MessageCitation> list) ->
                 list.size() == 2
                 && list.stream().anyMatch(c -> c.position() == 1)
-                && list.stream().anyMatch(c -> c.position() == 3)
-                && list.stream().noneMatch(c -> c.position() == 2)));
+                && list.stream().anyMatch(c -> c.position() == 2)
+                && list.stream().noneMatch(c -> c.position() == 3)));
         verify(handle, times(1)).release();
     }
 }
