@@ -41,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -69,8 +70,15 @@ class IngestionServiceTest {
         chunker = new MarkdownAwareChunker(
                 new ChunkingPolicy(8, 2, 2, "cl100k-base", 8, true),
                 new JdkBreakIteratorSentenceSplitter());
+        // Two-step construction: create a shadow service with self=null, then
+        // wrap it in a spy and pass the spy as `self` to the real service.
+        // This ensures self.*InTx calls (made from inside the runWithLock lambda)
+        // go through a valid delegate that shares the same mocked collaborators.
+        IngestionService shadow = new IngestionService(
+                chunkRepository, bodyFetchPort, embeddingPort, lockPort, chunker, events, clock, null);
+        IngestionService selfSpy = Mockito.spy(shadow);
         service = new IngestionService(
-                chunkRepository, bodyFetchPort, embeddingPort, lockPort, chunker, events, clock);
+                chunkRepository, bodyFetchPort, embeddingPort, lockPort, chunker, events, clock, selfSpy);
         // The lock adapter runs the supplier inline for unit tests.
         when(lockPort.runWithLock(any(), any(), any(), any())).thenAnswer(invocation -> {
             Supplier<?> work = invocation.getArgument(3);
