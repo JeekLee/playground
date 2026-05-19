@@ -62,7 +62,7 @@ public class GatewaySecurityConfig {
                         // System routes Spring Security owns.
                         .pathMatchers("/oauth2/**", "/login/**", "/logout").permitAll()
                         // Actuator probes (compose healthcheck, ops).
-                        .pathMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                         // Public SSR routes. The frontend itself gates auth-required pages
                         // (`/docs/mine`, `/docs/new`) via SSR redirect to `/login` — the
                         // gateway must let the request through so the Next.js handler runs.

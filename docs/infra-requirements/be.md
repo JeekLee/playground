@@ -81,6 +81,32 @@ from the host is via `docker exec` only. An exception is the optional
 `PROMETHEUS_HOST_BIND` env-var (per ADR-15 §3) which conditionally
 binds Prometheus's :9090 to the host for ad-hoc PromQL CLI use.
 
+### spark-inference-gateway host binding
+
+The M5 dashboard probes `spark-inference-gateway` from inside the
+`metrics-api` container via `host.docker.internal:10080` (per ADR-04 +
+ADR-15 §12). The probe is a TCP-level HEAD `/v1/models` plus optional
+`/metrics` scrape, both reaching the host through the docker bridge.
+
+**Requirement:** the spark-inference-gateway process on the host must
+bind to `0.0.0.0:10080` (or to the docker bridge interface), not to
+`127.0.0.1:10080` only. If it binds to the loopback interface the
+container's request reaches the host's external/bridge interface and
+gets refused, the probe times out, and the dashboard renders the
+`spark-inference-gateway` cell as `down` even when the host process
+is healthy.
+
+Verify via:
+
+```bash
+ss -ltn | grep 10080
+# Expected:  LISTEN 0 ... 0.0.0.0:10080 ...
+# Wrong:     LISTEN 0 ... 127.0.0.1:10080 ...
+```
+
+If the vLLM runner is the source, pass `--host 0.0.0.0` on its startup
+command. The OpenAI-compatible API surface honours this flag.
+
 ### Operational reset
 
 To wipe observability state without affecting BC state:

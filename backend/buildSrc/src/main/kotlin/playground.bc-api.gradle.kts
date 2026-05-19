@@ -13,6 +13,12 @@ dependencies {
     "implementation"("org.springframework.boot:spring-boot-starter-web")
     "implementation"("org.springframework.boot:spring-boot-starter-validation")
     "implementation"("org.springframework.boot:spring-boot-starter-actuator")
+    // Wires the `/actuator/prometheus` endpoint for the M5 dashboard's
+    // Alloy scrape (per ADR-15 §3 + the M5 PRD §"Dependencies" invariant
+    // that every BC exports `/actuator/prometheus`). Works on both
+    // servlet and reactive stacks; without it the endpoint silently 404s
+    // and Alloy reports `up=0` for the target.
+    "implementation"("io.micrometer:micrometer-registry-prometheus")
     "implementation"("org.springframework.boot:spring-boot-starter-security")
     "implementation"("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
