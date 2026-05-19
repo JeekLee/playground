@@ -1,0 +1,46 @@
+# Loki single-binary config — transcribed verbatim from ADR-15 §4.
+#
+# Personal-scale single-node mode (`--target=all` is the default for the
+# grafana/loki:3.2.1 image entrypoint). Schema head is tsdb-v13 to avoid the
+# legacy boltdb-shipper retirement path. Retention is 72h (3 days) per ADR-15
+# §4 / §18; the operator override is `METRICS_LOKI_RETENTION_DAYS` (templated
+# at compose start time if the operator wants a different window — see ADR-15
+# §18 for the wiring).
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2026-05-19
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 72h
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  max_query_length: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

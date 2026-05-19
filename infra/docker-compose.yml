@@ -338,8 +338,110 @@ services:
       timeout: 10s
       retries: 10
 
+  # --- M5 s1: cadvisor-playground (per-container CPU/mem/IO/network metrics) ---
+  # Pinned by ADR-15 §6 + §A. Read-only docker.sock + read-only host mounts.
+  # NO host port — accessed by Alloy via compose-internal name only.
+  cadvisor-playground:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor-playground
+    command:
+      - --docker_only=true
+      - --store_container_labels=false
+      - --whitelisted_container_labels=service
+    volumes:
+      - /:/rootfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only docker socket (ADR-15 §6 + §20)
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # NO `ports:` — compose-internal only (ADR-15 §6).
+
+  # --- M5 s1: prometheus-playground (TSDB + remote-write receiver) ---
+  # Pinned by ADR-15 §3 + §A. Minimal scrape config — Alloy is the orchestrator
+  # and pushes everything else via remote_write (--web.enable-remote-write-receiver).
+  # Retention overridable via METRICS_PROM_RETENTION_DAYS (ADR-15 §18).
+  # Host bind is OFF by default; operator may set PROMETHEUS_HOST_BIND=9090 (or
+  # `127.0.0.1:9090`) to enable ad-hoc PromQL CLI access (ADR-15 §3 / spec §4.4).
+  prometheus-playground:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus-playground
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${METRICS_PROM_RETENTION_DAYS:-7}d
+      - --web.enable-remote-write-receiver
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-playground-data:/prometheus
+    ports:
+      - "${PROMETHEUS_HOST_BIND:-}:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # --- M5 s1: loki-playground (log TSDB, push receiver only) ---
+  # Pinned by ADR-15 §4 + §A. Single-binary `--target=all` (image default).
+  # tsdb schema head from day one; retention 72h (3d). Push receiver open to
+  # compose-internal traffic only (Alloy is the sole producer).
+  # NO host port — accessed by metrics-api via compose-internal name only.
+  loki-playground:
+    image: grafana/loki:3.2.1
+    container_name: loki-playground
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki-playground-data:/loki
+    environment:
+      METRICS_LOKI_RETENTION_DAYS: ${METRICS_LOKI_RETENTION_DAYS:-3}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    # NO `ports:` — compose-internal only (ADR-15 §4).
+
+  # --- M5 s1: alloy-playground (unified collector — scrape orchestrator + log shipper) ---
+  # Pinned by ADR-15 §5 + §A. Replaces Promtail + node_exporter; single-file
+  # River config at /etc/alloy/config.alloy. Mounts docker.sock read-only for
+  # discovery.docker + loki.source.docker. State volume persists log cursors.
+  # Depends on prometheus + loki being healthy (remote_write / loki.write
+  # endpoints must be reachable at startup or Alloy back-offs spam logs).
+  alloy-playground:
+    image: grafana/alloy:v1.3.1
+    container_name: alloy-playground
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only docker socket (ADR-15 §5 + §20)
+      - alloy-playground-data:/var/lib/alloy/data
+    depends_on:
+      prometheus-playground:
+        condition: service_healthy
+      loki-playground:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    # NO `ports:` — compose-internal only (ADR-15 §5).
+
 volumes:
   postgres-playground-data:
   redis-playground-data:
   kafka-playground-data:
   opensearch-playground-data:
+  prometheus-playground-data:
+  loki-playground-data:
+  alloy-playground-data:

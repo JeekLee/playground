@@ -1,0 +1,96 @@
+// =====================================================================
+// infra/observability/alloy/config.alloy
+// Grafana Alloy v1.3.1 — playground unified collector
+// Pinned by ADR-15 §5.
+//
+// Single-file River config (no include split). Four discrete
+// component groups:
+//   1. Backend BC scrape (5 BCs @ 5s) + observability self-scrape (10s)
+//   2. cAdvisor scrape (5s)
+//   3. Host metrics via prometheus.exporter.unix (10s)
+//   4. Docker log discovery + shipping to Loki
+// Plus the remote_write sink to Prometheus.
+//
+// `metrics-api:18085/actuator/prometheus` is intentionally NOT in the
+// backend_bcs target list for slice 1 (the metrics BC ships in slice 2).
+// A later slice MAY add it per ADR-15 §5 — Alloy will silently fail-open
+// on a missing target until then.
+// =====================================================================
+
+// 1. Backend BC scrape — 5 jobs at 5s cadence
+prometheus.scrape "backend_bcs" {
+  job_name = "playground-bcs"
+  targets = [
+    { __address__ = "gateway:18080",           service = "gateway",           __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "identity-api:18081",      service = "identity-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "docs-api:18082",          service = "docs-api",          __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "rag-ingestion-api:18083", service = "rag-ingestion-api", __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "rag-chat-api:18084",      service = "rag-chat-api",      __metrics_path__ = "/actuator/prometheus" },
+  ]
+  scrape_interval = "5s"
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+// 2. cAdvisor scrape — per-container CPU/mem
+prometheus.scrape "cadvisor" {
+  job_name = "cadvisor"
+  targets = [{ __address__ = "cadvisor-playground:8080" }]
+  scrape_interval = "5s"
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+// 3. Host metrics — replaces node_exporter
+prometheus.exporter.unix "host" { }
+prometheus.scrape "host" {
+  job_name        = "host"
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "10s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+// 4. Observability self-monitoring (Prometheus, Loki, Alloy itself, cAdvisor)
+prometheus.scrape "observability_self" {
+  job_name = "observability-self"
+  targets = [
+    { __address__ = "prometheus-playground:9090", service = "prometheus-playground", __metrics_path__ = "/metrics" },
+    { __address__ = "loki-playground:3100",       service = "loki-playground",       __metrics_path__ = "/metrics" },
+    { __address__ = "alloy-playground:12345",     service = "alloy-playground",      __metrics_path__ = "/metrics" },
+    { __address__ = "cadvisor-playground:8080",   service = "cadvisor-playground",   __metrics_path__ = "/metrics" },
+  ]
+  scrape_interval = "10s"
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+// 5. Local Prometheus (push) — remote_write sink
+prometheus.remote_write "local" {
+  endpoint { url = "http://prometheus-playground:9090/api/v1/write" }
+}
+
+// 6. Docker log discovery + shipping to Loki (per ADR-15 §11 label set)
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  labels     = { source = "docker" }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint { url = "http://loki-playground:3100/loki/api/v1/push" }
+}

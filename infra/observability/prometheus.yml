@@ -1,0 +1,22 @@
+# Prometheus minimal config — pinned by ADR-15 §3.
+#
+# Alloy is the scrape orchestrator (ADR-15 §5). Prometheus only scrapes Alloy's
+# own /metrics endpoint at :12345; every other job (backend BCs, cAdvisor, host
+# exporter, observability self-monitoring) is pushed to Prometheus from Alloy
+# via remote_write. The remote-write receiver is enabled at process start by
+# the compose command flag `--web.enable-remote-write-receiver`.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: playground
+
+scrape_configs:
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy-playground:12345"]
+        labels:
+          service: alloy-playground
+    metrics_path: /metrics
+    scrape_interval: 15s
