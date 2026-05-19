@@ -7,6 +7,8 @@ import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * JPA mirror of {@link com.playground.ragingestion.domain.model.DocumentChunk}
@@ -53,6 +55,10 @@ public class DocumentChunkJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "heading_path", nullable = false, columnDefinition = "text[]")
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    private String[] headingPath;
+
     protected DocumentChunkJpaEntity() {
         // for JPA
     }
@@ -65,7 +71,8 @@ public class DocumentChunkJpaEntity {
             String text,
             String bodyChecksum,
             Instant createdAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            String[] headingPath) {
         this.documentId = documentId;
         this.chunkIndex = chunkIndex;
         this.userId = userId;
@@ -74,6 +81,7 @@ public class DocumentChunkJpaEntity {
         this.bodyChecksum = bodyChecksum;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.headingPath = headingPath;
     }
 
     public UUID getDocumentId() {
@@ -106,5 +114,13 @@ public class DocumentChunkJpaEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String[] getHeadingPath() {
+        return headingPath;
+    }
+
+    public void setHeadingPath(String[] headingPath) {
+        this.headingPath = headingPath;
     }
 }
