@@ -143,6 +143,7 @@ User story는 spec §12의 5개 acceptance 서브섹션(Auth + tenant isolation 
 - [ ] Accordion expand 시 카드 per citation: `[n] Document title`, 약 160자 chunk excerpt, `↗ open` link to `/docs/{documentId}` (chunk anchor `#chunk-{chunkIndex}`는 M4.1).
 - [ ] Stale citation(문서가 사후 삭제됨, JOIN이 null title 반환)은 `[n] (deleted) — 이 문서는 더 이상 사용할 수 없습니다`로 graceful degrade하며 `↗ open` link는 사라진다 (per spec §4.3, §7.3).
 - [ ] N = 0인 retrieval(`RETRIEVAL_EMPTY`)인 경우 accordion은 "Citations · none"으로 렌더되고, expand 시 "(no citations — answer was unsupported)" 안내 — 답변 자체는 계속 stream된다 (per spec §6.5, §7.5).
+- **M3.1 amendment note (2026-05-19):** `rag.document_chunks`에 `heading_path text[]` 컬럼이 추가되었다 (ADR-13 §1 amendment). citation card가 향후 `[n] Document title · API > Auth` 같은 섹션 breadcrumb을 렌더할 수 있다. M4 frontend가 이 컬럼을 retrieval response payload에 포함시키고 카드 UI에 표시하는 작업은 M4 follow-up — 이 PRD의 P0 acceptance criteria에는 영향 없음.
 
 #### Story 14 — Stop affordance during streaming
 > As an authenticated user, I want to interrupt a long-running response so that I can cancel a bad turn and rephrase without waiting it out.
