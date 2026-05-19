@@ -1,6 +1,6 @@
 package com.playground.ragchat.application.service;
 
-import com.playground.ragchat.application.dto.ChatStreamEvent;
+import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
 import java.time.Instant;

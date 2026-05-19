@@ -1,10 +1,10 @@
 package com.playground.ragchat.api.controller;
 
-import com.playground.ragchat.application.dto.ChatStreamEvent;
 import com.playground.ragchat.application.service.ActiveTurnRegistry;
 import com.playground.ragchat.domain.exception.RagChatErrorCode;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
+import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.UUID;
 import org.slf4j.Logger;

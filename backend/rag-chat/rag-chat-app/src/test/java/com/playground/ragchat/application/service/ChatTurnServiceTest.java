@@ -11,7 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.playground.ragchat.application.dto.ChatStreamEvent;
+import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.ragchat.application.dto.ChatTurnRequest;
 import com.playground.ragchat.application.port.ChatGenerationPort;
 import com.playground.ragchat.application.port.ChunkRetrievalPort;
@@ -158,8 +158,12 @@ class ChatTurnServiceTest {
         List<ChatStreamEvent> events = chatTurnService.stream(req).collectList().block();
         assertThat(events).isNotNull();
         assertThat(events).hasSize(4);
-        assertThat(events.get(0)).isInstanceOf(ChatStreamEvent.Retrieval.class);
-        assertThat(((ChatStreamEvent.Retrieval) events.get(0)).chunks()).hasSize(3);
+        assertThat(events.get(0)).isInstanceOf(ChatStreamEvent.Phase.class);
+        ChatStreamEvent.Phase retrieval = (ChatStreamEvent.Phase) events.get(0);
+        assertThat(retrieval.step()).isEqualTo("retrieval");
+        @SuppressWarnings("unchecked")
+        java.util.List<?> chunks = (java.util.List<?>) retrieval.data().get("chunks");
+        assertThat(chunks).hasSize(3);
         assertThat(events.get(1)).isInstanceOf(ChatStreamEvent.Token.class);
         assertThat(((ChatStreamEvent.Token) events.get(1)).delta()).startsWith("Per [1]");
         assertThat(events.get(2)).isInstanceOf(ChatStreamEvent.Token.class);

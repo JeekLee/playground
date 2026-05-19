@@ -1,6 +1,5 @@
 package com.playground.ragchat.application.service;
 
-import com.playground.ragchat.application.dto.ChatStreamEvent;
 import com.playground.ragchat.application.dto.ChatTurnRequest;
 import com.playground.ragchat.application.port.ChatGenerationPort;
 import com.playground.ragchat.application.port.ChunkRetrievalPort;
@@ -22,6 +21,7 @@ import com.playground.ragchat.domain.service.CitationExtractor;
 import com.playground.ragchat.domain.service.HistoryTruncator;
 import com.playground.ragchat.domain.service.PromptTemplate;
 import com.playground.ragchat.domain.service.TokenCounter;
+import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -200,8 +200,16 @@ public class ChatTurnService {
                 prep.retrieved(), prep.truncatedHistory(), request.message(),
                 properties.perChunkTokenBudget());
 
+        // Wire compat note: shared-kernel grammar uses `Phase` with a
+        // `step` discriminator; PR A keeps the wire SSE event name
+        // `retrieval` (controller maps Phase(step="retrieval") → SSE event
+        // "retrieval" with citations payload). PR B will rename the wire
+        // event and lift the citation set to the terminal Done.
         Flux<ChatStreamEvent> retrievalEvent = Flux.just(
-                (ChatStreamEvent) new ChatStreamEvent.Retrieval(prep.retrieved()));
+                (ChatStreamEvent) new ChatStreamEvent.Phase(
+                        "retrieval",
+                        "Retrieving chunks",
+                        java.util.Map.of("chunks", prep.retrieved())));
 
         Flux<ChatStreamEvent> tokens = chatGenerationPort
                 .stream(prompt, properties.maxCompletionTokens())
@@ -323,7 +331,11 @@ public class ChatTurnService {
                     + " tokensOut=" + tokensOut
                     + " cited=" + toPersist.size());
 
-            return (ChatStreamEvent) new ChatStreamEvent.Done(persisted.id(), tokensIn, tokensOut);
+            // PR A: citations field stays null in the wire (NON_NULL strip
+            // in the SSE mapper). PR B will populate it with the cited
+            // subset and drop the legacy `retrieval` payload.
+            return (ChatStreamEvent) new ChatStreamEvent.Done(
+                    persisted.id().value().toString(), tokensIn, tokensOut, null);
         }).subscribeOn(Schedulers.boundedElastic());
     }
 

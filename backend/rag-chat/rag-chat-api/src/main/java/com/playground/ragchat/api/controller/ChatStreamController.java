@@ -1,13 +1,13 @@
 package com.playground.ragchat.api.controller;
 
 import com.playground.ragchat.api.dto.ChatTurnRequestBody;
-import com.playground.ragchat.application.dto.ChatStreamEvent;
 import com.playground.ragchat.application.dto.ChatTurnRequest;
 import com.playground.ragchat.application.service.ChatTurnService;
 import com.playground.ragchat.domain.exception.RagChatErrorCode;
 import com.playground.ragchat.domain.model.RetrievedChunk;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
+import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import jakarta.validation.Valid;
 import java.util.HashMap;
@@ -74,8 +74,26 @@ public class ChatStreamController {
     }
 
     static ServerSentEvent<Object> toSse(ChatStreamEvent evt) {
-        if (evt instanceof ChatStreamEvent.Retrieval r) {
-            return ServerSentEvent.<Object>builder(retrievalPayload(r.chunks())).event("retrieval").build();
+        if (evt instanceof ChatStreamEvent.Phase p) {
+            // PR-A wire compat: the retrieval phase is still serialised as
+            // SSE `event: retrieval` with the existing `{citations: [...]}`
+            // payload so the frontend SSE consumer doesn't have to change.
+            // PR B will rename the wire event to `phase` and move citations
+            // to the terminal `done` payload.
+            if ("retrieval".equals(p.step())) {
+                @SuppressWarnings("unchecked")
+                List<RetrievedChunk> chunks =
+                        (List<RetrievedChunk>) p.data().getOrDefault("chunks", List.of());
+                return ServerSentEvent.<Object>builder(retrievalPayload(chunks)).event("retrieval").build();
+            }
+            // Generic phase passthrough — reserved for PR B onward.
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("step", p.step());
+            data.put("label", p.label());
+            if (p.data() != null && !p.data().isEmpty()) {
+                data.put("data", p.data());
+            }
+            return ServerSentEvent.<Object>builder((Object) data).event("phase").build();
         }
         if (evt instanceof ChatStreamEvent.Token t) {
             Map<String, Object> data = new LinkedHashMap<>();
@@ -84,9 +102,14 @@ public class ChatStreamController {
         }
         if (evt instanceof ChatStreamEvent.Done d) {
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("messageId", d.messageId().value().toString());
+            data.put("messageId", d.messageId());
             data.put("tokensIn", d.tokensIn());
             data.put("tokensOut", d.tokensOut());
+            // `citations` left out of the wire when null (PR A); PR B
+            // will start populating with the cited subset.
+            if (d.citations() != null) {
+                data.put("citations", d.citations());
+            }
             return ServerSentEvent.<Object>builder((Object) data).event("done").build();
         }
         if (evt instanceof ChatStreamEvent.Error e) {
