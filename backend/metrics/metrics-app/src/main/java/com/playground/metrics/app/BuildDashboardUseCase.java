@@ -36,9 +36,21 @@ import reactor.core.publisher.Mono;
 @Service
 public class BuildDashboardUseCase {
 
-    /** Four JVM-bearing services per spec §5.2 jvm[] array. */
+    /**
+     * Every JVM-bearing service in the stack — six Spring Boot apps total
+     * (the BC quadruplets' -api modules + the gateway). Spec §5.2 listed
+     * four originally; the dashboard amendment in design context §2.1
+     * (post-slice-1) widens this to "all JVM-bearing services". Same
+     * deterministic order across polls so frontend card positions are
+     * stable.
+     */
     private static final List<String> JVM_SERVICES = List.of(
-            "rag-chat-api", "docs-api", "identity-api", "rag-ingestion-api");
+            "gateway",
+            "identity-api",
+            "docs-api",
+            "rag-ingestion-api",
+            "rag-chat-api",
+            "metrics-api");
 
     /** Three HTTP-bearing services per spec §5.2 httpRate[] array. */
     private static final List<String> HTTP_SERVICES = List.of(

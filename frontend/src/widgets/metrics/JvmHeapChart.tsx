@@ -118,9 +118,12 @@ export function JvmHeapChart({ service, jvm, range, pollKey }: JvmHeapChartProps
 }
 
 /**
- * Composite that renders the 4 JVM cards in the M5 P0 layout — one per
- * Spring Boot BC. The order matches design context §2.1: rag-chat,
- * docs-api, identity-api, rag-ingestion.
+ * Composite that renders one JVM heap card per JVM-bearing service. The
+ * service list comes from the dashboard payload's `jvm[]` (backend owns
+ * the source of truth — design context M5-metrics.md §2.1). On lg the
+ * row lays out as `grid-cols-3` (6 services pack into 3×2); on xl it
+ * collapses to `grid-cols-6` for a single-row display when viewport
+ * permits.
  */
 export interface JvmHeapRowProps {
   jvm: JvmSummary[] | null;
@@ -128,29 +131,22 @@ export interface JvmHeapRowProps {
   pollKey: number | null;
 }
 
-const JVM_ORDER: ReadonlyArray<string> = [
-  'rag-chat-api',
-  'docs-api',
-  'identity-api',
-  'rag-ingestion',
-];
-
 export function JvmHeapRow({ jvm, range, pollKey }: JvmHeapRowProps) {
-  const bySlug: Map<string, JvmSummary> = jvm
-    ? new Map(jvm.map((j) => [j.service, j]))
-    : new Map();
+  // Backend orders `jvm[]` deterministically (BuildDashboardUseCase.JVM_SERVICES).
+  // Render in that order so card positions stay stable across polls.
+  const services = jvm ?? [];
 
   return (
     <section aria-labelledby="metrics-jvm" className="flex flex-col gap-sm">
       <h2 id="metrics-jvm" className="text-eyebrow text-text-muted">
         JVM heap per BC
       </h2>
-      <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-4">
-        {JVM_ORDER.map((slug) => (
+      <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {services.map((entry) => (
           <JvmHeapChart
-            key={slug}
-            service={slug}
-            jvm={bySlug.get(slug) ?? null}
+            key={entry.service}
+            service={entry.service}
+            jvm={entry}
             range={range}
             pollKey={pollKey}
           />
