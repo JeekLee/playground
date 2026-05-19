@@ -72,7 +72,9 @@ spring:
           filters:
             - StripPrefix=3
         - id: metrics-api
-          uri: http://metrics-api:18086
+          # ADR-15 §1 — metrics-api lives on port 18085 (was 18086 in the
+          # placeholder; the lowest-unused-BC-port discipline put it at 18085).
+          uri: http://metrics-api:18085
           predicates:
             - Path=/api/metrics/**
           filters:

@@ -1,0 +1,56 @@
+server:
+  # ADR-15 §1 — gateway-routable port 18085. No host port mapping in compose
+  # per ADR-08 / ADR-15 §A; browser traffic flows through gateway:18080.
+  port: ${METRICS_API_PORT:18085}
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: metrics-api
+  main:
+    web-application-type: reactive
+  # ADR-15 §E — metrics BC has no Postgres / JPA. Belt-and-suspenders exclusions
+  # so a stray transitive dep doesn't trigger DataSource autoconfig (Spring
+  # Boot's well-known footgun where missing JDBC URL → embedded H2).
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+
+# ADR-15 §7 + §18 — upstream URLs + per-adapter timeouts.
+playground:
+  metrics:
+    prometheus:
+      base-url: ${METRICS_PROMETHEUS_BASE_URL:http://prometheus-playground:9090}
+      timeout-ms: 8000
+    loki:
+      base-url: ${METRICS_LOKI_BASE_URL:http://loki-playground:3100}
+      timeout-ms: 15000
+    spark-gateway:
+      base-url: ${METRICS_SPARK_GATEWAY_BASE_URL:http://host.docker.internal:10080}
+      probe-cache-ttl-seconds: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: metrics
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui
+
+logging:
+  level:
+    com.playground.metrics: INFO
