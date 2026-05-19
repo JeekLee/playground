@@ -192,4 +192,24 @@ class WindowNormalizerTest {
         assertThat(drafts).hasSize(1);
         assertThat(drafts.get(0).text().value()).endsWith("a b c.");
     }
+
+    @Test
+    void trailing_merge_does_not_duplicate_heading_prefix() {
+        // A section that produces 3 chunks where the last is < minChunkTokens.
+        // After merge, the surviving chunks should each have AT MOST one
+        // "> Context:" breadcrumb prefix.
+        StringBuilder md = new StringBuilder("# Outer\n\n## Inner\n\n");
+        String para = "Word ".repeat(200);
+        for (int i = 0; i < 6; i++) md.append(para).append("\n\n");
+        md.append("tiny.\n");  // forces a trailing chunk < 64 tokens
+        List<ChunkDraft> drafts = normalizer.normalize(builder.build(md.toString()));
+
+        drafts.forEach(d -> {
+            String t = d.text().value();
+            long contextCount = t.lines()
+                    .filter(line -> line.startsWith("> Context:"))
+                    .count();
+            assertThat(contextCount).as("chunk should have at most one Context prefix").isLessThanOrEqualTo(1);
+        });
+    }
 }
