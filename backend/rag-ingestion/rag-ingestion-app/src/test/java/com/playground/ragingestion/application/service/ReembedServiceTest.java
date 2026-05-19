@@ -41,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -83,8 +84,14 @@ class ReembedServiceTest {
     @BeforeEach
     void setup() {
         clock = Clock.fixed(Instant.parse("2026-05-20T12:00:00Z"), ZoneOffset.UTC);
+        // Two-step construction: create a shadow with self=null, spy it, then
+        // pass the spy as `self` so self.reembedInTx() calls work correctly
+        // when the runWithLock stub invokes the lambda inline.
+        ReembedService shadow = new ReembedService(
+                CHUNKER, embeddingPort, chunkRepository, bodyFetchPort, lockPort, events, clock, null);
+        ReembedService selfSpy = Mockito.spy(shadow);
         service = new ReembedService(
-                CHUNKER, embeddingPort, chunkRepository, bodyFetchPort, lockPort, events, clock);
+                CHUNKER, embeddingPort, chunkRepository, bodyFetchPort, lockPort, events, clock, selfSpy);
 
         // Lock runs supplier inline (unit test) — same pattern as IngestionServiceTest.
         when(lockPort.runWithLock(any(), any(), any(), any())).thenAnswer(invocation -> {

@@ -18,6 +18,7 @@ import com.playground.ragingestion.domain.model.vo.ChunkText;
 import com.playground.ragingestion.domain.model.vo.Embedding;
 import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
 import java.time.Clock;
+import org.springframework.context.annotation.Lazy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -70,6 +71,11 @@ public class IngestionService {
     private final MarkdownAwareChunker chunker;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    /** Self-injection via {@code @Lazy} to allow {@code @Transactional} proxy
+     *  to intercept the {@code *InTx} methods called from inside a Redisson
+     *  {@code runWithLock} lambda (which holds a raw {@code this} reference,
+     *  bypassing the CGLIB proxy). */
+    private final IngestionService self;
 
     public IngestionService(
             ChunkRepository chunkRepository,
@@ -78,7 +84,8 @@ public class IngestionService {
             DistributedLockPort lockPort,
             MarkdownAwareChunker chunker,
             ApplicationEventPublisher events,
-            Clock clock) {
+            Clock clock,
+            @Lazy IngestionService self) {
         this.chunkRepository = chunkRepository;
         this.bodyFetchPort = bodyFetchPort;
         this.embeddingPort = embeddingPort;
@@ -86,6 +93,7 @@ public class IngestionService {
         this.chunker = chunker;
         this.events = events;
         this.clock = clock;
+        this.self = self;
     }
 
     /**
@@ -97,7 +105,7 @@ public class IngestionService {
     public void handleUploaded(DocumentUploadedEvent event) {
         String lockKey = lockKey(event.documentId());
         lockPort.runWithLock(lockKey, LOCK_WAIT, LOCK_LEASE, () -> {
-            ingestInTx(event);
+            self.ingestInTx(event);
             return null;
         });
     }
@@ -187,7 +195,7 @@ public class IngestionService {
     public void handleVisibilityChanged(DocumentVisibilityChangedEvent event) {
         String lockKey = lockKey(event.documentId());
         lockPort.runWithLock(lockKey, LOCK_WAIT, LOCK_LEASE, () -> {
-            retagInTx(event);
+            self.retagInTx(event);
             return null;
         });
     }
@@ -212,7 +220,7 @@ public class IngestionService {
     public void handleDeleted(DocumentDeletedEvent event) {
         String lockKey = lockKey(event.documentId());
         lockPort.runWithLock(lockKey, LOCK_WAIT, LOCK_LEASE, () -> {
-            deleteInTx(event);
+            self.deleteInTx(event);
             return null;
         });
     }

@@ -15,6 +15,7 @@ import com.playground.ragingestion.domain.model.vo.ChunkText;
 import com.playground.ragingestion.domain.model.vo.Embedding;
 import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
 import com.playground.shared.error.NotFoundException;
+import org.springframework.context.annotation.Lazy;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -82,6 +83,11 @@ public class ReembedService {
     private final DistributedLockPort lockPort;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    /** Self-injection via {@code @Lazy} to allow {@code @Transactional} proxy
+     *  to intercept {@code reembedInTx} called from inside a Redisson
+     *  {@code runWithLock} lambda (which holds a raw {@code this} reference,
+     *  bypassing the CGLIB proxy). */
+    private final ReembedService self;
 
     public ReembedService(
             MarkdownAwareChunker chunker,
@@ -90,7 +96,8 @@ public class ReembedService {
             BodyFetchPort bodyFetchPort,
             DistributedLockPort lockPort,
             ApplicationEventPublisher events,
-            Clock clock) {
+            Clock clock,
+            @Lazy ReembedService self) {
         this.chunker = chunker;
         this.embeddingPort = embeddingPort;
         this.chunkRepository = chunkRepository;
@@ -98,6 +105,7 @@ public class ReembedService {
         this.lockPort = lockPort;
         this.events = events;
         this.clock = clock;
+        this.self = self;
     }
 
     /**
@@ -113,7 +121,7 @@ public class ReembedService {
         String lockKey = lockKey(documentId);
         try {
             return lockPort.runWithLock(lockKey, LOCK_WAIT, LOCK_LEASE,
-                    () -> reembedInTx(documentId));
+                    () -> self.reembedInTx(documentId));
         } catch (NotFoundException e) {
             // docs-api returned 404: document was deleted — harmless, skip it.
             log.warn(String.format(
