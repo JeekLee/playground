@@ -26,6 +26,7 @@ prometheus.scrape "backend_bcs" {
     { __address__ = "docs-api:18082",          service = "docs-api",          __metrics_path__ = "/actuator/prometheus" },
     { __address__ = "rag-ingestion-api:18083", service = "rag-ingestion-api", __metrics_path__ = "/actuator/prometheus" },
     { __address__ = "rag-chat-api:18084",      service = "rag-chat-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "metrics-api:18085",       service = "metrics-api",       __metrics_path__ = "/actuator/prometheus" },
   ]
   scrape_interval = "5s"
   scrape_timeout  = "4s"

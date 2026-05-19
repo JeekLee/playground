@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.reactive.resource.NoResourceFoundException;
 import org.springframework.web.server.ServerWebExchange;
 
 /**
@@ -45,6 +46,24 @@ public class RagChatReactiveExceptionHandler {
         }
 
         return new ResponseEntity<>(body, headers, ex.httpStatus());
+    }
+
+    /**
+     * Spring WebFlux's static-resource handler raises {@code
+     * NoResourceFoundException} when a path matches neither a controller
+     * nor a static file. Without this branch the fallback below would wrap
+     * it as a {@code SHARED-INTERNAL-001} 500, masking the actual 404
+     * (we hit this during M5 integration where {@code /actuator/prometheus}
+     * 404s if {@code micrometer-registry-prometheus} is missing).
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(
+            NoResourceFoundException ex, ServerWebExchange exchange) {
+        String path = exchange.getRequest().getURI().getPath();
+        ErrorResponse body = ErrorResponse.of(
+                "SHARED-NOT_FOUND-001", "Resource not found", path, null);
+        log.debug("[{}] {} path={}", body.errorCode(), body.message(), body.path());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
     @ExceptionHandler(Exception.class)

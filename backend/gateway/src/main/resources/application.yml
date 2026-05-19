@@ -103,7 +103,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # ADR-15 M5 — prometheus scrape from Alloy. health for the
+        # docker-compose healthcheck.
+        include: health,info,prometheus
   endpoint:
     health:
       show-details: when_authorized
