@@ -22,14 +22,18 @@ The 6 frames span this whole flow as a single design narrative.
 
 | # | Frame node-id | Current Figma name | Intended name | Position (x, y) | Created via |
 |---|---|---|---|---|---|
-| 1 | `78:1280` | `M6 — Docs /docs/new with PDF support  /docs/new` | (same — built fresh) | (0, 4500) | `create_frame` |
+| # | Frame node-id | Current Figma name | Intended name | Position (x, y) | Created via |
+|---|---|---|---|---|---|
+| 1 | `78:1531` | `M2 — + New document dropdown (overlay)  /docs` (stale clone of `30:859`) | `M6 — + New document dropdown (overlay, .md or .pdf)  /docs` | (0, 5500) | `clone_node` of M2's `30:859` + `set_text_content` on the Import row + state annotation |
 | 2 | `78:1329` | `M7 — Generic tool_result card pattern (DS primitive)  global` | (same — built fresh) | (1490, 4500) | `create_frame` |
 | 3 | `78:1347` | `M8 — /chat with completed generate_massing tool result card  /chat` | (same — built fresh) | (2980, 4500) | `create_frame` |
 | 4 | `78:1392` | `M8 — /chat with completed generate_massing tool result card  /chat` (stale clone) | `M8 — /chat with tool_result card EXPANDED (program details)  /chat` | (4470, 4500) | `clone_node` of Frame 3 |
 | 5 | `78:1437` | `M8 — /chat with completed generate_massing tool result card  /chat` (stale clone) | `M8 — /chat with tool_error card (generation failed)  /chat` | (5960, 4500) | `clone_node` of Frame 3 |
-| 6 | `78:1492` | `M6 — Doc detail (PDF source) with PDF badge  /docs/{id}` | (same — built fresh) | (7450, 4500) | `create_frame` |
+| 6 | `78:1552` | `M2 — Document detail (public)  /docs/public/{slug}` (stale clone of `31:66`) | `M6 — Document detail (PDF source) with (PDF) badge  /docs/{id}` | (1490, 5500) | `clone_node` of M2's `31:66` + title/meta `set_text_content` + new `(PDF)` badge rectangle+text |
 
-The three frames built fresh (`create_frame`) carry their final names. The two clones (Frames 4 and 5) carry the stale parent name and need an operator manual rename.
+The fresh-built frames (`create_frame`) carry their final names. The four cloned frames (1, 4, 5, 6) carry the stale parent name and need an operator manual rename (cursor-talk-to-figma plugin has no `set_node_name` tool).
+
+**Superseded frame note:** an earlier iteration of this design built Frame 1 (`78:1280`) and Frame 6 (`78:1492`) as fresh full-page redesigns of `/docs/new` and the doc detail — that approach was rejected because it broke M2 chrome consistency and over-designed what is fundamentally a 1-line dropdown change + 1-badge addition. `78:1492` has been deleted; `78:1280` remains in the Figma file as an orphan that the operator can delete manually (delete from Figma file when next opened). This `Frame mapping` table references only the corrected frames.
 
 ## 1. Overview
 
@@ -39,7 +43,7 @@ M6 + M7 + M8 together is the first **agentic vertical** in playground — a sing
 
 From a UX perspective, four affordances are new across the three milestones:
 
-1. **`.pdf` MIME branch** in M2's file picker (M6) — the `Accepted formats:` line gains `.pdf`, the file picker validator accepts `application/pdf`, and the uploaded doc gets a small `(PDF)` indicator badge on the doc card / doc detail page.
+1. **`.pdf` MIME branch** in M2's `+ New document → Import .md…` dropdown (M6) — the dropdown's second-row label becomes `↑ Import .md or .pdf…`, the native file picker's `accept` attribute gains `.pdf`, and the uploaded doc gets a small `(PDF)` indicator badge inline next to the title on the doc detail page (plus on doc cards in `/docs/mine`, when the implementer adds it there — see Open Question #4). **No new page or redesigned UI** — the `/docs/new` editor page (frame `36:191`) is unchanged; the only visual deltas are one dropdown row label and one inline badge.
 2. **`tool_result` card** in `/chat` (M7 + M8) — a structured card that materializes **below** the LLM's natural-language assistant message when an SSE `tool_result` event arrives. M7 defines the slot anatomy; M8 fills in the slots for `generate_massing`.
 3. **`tool_error` card** in `/chat` (M7 + M8) — same card shell but in `warning` palette, with a secondary action ("Try a different brief") instead of a primary action.
 4. **Expandable metadata accordion** inside the `tool_result` card (M8) — the `▾ Program details` accordion that opens to reveal the extracted room program table. Same visual pattern as M4's citation accordion (`▾ Citations · N`), kept consistent across the design system.
@@ -68,35 +72,32 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 
 ## 2. Per-screen specifications
 
-### 2.1 M6 — `/docs/new` with PDF support — frame node-id: `78:1280`
+### 2.1 M6 — `+ New document` dropdown with `.md or .pdf` — frame node-id: `78:1531`
 
-- **Purpose:** the first contact with M6's user-facing feature. The `+ New document → Import .md…` dropdown row from M2 (frame `30:859` row 2) becomes a more prominent drag-drop import card on `/docs/new`. The new piece is **`.pdf` in the `Accepted formats:` line**, and a `(PDF)` badge on any doc card that was sourced from a PDF.
-- **PRD acceptance criteria covered:** roadmap §M6 acceptance — "Frontend `/docs/new` file picker accepts `.pdf`", "Doc detail page shows `(PDF)` indicator for PDF-sourced docs".
-- **Spec trace:** §4 (M6 scope — `application/pdf` MIME accepted, `mime_type` column, frontend `(PDF)` indicator).
-- **Auth state:** signed-in only. Anon hits → `/login?return=/docs/new` (M2 spec §7.1).
-- **Figma frame:** `M6 — Docs /docs/new with PDF support  /docs/new` — node `78:1280`. ![screenshot](assets/M6-M8/m6-docs-new.png)
-- **Key elements:**
-  - **Sidebar (232 px, `surface.soft`):** identical to M2 — brand row → search pill → APPS section with `Home` inactive, `Docs` **active** (`accent.soft` bg + `accent` fg + weight 600, no badge), `Chat` inactive primary fg (shipped post-M4), `System status` inactive primary fg (shipped post-M5). Account footer card pinned to bottom (16 px above frame bottom).
-  - **Topbar (1208 × 56, `bg`, `border-bottom 1px border`):** breadcrumb `Home  /  Docs  /  New document` on left. `● Signed in` success chip + account pill `JeekLee ▾` on right.
-  - **Page title:** `New document` in `font.h1` 28 / 700 / `text`.
-  - **Page subtitle:** `Start from a blank canvas or import a file.` in `font.body` 15 / 400 / `text.muted`.
-  - **Import card (1158 × 200, `surface` bg, `border.strong` 1.5 px stroke, `radius.lg` 14 px):** centered upload glyph `↑` in `accent` 40 / 600 → bold title `Drop a file here, or click to browse` (`font.h3` 16 / 600 / `text`) → subtitle `Accepted formats: .md, .pdf — text-PDFs only (OCR is M6.1)` (`font.small` 13 / 400 / `text.muted`) → **primary action button** `⌕  Browse files` (160 × 36, `accent` bg, `radius.md`, white label 13 / 600).
-  - **Recent docs section** (`RECENT` eyebrow + 3 cards in a row, 378 × 120 each, 12 px gap):
-    - **Card 1** — `ADR-13 chunking notes` (no badge — markdown source).
-    - **Card 2 (the PDF one)** — `서울대 도서관 공모 지침서` + **`(PDF)` badge** (52 × 20, `accent.soft` bg, `radius.pill`, `accent` fg 11 / 600) inline next to the title. Korean excerpt below; meta `brief · 12 min · 6h ago`.
-    - **Card 3** — `M3 backfill plan` (no badge).
-  - **State annotation** below the cards (in `text.muted` 11 / 400): `state: drag-drop card (cream stroke at 1.5px hints at drag-over affordance). M6 change = the "Accepted formats" line gains '.pdf'; recent card 2 carries the new '(PDF)' badge after upload.`
+- **Purpose:** M6's only new-upload surface change. The `+ New document` button on `/docs/mine` opens a 2-row dropdown overlay; **row 2's label is the ONE element M6 modifies** — `↑ Import .md…` → `↑ Import .md or .pdf…`. Everything else (button position, dropdown shape, hover styling, `Blank document` row, the underlying `/docs/mine` page chrome) is **M2 verbatim** — this frame is a clone of M2's `30:859` with the one-line text change applied.
+- **Why no `/docs/new` redesign:** `/docs/new` (M2 frame `36:191`) is the **Notion-style block editor**, not an upload UI. Upload happens via this dropdown's row 2 → native file picker. M6 changes the dropdown row label + the file picker's `accept` attribute. No M6 frame for `/docs/new` is needed.
+- **PRD acceptance criteria covered:** roadmap §M6 acceptance — `POST /api/docs/upload` accepts `application/pdf`; frontend file picker accepts `.pdf`.
+- **Spec trace:** §4 (M6 scope — `application/pdf` MIME accepted, `mime_type` column).
+- **Auth state:** signed-in only — the underlying `/docs/mine` page is auth-gated per M2 spec.
+- **Figma frame:** stale clone name `M2 — + New document dropdown (overlay)  /docs` — node `78:1531` (operator manual rename to `M6 — + New document dropdown (overlay, .md or .pdf)  /docs`). ![screenshot](assets/M6-M8/m6-dropdown.png)
+- **Key elements (M2 verbatim except row 2 label):**
+  - **Sidebar (232 px, `surface.soft`):** brand row → search pill → APPS section. Layout identical to M2's `30:859`.
+  - **Topbar (1208 × 60, `bg`, `border-bottom 1px border`):** breadcrumb `Documents` on left.
+  - **Page title:** `My documents` in `font.h2` 20 / 600 / `text`.
+  - **Search input** (280 × 36, top-right) and **`+ New document` primary button** (180 × 36, `accent` bg, with `▾` chevron divider on the right edge).
+  - **Dropdown card** (200 × 88, `surface` bg, `border` 1 px, `radius.md`) anchored below the button:
+    - Row 1: `+  Blank document` (font.body 13 / 500 / text) — unchanged.
+    - Row 2: **`↑  Import .md or .pdf…`** (font.body 13 / 500 / text) — **M6's only label change**. Hovered state shown — row 2 has `surface.soft` bg.
+- **Below-the-fold state annotation** (in `text.muted` 11 / 400): `state: dropdown OPEN, row 2 hovered. M6 change = label gains ".pdf" alongside ".md". Click Blank document → /docs/new. Click Import .md or .pdf… → native file picker (.md, .pdf) → POST /api/docs multipart.`
 - **Interactions:**
-  - Click **Browse files** → native file picker dialog with `accept=".md,.pdf"`.
-  - Drop a `.pdf` onto the import card → POST `/api/docs/upload` multipart with `Content-Type: application/pdf`. Card border transitions to `accent` during drag-over (not visualized in static frame).
-  - On successful upload, navigation → `/docs/{id}` (Frame 6's surface) where the body content is the PDFBox-extracted text and the `(PDF)` badge is rendered inline.
-  - Click any recent card → `/docs/{id}` for that doc.
-- **Per-state:**
-  - **Idle (rendered):** cream-stroke card, "Drop a file here" copy.
-  - **Drag-over** (not drawn): card border → `accent`, bg → `accent.soft` at 0.3 opacity. Glyph color → `accent`.
-  - **Upload in progress** (not drawn): card body replaced by a `Uploading… 47%` line with a determinate progress bar in `accent`.
-  - **Upload failed (corrupted PDF, 400)** (not drawn): card border → `danger`, error copy `Could not read this PDF — try a different file.` per M6 spec key open question (the exact 400 error code is closed by ADR-16).
-- **Spacing tokens used:** `spacing.lg` 24 px between page title and subtitle; `spacing.lg` 24 px between subtitle and import card; `spacing.xl` 40 px between import card and the recent-docs section; `spacing.sm` 8 px between adjacent recent cards.
+  - Click `+ Blank document` → navigate to `/docs/new` (M2 frame `36:191`, editor unchanged).
+  - Click `↑ Import .md or .pdf…` → trigger native file picker dialog with `accept=".md,.pdf"`. On file select → POST `/api/docs/upload` multipart with `Content-Type: application/pdf` (for `.pdf`) or `text/markdown` (for `.md`). On success → navigate to `/docs/{id}` (Frame 6 — the doc detail surface).
+- **Per-state (only the row 2 hover state is drawn):**
+  - **Hover row 2 (rendered):** row 2 bg → `surface.soft`, label color unchanged.
+  - **Click row 2** (not drawn): dropdown closes; native OS file picker opens. No additional Figma frame needed — the file picker is OS chrome.
+  - **Upload in progress** (not drawn): the page shows a transient toast `Uploading…` and the dropdown closes. Implementer's choice whether to visualize a progress bar in P0.
+  - **Upload failed (corrupted PDF, 400)** (not drawn): toast `Could not read this PDF — try a different file.` Per M6 ADR-16 open question (exact 400 error code is closed there).
+- **Spacing tokens used:** identical to M2 `30:859` — `spacing.md` 16 px between button and dropdown card top edge; `spacing.xs` 4 px between dropdown rows.
 
 ### 2.2 M7 — Generic `tool_result` card pattern (DS primitive) — frame node-id: `78:1329`
 
@@ -229,37 +230,35 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
   - All four error sub-states share the same visual shell — only the icon, summary copy, code string, and secondary action label change.
 - **Spacing tokens used:** identical to Frame 3 (same card shape, different palette).
 
-### 2.6 M6 — Doc detail (PDF source) with `(PDF)` badge — frame node-id: `78:1492`
+### 2.6 M6 — Doc detail (PDF source) with `(PDF)` badge — frame node-id: `78:1552`
 
-- **Purpose:** the doc detail page when the document was uploaded as a `.pdf`. The PDFBox-extracted text renders identically to a `.md`-sourced doc; the **`(PDF)` badge inline next to the title** is the only visual difference. Plus a blockquote callout (re-using M2's blockquote pattern from `31:108`) explaining the M6 P0 extraction limitations.
+- **Purpose:** the doc detail page when the document was uploaded as a `.pdf`. **The page is M2's `Document detail` (frame `31:66`) verbatim — sidebar, topbar, breadcrumb format, title typography, author meta row, copy-link pill chip, view counter, like button, body rendering, footer back link.** M6 adds **two surgical changes** only: (a) the `(PDF)` badge inline next to the title, (b) the meta row gains `· source: .pdf (12 pages)` at the end. No new actions, no `Use in /chat` button (rejected as out-of-spec), no extra blockquote callouts.
 - **PRD acceptance criteria covered:** roadmap §M6 acceptance — "Doc detail page shows `(PDF)` indicator for PDF-sourced docs".
-- **Spec trace:** §4 (M6 — `mime_type = 'application/pdf'` on the row drives the badge render).
-- **Auth state:** signed-in (the public variant of this surface — when an architect publishes a brief publicly — would mirror M2 frame `31:66` and render the same badge in the public chrome).
-- **Figma frame:** `M6 — Doc detail (PDF source) with PDF badge  /docs/{id}` — node `78:1492`. ![screenshot](assets/M6-M8/m6-doc-detail-pdf.png)
-- **Key elements:**
-  - **Sidebar + topbar:** M2 verbatim. `Docs` row active.
-  - **Breadcrumb:** `Home  /  Docs  /  서울대 도서관 공모 지침서`.
+- **Spec trace:** §4 (M6 — `mime_type = 'application/pdf'` on the row drives the badge render; `pdf_page_count` if persisted drives the `(12 pages)` meta extra).
+- **Auth state:** Frame 78:1552 cloned the **public-view variant** of M2's doc detail (31:66 — same surface authenticated and anonymous viewers see when the doc is `visibility = 'public'`). Auth-gated variant (when the doc is `private` and only owner can view) follows the same badge convention; not drawn separately since the M6 delta is identical.
+- **Figma frame:** stale clone name `M2 — Document detail (public)  /docs/public/{slug}` — node `78:1552` (operator manual rename to `M6 — Document detail (PDF source) with (PDF) badge  /docs/{id}`). ![screenshot](assets/M6-M8/m6-doc-detail-pdf.png)
+- **Key elements (M2 31:66 verbatim except the two M6 deltas marked):**
+  - **Sidebar + topbar:** M2's public-chrome verbatim. `Viewing publicly` chip + `Sign in with Google` button on right (when anon); for the auth variant the right side becomes the `● Signed in` chip + account pill.
+  - **Breadcrumb:** `Documents / 서울대 도서관 공모 지침서` in `font.body` 13 / 500 / `text.muted`. (M2's format — kept verbatim, NOT `Home / Docs / ...`.)
   - **Doc title:** `서울대 도서관 공모 지침서` in `font.h1` 28 / 700 / `text`.
-  - **`(PDF)` badge** inline next to the title, with 18 px gap from the last character: 60 × 22, `accent.soft` bg, `radius.pill`, `accent` fg 11 / 600, label `(PDF)`. Same visual treatment as the recent-card badge in Frame 1 (visual consistency across surfaces).
-  - **`↗ Use in /chat` text link** in `accent` 13 / 600, anchored top-right (1246, 104 frame-relative). Clicking it opens `/chat` and pre-fills the composer with `[doc:{id}] {title}` so the LLM has context (this is an M6.1 enhancement; the P0 just links to `/chat` and the architect types the question). Documented here as the intended affordance — implementer's call whether to ship the auto-prefill in P0 or defer to M6.1.
-  - **Meta row:** 32 × 32 khaki avatar + `JeekLee` (13 / 600) + meta `uploaded 6 hours ago  ·  brief  ·  12 min read  ·  source: .pdf (12 pages)` in `font.small` 11 / 400 / `text.muted`. Note the `source: .pdf (12 pages)` extra — this is the M6 surfacing of the `mime_type` + `pdf_page_count` metadata (optional, can be hidden if implementer prefers a cleaner meta row).
-  - **Body content** — PDFBox-extracted markdown-rendered:
-    - H2: `1. 사이트 개요`
-    - Paragraph (Korean): "대지면적 200㎡ (20m × 10m), 최대 층수 5층, 층고 3.5m. 본 공모는 서울대학교 도서관 부속 학습공간을 신설하는 프로젝트로, 기존 도서관 인접 부지에 추가 학습실 및 회의실, 카페테리아, 화장실, 사무실 등을 포함하는 새 건축물 제안을 요청한다."
-    - H2: `2. 실 구성 (Room program)`
-    - Bullet list of 6 room categories.
-  - **Blockquote callout** (3 px `border.strong` left rule + Korean text in `text.muted` 14 / 400): "PDF 원본은 12 페이지였으나, M6 P0는 PDFBox 텍스트 추출만 지원합니다. 표·도면·이미지는 누락될 수 있어요. M6.1에서 OCR + 레이아웃 인식이 추가되면 표/도면도 포함됩니다."
-    - This is the M6 P0 transparency callout — tells the reader that what they see is extracted-text only, not the full original PDF. The implementer can choose to render this only when `mime_type = 'application/pdf'` and `body_length / pdf_page_count < threshold`, OR always when PDF, OR never (operator preference). Default: render on every PDF-sourced doc, in `text.muted` so it's noticeable but doesn't dominate.
-  - **Back link:** `← All documents` in `accent` 13 / 500.
-- **Interactions:**
-  - Click `↗ Use in /chat` → opens `/chat` (Frame 3-shaped surface, but with a fresh empty session) with the composer optionally pre-filled.
+  - **🆕 `(PDF)` badge** inline immediately right of the title with ~16 px gap from the last character: 56 × 22, `accent.soft` bg, `radius.pill`, `accent` fg 11 / 600, label `(PDF)`. **This is the first M6 delta.** Visual treatment matches the M5 sidebar's milestone-badge pattern (small inline pill).
+  - **Author meta row:** 32 × 32 khaki avatar + `JeekLee` (13 / 600) + `published 3 days ago` (11 / 400 / text.muted).
+  - **Copy-link pill chip** (400 × 32, `surface` bg, `border` 1 px, `radius.pill`) anchored right of the author meta with the relative URL: `⎘ /docs/a3f2b9c1-7e5d-4abc-9def-1234567890ab`.
+  - **🆕 Meta inline row** (below the avatar/copy-link block): `brief · 12 min read · 👁 1,247 · source: .pdf (12 pages)` in `font.small` 13 / 400 / `text.muted`. **The `· source: .pdf (12 pages)` tail is the second M6 delta** — surfaces the `mime_type` + `pdf_page_count` metadata so a reader knows the body is PDFBox-extracted, not authored markdown. (Implementer choice — can hide if preferred; recommend show for transparency.)
+  - **Like button** (76 × 26, `surface` bg, `border` 1 px, `radius.pill`) with `♡ 42` label + `Sign in to like` hint (when anon).
+  - **Body content** — PDFBox-extracted text rendered as markdown. M2 31:66's body content is preserved verbatim in the cloned frame (the demo content reads `Building an agent team` content — illustrative; the actual brief content would replace this at runtime). The body rendering pipeline is M2 verbatim — `unified + remark-gfm + rehype-sanitize + shiki`, no M6-specific behavior.
+  - **Back link:** `← All documents` in `accent` 13 / 500 — bottom of body area.
+- **Interactions (M2 verbatim):**
+  - Click copy-link pill → copies URL to clipboard, brief toast `Link copied`.
+  - Click `♡ 42` → if signed in, toggles like; if anon, brief tooltip → `Sign in to like`.
   - Click `← All documents` → `/docs` (M2 frame `37:363`).
-  - All body markdown elements (links, code blocks) behave per the M2 rendering contract — no M6-specific behavior in body rendering.
+  - Click `Sign in with Google` (when anon) → OAuth flow.
 - **Per-state:**
-  - **PDF source with extracted body (rendered):** the drawn state.
-  - **PDF source with empty body (extraction yielded empty string — rare, e.g. an image-only PDF):** body area renders the M2 empty-state pattern (`This document is empty.` in `text.muted`) with the blockquote callout retained.
-  - **Markdown source (no PDF badge):** identical chrome, no badge, no callout. Same surface — only the badge + callout drop out.
-- **Spacing tokens used:** `spacing.md` 16 px between title and meta row; `spacing.lg` 24 px between meta and the first H2; `spacing.lg` 24 px between body sections; `spacing.md` 16 px between blockquote and the back link.
+  - **PDF source, public, anon viewing (rendered):** the drawn state.
+  - **PDF source, public, signed-in viewing:** topbar right side swaps to `● Signed in` chip + account pill; like button works; everything else identical.
+  - **PDF source, private (owner-only):** topbar right side shows `● Signed in` chip + account pill (auth-only path; no anon access).
+  - **Markdown source (no PDF badge):** identical chrome, no `(PDF)` badge inline with title, meta row drops the `· source: .pdf (12 pages)` tail. **All other elements unchanged** — same page, conditionally rendered badge + meta extra.
+- **Spacing tokens used:** identical to M2 `31:66`. `spacing.md` 16 px between title row and avatar meta row; `spacing.lg` 24 px between avatar meta and meta-inline row; `spacing.lg` 24 px between meta-inline row and body content. The `(PDF)` badge sits with `spacing.md` 16 px gap from the title's last character.
 
 ## 3. Reused chrome elements (M1 / M2 / M4 components, NOT reinvented)
 
