@@ -28,6 +28,7 @@ prometheus.scrape "backend_bcs" {
     { __address__ = "rag-chat-api:18084",      service = "rag-chat-api",      __metrics_path__ = "/actuator/prometheus" },
   ]
   scrape_interval = "5s"
+  scrape_timeout  = "4s"
   forward_to = [prometheus.remote_write.local.receiver]
 }
 
@@ -36,6 +37,7 @@ prometheus.scrape "cadvisor" {
   job_name = "cadvisor"
   targets = [{ __address__ = "cadvisor-playground:8080" }]
   scrape_interval = "5s"
+  scrape_timeout  = "4s"
   forward_to = [prometheus.remote_write.local.receiver]
 }
 
@@ -45,6 +47,7 @@ prometheus.scrape "host" {
   job_name        = "host"
   targets         = prometheus.exporter.unix.host.targets
   scrape_interval = "10s"
+  scrape_timeout  = "8s"
   forward_to      = [prometheus.remote_write.local.receiver]
 }
 
@@ -58,6 +61,7 @@ prometheus.scrape "observability_self" {
     { __address__ = "cadvisor-playground:8080",   service = "cadvisor-playground",   __metrics_path__ = "/metrics" },
   ]
   scrape_interval = "10s"
+  scrape_timeout  = "8s"
   forward_to = [prometheus.remote_write.local.receiver]
 }
 
