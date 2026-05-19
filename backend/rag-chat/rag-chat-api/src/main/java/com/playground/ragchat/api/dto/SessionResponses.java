@@ -44,8 +44,11 @@ public final class SessionResponses {
                     m.tokensIn(),
                     m.tokensOut(),
                     m.citations().stream().map(c -> new CitationDto(
-                            c.position(), c.documentId().value(), c.chunkIndex(),
-                            c.title(), c.excerpt(), c.deleted())).toList()))
+                            c.position(),
+                            c.documentId().value().toString(),
+                            c.chunkIndex(),
+                            c.deleted() ? null : c.title(),
+                            c.deleted() ? null : c.excerpt())).toList()))
                     .toList();
             return new MessageHistoryResponse(detail.sessionId().value(), detail.title(), msgs);
         }
@@ -60,11 +63,19 @@ public final class SessionResponses {
             Integer tokensOut,
             List<CitationDto> citations) {}
 
+    /**
+     * Wire shape aligned with the SSE {@code done} payload's citation
+     * record so the frontend's {@code MessageCitationDto} interface
+     * matches both paths. Field {@code n} is the 1-indexed dense
+     * citation number that mirrors the {@code [N]} marker in the
+     * assistant body; deleted citations carry {@code title = null}
+     * and {@code excerpt = null} per the frontend's
+     * {@code isStaleCitation} check.
+     */
     public record CitationDto(
-            int position,
-            UUID documentId,
+            int n,
+            String documentId,
             int chunkIndex,
             String title,
-            String excerpt,
-            boolean deleted) {}
+            String excerpt) {}
 }
