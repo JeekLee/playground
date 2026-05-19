@@ -129,31 +129,46 @@ export function useChatStream(): UseChatStreamApi {
       const clientId = newClientId();
       const state = { terminalStatus: 'aborted' as StreamingTurnStatus };
 
-      setIsStreaming(true);
-      setTurn({
-        clientId,
-        role: 'assistant',
-        content: '',
-        citations: [],
-        status: 'thinking',
-      });
+      // DO NOT promote the composer to "streaming" mode preemptively.
+      // Every page-mount / tab-switch fires a resume attempt and most
+      // return 404 because no turn is in flight — flashing the streaming
+      // UI between request fire and the 404 response would briefly make
+      // the composer reject Send clicks (it switches to Stop). Only flip
+      // the streaming flag once we've actually seen a real SSE event,
+      // and only flip it back if we flipped it forward.
+      const onUnderlying = makeOnEvent(clientId, setTurn, state);
+      let attached = false;
+      const onEvent: typeof onUnderlying = (ev) => {
+        if (!attached) {
+          attached = true;
+          setIsStreaming(true);
+          setTurn({
+            clientId,
+            role: 'assistant',
+            content: '',
+            citations: [],
+            status: 'thinking',
+          });
+        }
+        onUnderlying(ev);
+      };
 
       const outcome = await resumeChatStream({
         sessionId,
         signal: controller.signal,
-        onEvent: makeOnEvent(clientId, setTurn, state),
+        onEvent,
       });
 
-      setIsStreaming(false);
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
 
       if (outcome === 'no-active-turn') {
-        // Nothing was in flight — clear the placeholder so the page
-        // renders pure history without an empty streaming bubble.
-        setTurn((prev) => (prev && prev.clientId === clientId ? null : prev));
+        // Never attached — no UI to revert.
         return 'no-active-turn';
+      }
+      if (attached) {
+        setIsStreaming(false);
       }
       return state.terminalStatus;
     },
