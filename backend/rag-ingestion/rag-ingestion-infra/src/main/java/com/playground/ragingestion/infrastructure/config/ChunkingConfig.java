@@ -1,5 +1,6 @@
 package com.playground.ragingestion.infrastructure.config;
 
+import com.playground.ragingestion.domain.service.ChunkerMetrics;
 import com.playground.ragingestion.domain.service.JdkBreakIteratorSentenceSplitter;
 import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
 import com.playground.ragingestion.domain.service.SentenceSplitter;
@@ -24,7 +25,9 @@ public class ChunkingConfig {
 
     @Bean
     public MarkdownAwareChunker markdownAwareChunker(
-            ChunkingProperties properties, SentenceSplitter sentenceSplitter) {
-        return new MarkdownAwareChunker(properties.toPolicy(), sentenceSplitter);
+            ChunkingProperties properties,
+            SentenceSplitter sentenceSplitter,
+            ChunkerMetrics chunkerMetrics) {
+        return new MarkdownAwareChunker(properties.toPolicy(), sentenceSplitter, chunkerMetrics);
     }
 }

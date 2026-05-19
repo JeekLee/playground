@@ -44,13 +44,19 @@ public final class WindowNormalizer {
 
     private final ChunkingPolicy policy;
     private final SentenceSplitter sentenceSplitter;
+    private final ChunkerMetrics metrics;
     private final Encoding encoding;
     private final TextContentRenderer textRenderer;
     private final MarkdownRenderer markdownRenderer;
 
     public WindowNormalizer(ChunkingPolicy policy, SentenceSplitter sentenceSplitter) {
+        this(policy, sentenceSplitter, ChunkerMetrics.NOOP);
+    }
+
+    public WindowNormalizer(ChunkingPolicy policy, SentenceSplitter sentenceSplitter, ChunkerMetrics metrics) {
         this.policy = policy;
         this.sentenceSplitter = sentenceSplitter;
+        this.metrics = metrics;
         EncodingRegistry registry = Encodings.newDefaultEncodingRegistry();
         EncodingType type = switch (policy.tokenizer().toLowerCase()) {
             case "cl100k-base", "cl100k_base" -> EncodingType.CL100K_BASE;
@@ -193,6 +199,7 @@ public final class WindowNormalizer {
 
         // Line-group split. Budget per chunk = sizeTokens minus the fence
         // markers' overhead (a handful of tokens).
+        metrics.incOversizeFenceSplit();
         String[] lines = literal.split("\n", -1);
         int sz = policy.sizeTokens() - 16;  // budget for ```lang\n + \n```
         List<String> buf = new ArrayList<>();
@@ -322,6 +329,7 @@ public final class WindowNormalizer {
                     buf.clear();
                     bufTok = 0;
                 }
+                metrics.incOversizeSentenceFallback();
                 tokenWindowSlice(sentence, section, out);
                 continue;
             }

@@ -7,6 +7,7 @@ import com.knuddels.jtokkit.api.EncodingType;
 import com.knuddels.jtokkit.api.IntArrayList;
 import com.playground.ragingestion.domain.model.vo.ChunkDraft;
 import com.playground.ragingestion.domain.model.vo.ChunkText;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -32,25 +33,33 @@ public final class MarkdownAwareChunker {
     private final WindowNormalizer windowNormalizer;
     private final Encoding encoding;
     private final Function<String, List<Section>> parseHook;
+    private final ChunkerMetrics metrics;
 
     public MarkdownAwareChunker(ChunkingPolicy policy, SentenceSplitter sentenceSplitter) {
-        this(policy, sentenceSplitter, null);
+        this(policy, sentenceSplitter, ChunkerMetrics.NOOP, null);
+    }
+
+    public MarkdownAwareChunker(ChunkingPolicy policy, SentenceSplitter sentenceSplitter,
+            ChunkerMetrics metrics) {
+        this(policy, sentenceSplitter, metrics, null);
     }
 
     static MarkdownAwareChunker forTesting(
             ChunkingPolicy policy,
             SentenceSplitter sentenceSplitter,
             Function<String, List<Section>> parseHook) {
-        return new MarkdownAwareChunker(policy, sentenceSplitter, parseHook);
+        return new MarkdownAwareChunker(policy, sentenceSplitter, ChunkerMetrics.NOOP, parseHook);
     }
 
     private MarkdownAwareChunker(
             ChunkingPolicy policy,
             SentenceSplitter sentenceSplitter,
+            ChunkerMetrics metrics,
             Function<String, List<Section>> parseHook) {
         this.policy = policy;
+        this.metrics = metrics;
         this.sectionBuilder = new SectionBuilder();
-        this.windowNormalizer = new WindowNormalizer(policy, sentenceSplitter);
+        this.windowNormalizer = new WindowNormalizer(policy, sentenceSplitter, metrics);
         EncodingRegistry registry = Encodings.newDefaultEncodingRegistry();
         EncodingType type = switch (policy.tokenizer().toLowerCase()) {
             case "cl100k-base", "cl100k_base" -> EncodingType.CL100K_BASE;
@@ -70,15 +79,21 @@ public final class MarkdownAwareChunker {
         if (body == null || body.isEmpty()) {
             return List.of();
         }
+        long t0 = System.nanoTime();
         try {
             List<Section> sections = parseHook != null
                     ? parseHook.apply(body)
                     : sectionBuilder.build(body);
-            return windowNormalizer.normalize(sections);
+            List<ChunkDraft> drafts = windowNormalizer.normalize(sections);
+            metrics.recordDuration(Duration.ofNanos(System.nanoTime() - t0), ChunkerMetrics.Outcome.SUCCESS);
+            return drafts;
         } catch (RuntimeException ex) {
             log.log(Level.SEVERE,
                     "rag-ingestion: markdown-aware parse failed — falling back to token-window. cause=" + ex);
-            return fallback(body);
+            metrics.incParseFallback();
+            List<ChunkDraft> drafts = fallback(body);
+            metrics.recordDuration(Duration.ofNanos(System.nanoTime() - t0), ChunkerMetrics.Outcome.PARSE_FALLBACK);
+            return drafts;
         }
     }
 
