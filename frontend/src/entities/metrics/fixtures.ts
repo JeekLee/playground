@@ -33,7 +33,7 @@ export const dashboardFixtureLoaded: DashboardResponse = {
     { name: 'rag-chat-api', status: 'up', since: '2026-05-19T05:28:14Z', uptimeSec: 8039, image: 'playground/rag-chat-api:0.4.1' },
     { name: 'metrics-api', status: 'up', since: '2026-05-19T06:40:00Z', uptimeSec: 3733, image: 'playground/metrics-api:0.4.1' },
     // Row 2 — spark + 4 observability self cells (ADR-15 §17 #7–#11).
-    { name: 'spark-inference', status: 'up', latencyP95Ms: 340, note: '2 models' },
+    { name: 'spark-inference-gateway', status: 'up', latencyP95Ms: 340, note: '2 models' },
     { name: 'prometheus-playground', status: 'up', uptimeSec: 14000, note: '11 targets' },
     { name: 'loki-playground', status: 'up', uptimeSec: 14000, note: '3d retention' },
     { name: 'alloy-playground', status: 'up', uptimeSec: 14000, note: 'scraping 5 BCs' },
@@ -78,13 +78,13 @@ export const dashboardFixtureLoaded: DashboardResponse = {
 };
 
 /**
- * "spark-inference degraded" — Frame 2. Same shape, spark cell + spark
+ * "spark-inference-gateway degraded" — Frame 2. Same shape, spark cell + spark
  * latency value flipped to degraded values per design context §2.2.
  */
 export const dashboardFixtureSparkDegraded: DashboardResponse = {
   ...dashboardFixtureLoaded,
   services: dashboardFixtureLoaded.services.map((s) =>
-    s.name === 'spark-inference'
+    s.name === 'spark-inference-gateway'
       ? { ...s, status: 'degraded' as const, latencyP95Ms: 3400, note: 'p95 3.4 s' }
       : s,
   ),

@@ -11,7 +11,7 @@ import type { ServiceHealth, ServiceStatus } from '@/entities/metrics';
  * which is out of date — design context §1 calls this out explicitly):
  *   Row 1 (6 BCs): gateway · identity-api · docs-api · rag-ingestion ·
  *                  rag-chat-api · metrics-api
- *   Row 2 (5 cells): spark-inference · prometheus-playground ·
+ *   Row 2 (5 cells): spark-inference-gateway · prometheus-playground ·
  *                    loki-playground · alloy-playground · cadvisor-playground
  *
  * Each cell is 175 × 56 with 12px gaps. Row 2 is intentionally ragged
@@ -42,7 +42,7 @@ const ROW_1: ReadonlyArray<{ slug: string; label: string }> = [
 ];
 
 const ROW_2: ReadonlyArray<{ slug: string; label: string }> = [
-  { slug: 'spark-inference', label: 'spark-gateway' },
+  { slug: 'spark-inference-gateway', label: 'spark-gateway' },
   { slug: 'prometheus-playground', label: 'prometheus' },
   { slug: 'loki-playground', label: 'loki' },
   { slug: 'alloy-playground', label: 'alloy' },
