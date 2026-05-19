@@ -137,4 +137,19 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
             return Optional.empty();
         }
     }
+
+    @Override
+    public List<UUID> findAllDistinctDocumentIds() {
+        return jdbc.query(
+                "SELECT DISTINCT document_id FROM rag.document_chunks ORDER BY document_id",
+                (rs, i) -> (UUID) rs.getObject("document_id"));
+    }
+
+    @Override
+    public List<UUID> findDistinctDocumentIdsByUser(UUID userId) {
+        return jdbc.query(
+                "SELECT DISTINCT document_id FROM rag.document_chunks WHERE user_id = ? ORDER BY document_id",
+                (rs, i) -> (UUID) rs.getObject("document_id"),
+                userId);
+    }
 }
