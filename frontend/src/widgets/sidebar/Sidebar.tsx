@@ -105,17 +105,14 @@ const APPS_BASE: AppsRow[] = [
     isActive: (path) => path === '/chat' || path.startsWith('/chat/'),
   },
   {
-    // M5 slice 1: the `/metrics` route ships, so the row routes to it
-    // and lights up when the user is there. The `🔒 M5` lock badge is
-    // kept conditionally for pages OTHER than `/metrics` (slice 2 drops
-    // the badge globally — see M5 plan Task 8). The route flip happens
-    // in the `APPS_BASE` → `apps` mapper inside `Sidebar()` based on
-    // the current pathname.
+    // M5 shipped — per design context M5-metrics.md §2.5 (Frame 5) and
+    // PRD Story 12, the System status row is **unconditionally active**
+    // (no `🔒 M5` lock, no auth gate). `/metrics` is public per ADR-09
+    // amendment in ADR-15 §G.2, so anon and signed-in both reach the
+    // same destination.
     label: 'System status',
     icon: Activity,
     href: '/metrics',
-    locked: 'milestone',
-    milestone: 'M5',
     isActive: (path) => path === '/metrics' || path.startsWith('/metrics/'),
   },
 ];
@@ -135,7 +132,6 @@ export function Sidebar({
   const showDocsBadge =
     docsBadge !== null && (pathname === '/docs' || pathname.startsWith('/docs/'));
   const isAnonymous = user === null;
-  const onMetricsRoute = pathname === '/metrics' || pathname.startsWith('/metrics/');
   const apps: AppsRow[] = APPS_BASE.map((row) => {
     // The Chat row is M4-shipped, but auth-only — anonymous callers see
     // the `🔒 Sign in` badge instead of a destination tab (per ADR-09
@@ -145,14 +141,6 @@ export function Sidebar({
     }
     if (row.label === 'Docs' && showDocsBadge) {
       return { ...row, badge: `${docsBadge.published}/${docsBadge.total}` };
-    }
-    // M5 slice 1: when the user is on `/metrics`, drop the `🔒 M5`
-    // lock so the System status row renders in the active-row
-    // treatment per design context Frame 1. On every other route
-    // the row stays milestone-locked until slice 2 ships the global
-    // unlock (Task 8).
-    if (row.label === 'System status' && onMetricsRoute) {
-      return { ...row, locked: undefined, milestone: undefined };
     }
     return row;
   });
