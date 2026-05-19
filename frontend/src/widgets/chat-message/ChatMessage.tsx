@@ -1,8 +1,9 @@
 'use client';
 
-import { Fragment, useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StopCircle } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
+import { MarkdownReader } from '@/features/docs-reader';
 import type { Citation, Role } from '@/entities/chat';
 
 /**
@@ -11,19 +12,17 @@ import type { Citation, Role } from '@/entities/chat';
  * Per design doc §2.2 + §2.3:
  *  - User turn: small `you` eyebrow (text-muted, 11/600) + body (text 15/400),
  *    body wraps at ~820px max-width.
- *  - Assistant turn: small `assistant` eyebrow (accent, 11/600) + body with
- *    inline `[N]` markers turned into superscript pills (accent.soft bg +
- *    accent fg + font.eyebrow 11px + radius.pill). Click a pill → scroll +
- *    focus the matching CitationAccordion card.
- *  - Streaming: tail-of-body pulsing block cursor (`▍`, accent, opacity
- *    0.3 ↔ 1.0 at ~1s) + an in-message Stop button anchored bottom-right.
+ *  - Assistant turn: small `assistant` eyebrow (accent, 11/600) + body
+ *    rendered through {@link MarkdownReader} (GFM, shiki code blocks,
+ *    sanitized HTML), with inline `[N]` markers swapped to clickable
+ *    citation pills. Click a pill → opens this message's
+ *    accordion + highlights the matching card; click scope is
+ *    per-message, not page-wide.
+ *  - Streaming: tail-of-body pulsing block cursor + Stop button.
  *  - Aborted: body greyed out to text-muted + footer "Generation stopped".
  *
- * The `[N]` parser handles the spec §11 rule: orphan markers (no matching
- * citation) render as plain text, not pills.
- *
- * Per spec §11 Q7: marker-to-citation matching is scoped per-message; the
- * `citations` array passed in is THIS message's citations only.
+ * Per spec §11 Q7: marker-to-citation matching is scoped per-message;
+ * the {@code citations} array passed in is THIS message's citations only.
  */
 
 export type ChatMessageStatus = 'thinking' | 'streaming' | 'done' | 'error' | 'aborted';
@@ -41,17 +40,17 @@ export interface ChatMessageProps {
    * provided. Null once tokens start filling in.
    */
   phaseLabel?: string;
-  /** Called when user clicks an inline `[N]` pill. */
-  onCitationClick?: (n: number) => void;
   /** Hooked up only for assistant + streaming — Stop button. */
   onStop?: () => void;
   /**
-   * Per-message accordion slot rendered below the assistant body. The
-   * view layer composes it (FSD: widgets cannot depend on widgets, so
-   * the parent passes the {@link CitationAccordion} element through).
-   * Pass `null` to suppress the accordion (e.g., user turns).
+   * Per-message accordion slot. ChatMessage owns the focused-N state so
+   * clicking `[N]` in THIS message's body only affects THIS message's
+   * accordion (no page-wide cross-talk). The view layer constructs the
+   * accordion element with the supplied {@code focusedN} so the
+   * inversion stays one-way (widget owns state, view owns markup).
+   * Returns null to suppress the accordion (user turns).
    */
-  accordion?: ReactNode;
+  accordion?: (focusedN: number | null) => ReactNode;
 }
 
 export function ChatMessage({
@@ -60,17 +59,43 @@ export function ChatMessage({
   citations,
   status = 'done',
   phaseLabel,
-  onCitationClick,
   onStop,
-  accordion = null,
+  accordion,
 }: ChatMessageProps) {
   const isUser = role === 'user';
   const isAssistant = role === 'assistant';
   const isStreaming = isAssistant && (status === 'streaming' || status === 'thinking');
   const isAborted = status === 'aborted';
 
+  // Per-message focus state. Set when the user clicks an inline `[N]`
+  // pill; auto-clears after 2s so the highlight ring fades. The
+  // accordion's `open` state survives the clear (intentional — only
+  // the highlight is transient).
+  const [focusedN, setFocusedN] = useState<number | null>(null);
+  const articleRef = useRef<HTMLElement | null>(null);
+  const onCitationClick = useCallback(
+    (n: number) => {
+      setFocusedN(n);
+      // Scroll the matching card into view within THIS message's subtree
+      // so we don't accidentally jump to another message's card-N.
+      queueMicrotask(() => {
+        const target = articleRef.current?.querySelector<HTMLElement>(
+          `[data-citation-n="${n}"]`,
+        );
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+    [],
+  );
+  useEffect(() => {
+    if (focusedN === null) return;
+    const t = window.setTimeout(() => setFocusedN(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [focusedN]);
+
   return (
     <article
+      ref={articleRef}
       className={cn(
         'flex w-full max-w-[820px] flex-col gap-sm',
         // Right-align user turns so the conversation reads with a visual hierarchy.
@@ -120,7 +145,7 @@ export function ChatMessage({
       {isAssistant && status === 'aborted' && (
         <p className="text-[12px] text-text-muted">Generation stopped</p>
       )}
-      {isAssistant && accordion}
+      {isAssistant && accordion?.(focusedN)}
     </article>
   );
 }
@@ -133,7 +158,7 @@ interface MessageBodyProps {
   isAborted: boolean;
   isThinking: boolean;
   phaseLabel?: string;
-  onCitationClick?: (n: number) => void;
+  onCitationClick: (n: number) => void;
 }
 
 function MessageBody({
@@ -147,10 +172,9 @@ function MessageBody({
   onCitationClick,
 }: MessageBodyProps) {
   // The "thinking" placeholder before the first token. PR B grammar:
-  // every progress update sets `phaseLabel`; we render that verbatim so
-  // the UI says e.g. "참고 문서 확인 중" / "공개 문서 검색 중" / "사고 중"
-  // instead of a single static "Thinking…". Falls back to the legacy
-  // label when no phase event has fired yet.
+  // every progress update sets `phaseLabel`; we render that verbatim
+  // (e.g. "참고 문서 확인 중", "공개 문서 검색 중", "사고 중") so the user
+  // sees what the agent is doing. Falls back to "Thinking…".
   if (isThinking && content.length === 0) {
     return (
       <div className="flex items-center gap-sm text-body text-text-muted">
@@ -159,6 +183,19 @@ function MessageBody({
       </div>
     );
   }
+
+  if (isAssistant) {
+    return (
+      <AssistantBody
+        content={content}
+        citations={citations}
+        onCitationClick={onCitationClick}
+        isStreaming={isStreaming}
+        isAborted={isAborted}
+      />
+    );
+  }
+
   return (
     <p
       className={cn(
@@ -166,56 +203,39 @@ function MessageBody({
         isAborted ? 'text-text-muted' : 'text-text',
       )}
     >
-      {isAssistant
-        ? renderAssistantBody(content, citations, onCitationClick)
-        : content}
+      {content}
       {isStreaming && <PulsingCursor />}
     </p>
   );
 }
 
-/**
- * Replace inline `[N]` markers with citation pills. Orphan markers
- * (N has no matching citation) render as plain text per spec §11
- * "orphan marker" rule.
- *
- * Pure split-on-regex (no DOM walking, no remark-rehype pipeline) —
- * the assistant body for M4 P0 is plain text + `[N]` markers; the M4.1
- * markdown-render pass (spec §9) layers on top of this.
- */
-function renderAssistantBody(
-  text: string,
-  citations: Citation[],
-  onCitationClick?: (n: number) => void,
-): React.ReactNode {
-  const citationByN = new Map<number, Citation>();
-  for (const c of citations) citationByN.set(c.n, c);
-
-  const parts: React.ReactNode[] = [];
-  const regex = /\[(\d+)\]/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let keyCounter = 0;
-  while ((match = regex.exec(text)) !== null) {
-    const n = Number(match[1]);
-    const before = text.slice(lastIndex, match.index);
-    if (before) {
-      parts.push(<Fragment key={`t-${keyCounter++}`}>{before}</Fragment>);
-    }
-    if (citationByN.has(n)) {
-      parts.push(
-        <CitationPill key={`p-${keyCounter++}-${n}`} n={n} onClick={onCitationClick} />,
-      );
-    } else {
-      // Orphan marker — render as plain text.
-      parts.push(<Fragment key={`o-${keyCounter++}`}>{match[0]}</Fragment>);
-    }
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    parts.push(<Fragment key={`t-${keyCounter++}`}>{text.slice(lastIndex)}</Fragment>);
-  }
-  return parts;
+function AssistantBody({
+  content,
+  citations,
+  onCitationClick,
+  isStreaming,
+  isAborted,
+}: {
+  content: string;
+  citations: Citation[];
+  onCitationClick: (n: number) => void;
+  isStreaming: boolean;
+  isAborted: boolean;
+}) {
+  const validNs = useMemo(() => new Set(citations.map((c) => c.n)), [citations]);
+  const pill = useMemo(
+    () => ({
+      validNs,
+      render: (n: number) => <CitationPill n={n} onClick={onCitationClick} />,
+    }),
+    [validNs, onCitationClick],
+  );
+  return (
+    <div className={cn('text-body', isAborted ? 'text-text-muted' : 'text-text')}>
+      <MarkdownReader body={content} citationPill={pill} />
+      {isStreaming && <PulsingCursor />}
+    </div>
+  );
 }
 
 function CitationPill({
@@ -223,10 +243,10 @@ function CitationPill({
   onClick,
 }: {
   n: number;
-  onClick?: (n: number) => void;
+  onClick: (n: number) => void;
 }) {
   const handler = useCallback(() => {
-    onClick?.(n);
+    onClick(n);
   }, [n, onClick]);
   return (
     <button

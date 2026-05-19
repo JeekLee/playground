@@ -86,7 +86,6 @@ export function ChatPage({
   const [errorState, setErrorState] = useState<ErrorState>({ kind: 'none' });
   const [deleteRequestId, setDeleteRequestId] = useState<string | null>(null);
   const [deletePending, setDeletePending] = useState(false);
-  const [focusedCitationN, setFocusedCitationN] = useState<number | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
@@ -287,18 +286,9 @@ export function ChatPage({
 
   const streamingAssistant: StreamingTurn | null = streamApi.turn;
 
-  // Click-`[N]` handler: scroll the matching CitationAccordion card into view
-  // by tagging its `data-citation-n` and using `scrollIntoView`. We also stash
-  // the n so the accordion auto-expands + highlights the card briefly.
-  const handleCitationClick = useCallback((n: number) => {
-    setFocusedCitationN(n);
-    queueMicrotask(() => {
-      const el = scrollRef.current?.querySelector<HTMLElement>(`[data-citation-n="${n}"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    // Clear the focus ring after a couple seconds.
-    window.setTimeout(() => setFocusedCitationN(null), 2000);
-  }, []);
+  // Click-`[N]` scoping moved into ChatMessage (which now owns its own
+  // per-message focusedN state + scroll-into-view of its own card). The
+  // page no longer needs a shared focusedCitationN.
 
   const isStreaming = streamApi.isStreaming;
   const hasContent = messages.length > 0 || pendingUserText !== null || isStreaming;
@@ -336,15 +326,15 @@ export function ChatPage({
                   content={m.content}
                   citations={m.citations}
                   status="done"
-                  onCitationClick={handleCitationClick}
                   accordion={
-                    m.role === 'assistant' && m.citations.length > 0 ? (
-                      <CitationAccordion
-                        citations={m.citations}
-                        defaultOpen={focusedCitationN !== null}
-                        focusN={focusedCitationN}
-                      />
-                    ) : null
+                    m.role === 'assistant' && m.citations.length > 0
+                      ? (focusedN) => (
+                          <CitationAccordion
+                            citations={m.citations}
+                            focusN={focusedN}
+                          />
+                        )
+                      : undefined
                   }
                 />
               ))}
@@ -366,15 +356,15 @@ export function ChatPage({
                   status={mapStreamStatus(streamingAssistant.status)}
                   phaseLabel={streamingAssistant.phaseLabel}
                   onStop={streamApi.stop}
-                  onCitationClick={handleCitationClick}
                   accordion={
-                    streamingAssistant.citations.length > 0 || streamingAssistant.status === 'done' ? (
-                      <CitationAccordion
-                        citations={streamingAssistant.citations}
-                        defaultOpen={focusedCitationN !== null}
-                        focusN={focusedCitationN}
-                      />
-                    ) : null
+                    streamingAssistant.citations.length > 0 || streamingAssistant.status === 'done'
+                      ? (focusedN) => (
+                          <CitationAccordion
+                            citations={streamingAssistant.citations}
+                            focusN={focusedN}
+                          />
+                        )
+                      : undefined
                   }
                 />
               )}
