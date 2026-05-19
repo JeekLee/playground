@@ -8,8 +8,8 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MutableRefObject,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -277,7 +277,7 @@ function TabRow({
   onMenuToggle: () => void;
   onSelect: () => void;
   isMenuOpen: boolean;
-  menuRef: RefObject<HTMLDivElement | null>;
+  menuRef: MutableRefObject<HTMLDivElement | null>;
   onRename: () => void;
   onDelete: () => void;
 }) {
@@ -329,8 +329,8 @@ function TabActionsMenu({
   menuRef,
   children,
 }: {
-  anchorRef: RefObject<HTMLDivElement | null>;
-  menuRef: RefObject<HTMLDivElement | null>;
+  anchorRef: MutableRefObject<HTMLDivElement | null>;
+  menuRef: MutableRefObject<HTMLDivElement | null>;
   children: ReactNode;
 }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
