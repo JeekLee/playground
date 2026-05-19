@@ -35,14 +35,17 @@ decisions when a milestone justifies it.
 | 12 | `12-m2-docs.md` | **(per-milestone, M2)** Docs BC implementation — BlockNote versions + SSR strategy, OpenSearch 2.18 + native client + Nori analyzer, Spring Modulith outbox (inherited from M1), M3 → docs body-fetch HTTP exception, docs → identity owner-lookup HTTP exception, per-IP rate limits for anonymous reads, body size cap 1 MB, view dedup 24h, nightly counter resync via Spring `@Scheduled`. Amends ADR-05, ADR-08, ADR-09. |
 | 13 | `13-m3-rag-ingestion.md` | **(per-milestone, M3)** RAG-Ingestion BC implementation — chunking 800-token windows + 120-token overlap (configurable), embedding retry 3 attempts with exponential backoff + jitter, DLQ per source topic (`<topic>.dlq`, 14-day retention), ingestion-complete signal as new Kafka event `rag.document.ingested` via Spring Modulith outbox (inherited from M1/M2), pgvector HNSW (m=16, ef_construction=64) + `(user_id, visibility)` prefilter indexes, `body_checksum` denormalized per chunk row, race resolution via shared Redisson lock, port 18083 (actuator-only, host-not-exposed), no new ADR-08 exception (Exceptions 1+2 reused verbatim). Amends ADR-03 (topic registry + DLQ retention), ADR-05 (chunk DDL + ef_search runtime hint), ADR-08 (informational — no new exception). |
 | 14 | `14-m4-rag-chat.md` | **(per-milestone, M4)** RAG-Chat BC implementation — Spring WebFlux SSE controller (`POST /api/rag/chat`) on port 18084 (gateway-routable), first sanctioned cross-schema SELECT exception (rag-chat reads `rag.document_chunks` + `docs.documents` + `identity.users` via JDBC with `search_path = chat,docs,rag,identity`), Resilience4j 2.2 circuit breaker (`spark-gateway`, 50% / 60s / 30s OPEN), Redisson `RRateLimiter` per-user token bucket (60/hour + 200/day) + `RLock` per-user concurrent-stream cap (latest-wins, 35s TTL), Qwen3-32B streaming via Spring AI `ChatClient.stream()` with K=6 retrieval and 200+2400+24576+4000 token budget, fire-and-forget auto-title (pinned Qwen3-32B prompt, temperature 0.1, max_tokens 24), cite-persistence policy = only `[N]`-cited subset, drop-oldest-pair history truncation, no Kafka surface (BC neither produces nor consumes), `chat` schema added. Amends ADR-04 (informational — ChatClient streaming exercised), ADR-05 (`chat` schema + cross-schema SELECT exception), ADR-09 (allowlist row swap + rate-limit section rewrite + auth-lock badge convention). |
+| 15 | `15-m5-metrics.md` | **(per-milestone, M5)** Metrics BC implementation — Spring WebFlux 4-route HTTP surface (`/api/metrics/{dashboard,services,timeseries,logs}`) on port 18085 (gateway-routable), 4-container observability stack added to compose (Prometheus v2.54.1 + Loki 3.2.1 + Alloy v1.3.1 + cAdvisor v0.49.1), PromQL whitelist constants in `metrics-domain` (no raw PromQL exposed; metric-id → template substitution after allowlist check only), Recharts as the dashboard chart library, public dashboard + authenticated logs endpoint (one new row in ADR-09's authenticated section), per-IP rate limit 30/min on `/dashboard` + per-user rate limit 60/min on `/logs` (Redisson `RRateLimiter`), 10s per-PromQL-query budget with per-widget `"degraded": true` partial-response degradation, observability self-monitoring (4 extra service-health cells in P0), HEAD `/v1/models` probe of spark-inference-gateway (15s cached), cAdvisor + Alloy docker sockets mounted **read-only** with the residual privilege-escalation surface documented in `docs/infra-requirements/be.md`, **no Postgres schema** (stateless BC — ADR-05 NOT amended), **no Kafka surface** (BC neither produces nor consumes — ADR-03 NOT amended), **no new ADR-08 HTTP exception** (Prometheus/Loki/spark-gateway are external infra, not sibling BCs). Amends `docs/roadmap.md` §M5 (retire acceptance bullets 4+5, refresh bullet list), ADR-09 (logs auth row), ADR-00 (index + module count bump 22 → 26 + topic matrix `metrics.snapshot.captured` row removal + ASCII art port 18086 → 18085), `docs/infra-requirements/be.md` (new M5 Observability Stack section). |
 
-### Module count (post-ADR-01 v2, ADR-02 v2)
+### Module count (post-ADR-01 v2, ADR-02 v2; bumped by ADR-15 for the M5 metrics quadruplet)
 
 Each BC ships as a **four-module quadruplet** (`*-api`, `*-app`, `*-domain`,
-`*-infra`) per ADR-01 v2. Total at M5: gateway + shared-kernel + (5 BCs × 4
-modules) = **22 production modules** + `buildSrc` convention plugins. Only the
-six `*-api` modules (plus gateway) bind a JVM port; the rest are Java libraries
-linked into the BC's `*-api` fat jar.
+`*-infra`) per ADR-01 v2. Total at M5 (post-ADR-15): gateway + shared-kernel
++ (6 BCs × 4 modules) = **26 production modules** + `buildSrc` convention
+plugins. Only the **six** `*-api` modules (plus gateway) bind a JVM port
+(gateway 18080; identity-api 18081; docs-api 18082; rag-ingestion-api 18083 —
+actuator-only; rag-chat-api 18084; metrics-api 18085); the rest are Java
+libraries linked into the BC's `*-api` fat jar.
 
 ### Module dependency graph (compile-time + runtime)
 
@@ -63,7 +66,7 @@ linked into the BC's `*-api` fat jar.
                            v        v        v
         +------------------+--+  +--+----------------+  +-+----------------+  +------------------+
         | identity-api 18081  |  | docs-api 18082    |  | rag-chat-api     |  | metrics-api      |
-        | + identity-app      |  | + docs-app        |  |   18084          |  |   18086          |
+        | + identity-app      |  | + docs-app        |  |   18084          |  |   18085          |
         | + identity-domain   |  | + docs-domain     |  | + rag-chat-app   |  | + metrics-app    |
         | + identity-infra    |  | + docs-infra      |  | + rag-chat-domain|  | + metrics-domain |
         +------------------+--+  +--+----------------+  | + rag-chat-infra |  | + metrics-infra  |
@@ -119,8 +122,9 @@ linked into the BC's `*-api` fat jar.
 | `docs.document.uploaded.dlq` | rag-ingestion (DLQ recoverer) | operator triage |
 | `docs.document.visibility-changed.dlq` | rag-ingestion (DLQ recoverer) | operator triage |
 | `docs.document.deleted.dlq` | rag-ingestion (DLQ recoverer) | operator triage |
-| `rag.document.ingested` | rag-ingestion | (future: M4 readiness, M5 metrics) |
-| `metrics.snapshot.captured` | metrics | (none — internal) |
+| `rag.document.ingested` | rag-ingestion | (future: M4 readiness) |
+
+> *(ADR-15 amendment, 2026-05-19): the prior `metrics.snapshot.captured` topic row was a forward-looking placeholder under the retired "polling + Redis cache" framing for M5. ADR-15 confirms the M5 metrics BC publishes no events and consumes none — the row is retired. No M5 Kafka surface exists.)*
 
 ## Consequences
 - Positive: Single source of truth for cross-cutting choices; per-milestone ADRs

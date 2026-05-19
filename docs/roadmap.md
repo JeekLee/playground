@@ -108,20 +108,20 @@ Per-user token bucket (60/hour, 200/day), `max_tokens=4000`, K=6 retrieved chunk
 
 ## M5 — Metrics
 
-**Goal:** Give the operator (the user) a single dashboard for the health of the playground stack and the Spark cluster it depends on.
+**Goal:** Give the operator (the user) a single public dashboard for the health of the playground stack, container resources, JVM state, HTTP traffic, host metrics, and the spark-inference-gateway.
 
-**Acceptance:**
-- [ ] `metrics` service polls the Spark REST API on a fixed cadence and caches results (Redis is fine)
-- [ ] `metrics` service reports Docker container status for every playground service (running / stopped / unhealthy)
-- [ ] Frontend dashboard renders both Spark cluster state and container state on one page, auto-refreshing
-- [ ] Dashboard is only reachable behind login (gateway-enforced)
-- [ ] No new external dependency is introduced — polling-only, no Prometheus/Grafana in this milestone
+**Acceptance (revised 2026-05-19 by ADR-15 — bullets 4 + 5 of the prior list retired):**
+- [ ] `metrics` BC queries Prometheus + Loki for stack health (PromQL via HTTP API; LogQL via HTTP API)
+- [ ] Frontend dashboard at `/metrics` renders ~19 widgets covering service health, host metrics, JVM heap, HTTP request rate, and spark-inference-gateway state — 15s polling
+- [ ] Dashboard is **public** (per ADR-09); logs API endpoint (`/api/metrics/logs/**`) is authenticated
+- [ ] **Observability stack added** — Prometheus + Loki + Alloy + cAdvisor (4 new compose containers); concrete image pins in ADR-15 §3–§6
+- [ ] Sidebar "System status" row unlocks on M5 ship
 
-**Dependencies:** M0, M1.
+**Dependencies:** M0, M1, M2, M3, M4.
 
-**Notes:** Infra-heavy: needs the docker socket (or an exporter) mounted into the metrics container; that constraint goes into `docs/infra-requirements/be.md` for the M5 cycle. Polling interval is a tunable env var.
+**Notes:** Infra-heavy: needs the docker socket mounted **read-only** into both `cadvisor-playground` and `alloy-playground`; that constraint goes into `docs/infra-requirements/be.md` for the M5 cycle (per ADR-15 §G.4). Polling interval, retention periods, and per-IP / per-user rate limits are tunable env vars (per ADR-15 §18).
 
-**Public surface (per ADR-09):** The metrics dashboard is a **public** page. We accept that this exposes container/cluster health to anyone — it's an intentional "live workshop" signal, not a leak. The endpoint is read-only (no mutation surface).
+**Public surface (per ADR-09 + ADR-15 amendment):** The metrics dashboard is a **public** page. We accept that this exposes container/cluster health to anyone — it's an intentional "live workshop" signal, not a leak. `/api/metrics/dashboard`, `/api/metrics/services`, `/api/metrics/timeseries` are public read endpoints; `/api/metrics/logs/**` is authenticated (logs may carry PII / error context not appropriate for anon viewers — per ADR-09 + ADR-15 §G.2). Per-IP rate limit 30/min on `/api/metrics/dashboard`; per-user rate limit 60/min on `/api/metrics/logs`.
 
 ---
 
