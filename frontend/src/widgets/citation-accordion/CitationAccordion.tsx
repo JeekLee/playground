@@ -104,12 +104,14 @@ interface CitationCardProps {
 
 function CitationCard({ citation, focused }: CitationCardProps) {
   const stale = isStaleCitation(citation);
-  // Brief highlight ring when this card was just scrolled-to via [N] click.
-  const focusRing = focused ? 'bg-accent-soft' : '';
+  // Brief inset accent ring when this card was just scrolled-to via [N]
+  // click. Border treatment (not bg fill) so the chip's own accent-soft
+  // background doesn't bleed into the row underneath it.
+  const focusRing = focused ? 'ring-2 ring-inset ring-accent' : '';
   return (
     <li
       className={cn(
-        'flex flex-col gap-xs px-md pb-[12px] pt-[14px] transition-colors duration-[140ms]',
+        'flex flex-col gap-xs px-md pb-[12px] pt-[14px] transition-shadow duration-[140ms]',
         focusRing,
       )}
       data-citation-n={citation.n}
