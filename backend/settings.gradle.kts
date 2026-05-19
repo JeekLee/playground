@@ -52,4 +52,10 @@ include(":rag-chat:rag-chat-app")
 include(":rag-chat:rag-chat-domain")
 include(":rag-chat:rag-chat-infra")
 
-// M5 (metrics): same pattern.
+// M5 — metrics quadruplet (ADR-01 v2 + ADR-15). WebFlux end-to-end on port
+// 18085 (gateway-routable). Stateless BC: no Postgres schema, no Kafka surface.
+// Talks to Prometheus + Loki + spark-inference-gateway over HTTP via WebClient.
+include(":metrics:metrics-api")
+include(":metrics:metrics-app")
+include(":metrics:metrics-domain")
+include(":metrics:metrics-infra")

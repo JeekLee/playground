@@ -72,6 +72,14 @@ public class PublicRouteMatcher {
             new Rule(HttpMethod.POST, "/api/docs/{id}/view", DOCS_VIEW_UUID),
             // ADR-14 §G.4: /api/rag/chat/** is auth-only (the legacy /public row
             // is permanently removed). No allowlist entries here.
+            //
+            // ADR-15 §G.2: /api/metrics/** is public EXCEPT /api/metrics/logs/**
+            // which requires authentication. The wildcard rule below covers the
+            // public surface (dashboard / services / timeseries); the gateway
+            // security config enforces the auth gate on /logs/** independently
+            // of this matcher (PublicRouteMatcher is consumed only by
+            // AnonCookieFilter, whose only side effect is issuing PLAYGROUND_ANON
+            // cookies — harmless on /logs/**).
             new Rule(HttpMethod.GET, "/api/metrics/**"),
             new Rule(null, "/_next/**"),
             new Rule(null, "/favicon.ico"),

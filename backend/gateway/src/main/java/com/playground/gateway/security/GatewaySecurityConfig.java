@@ -115,6 +115,13 @@ public class GatewaySecurityConfig {
                         // /api/rag/chat/** surface is auth-only. Gateway 401s
                         // anonymous callers via the default authenticated()
                         // catch-all below.
+                        //
+                        // ADR-15 §G.2 — the new `/api/metrics/logs/**` row is
+                        // authenticated; the existing `/api/metrics/**` public
+                        // row stays in force for dashboard/services/timeseries.
+                        // Most-specific-match wins, so the logs rule must come
+                        // BEFORE the catch-all metrics permitAll.
+                        .pathMatchers("/api/metrics/logs", "/api/metrics/logs/**").authenticated()
                         .pathMatchers(HttpMethod.GET, "/api/metrics/**").permitAll()
                         // Next.js static assets.
                         .pathMatchers("/_next/**", "/favicon.ico", "/static/**").permitAll()
