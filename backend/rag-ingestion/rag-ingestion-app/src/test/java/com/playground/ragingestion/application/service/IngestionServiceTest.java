@@ -25,6 +25,7 @@ import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.domain.model.vo.BodyChecksum;
 import com.playground.ragingestion.domain.model.vo.ChunkText;
 import com.playground.ragingestion.domain.model.vo.Embedding;
+import org.assertj.core.api.SoftAssertions;
 import com.playground.ragingestion.domain.service.ChunkingPolicy;
 import com.playground.ragingestion.domain.service.JdkBreakIteratorSentenceSplitter;
 import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
@@ -210,6 +211,42 @@ class IngestionServiceTest {
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
         verify(lockPort, times(1)).runWithLock(keyCaptor.capture(), any(), any(), any());
         assertThat(keyCaptor.getValue()).isEqualTo("document:" + docId.value());
+    }
+
+    @Test
+    void handleUploaded_propagates_heading_path_from_draft_to_chunk() {
+        DocumentId docId = DocumentId.of(UUID.randomUUID());
+        AuthorId userId = AuthorId.of(UUID.randomUUID());
+        // Markdown body with a heading so SectionBuilder assigns headingPath = ["Alpha"].
+        // The body under the heading is long enough to produce at least one chunk with
+        // the small ChunkingPolicy(8 tokens) used in setup().
+        String body = "# Alpha\n\n"
+                + "one two three four five six seven eight nine ten eleven twelve thirteen.";
+        String checksum = BodyChecksum.compute(body).value();
+
+        when(chunkRepository.findBodyChecksum(docId)).thenReturn(Optional.empty());
+        when(bodyFetchPort.fetchBody(docId)).thenReturn(new DocumentBody(
+                docId, body, BodyChecksum.of(checksum), Instant.now(clock)));
+        when(embeddingPort.embed(anyList())).thenAnswer(invocation -> {
+            List<ChunkText> texts = invocation.getArgument(0);
+            return texts.stream().map(t -> dummyEmbedding(1.0f)).toList();
+        });
+
+        DocumentUploadedEvent event = new DocumentUploadedEvent(
+                docId, userId, Visibility.PUBLIC, "heading-test", "/", checksum);
+        service.handleUploaded(event);
+
+        ArgumentCaptor<List<DocumentChunk>> cap = ArgumentCaptor.forClass(List.class);
+        verify(chunkRepository).replaceAll(eq(docId), cap.capture());
+        List<DocumentChunk> chunks = cap.getValue();
+        assertThat(chunks).isNotEmpty();
+
+        SoftAssertions soft = new SoftAssertions();
+        chunks.forEach(c ->
+                soft.assertThat(c.headingPath())
+                        .as("headingPath for chunk index %d", chunks.indexOf(c))
+                        .containsExactly("Alpha"));
+        soft.assertAll();
     }
 
     private static Embedding dummyEmbedding(float value) {
