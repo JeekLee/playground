@@ -35,23 +35,57 @@ pgvector index pin, ADR-08 cross-reference note).
 
 ## Decision
 
-### 1. Chunking — 800-token windows with 120-token overlap, defaults in `application.yml`
+### 1. Chunking — markdown-aware (M3.1 amendment, 2026-05-19), 800-token windows with 120-token overlap
+
+> **M3.1 amendment (2026-05-19):** §1 was originally drafted with the fixed
+> token-window `MarkdownChunker` as the default and alternative (c) "semantic
+> chunking" deferred to M3.1. The deferred work has now shipped:
+> `MarkdownAwareChunker` is the default chunker; the token-window algorithm
+> is preserved as a **parse-fallback** path only (fires when commonmark-java
+> throws — extremely rare).
 
 **Decision:**
 
 | Parameter | Default | Rationale |
 |---|---|---|
 | `playground.rag-ingestion.chunk.size-tokens` | **800** | BGE-M3 accepts up to 8192 input tokens, but retrieval quality plateaus and recall drops once chunks exceed ~1k tokens for typical Korean prose. 800 is a recall/precision sweet spot for the M2 corpus (long-form essays, ~10-50 KB MD bodies; rare tail of large `.md` uploads up to 1 MB). |
-| `playground.rag-ingestion.chunk.overlap-tokens` | **120** | ~15% overlap. Preserves cross-chunk coreference for citations and Korean sentence boundaries that don't align cleanly with the chunker's split points. |
+| `playground.rag-ingestion.chunk.overlap-tokens` | **120** | Dual meaning per the M3.1 amendment. **Normal path:** caps the heading-prefix budget injected at chunk start (`> Context: A > B > C` breadcrumb). **Parse-fallback path:** sliding-window stride = `size - overlap`. Same numeric value, different role per path. |
 | `playground.rag-ingestion.chunk.tokenizer` | **`cl100k-base`** (via JTokkit) | Approximation tokenizer for the chunker — BGE-M3's actual tokenizer is XLM-RoBERTa-based but we don't need exact parity here; we only use this to bound chunk sizes pre-embedding. JTokkit is JVM-native, zero-dep beyond a small jar. |
 | `playground.rag-ingestion.chunk.min-chunk-tokens` | **64** | A trailing chunk smaller than 64 tokens is merged back into the previous chunk; avoids degenerate one-sentence chunks at document tails. |
+| `playground.rag-ingestion.chunk.max-oversize-fence-tokens` (M3.1) | **800** | Fenced code blocks larger than this get line-split inside the fence (each split chunk re-opens with the original language tag). Fences ≤ this stay atomic even if they exceed `size-tokens` (the atomicity beats the size cap for citation rendering correctness). |
+| `playground.rag-ingestion.chunk.preserve-heading-path` (M3.1) | **true** | Toggle for the heading-aware prefix injection on chunks 2..N of a section. Disable to fall back to plain block packing without breadcrumb. |
 
 **Location:** values live in `rag-ingestion-api/src/main/resources/application.yml`
 under the `playground.rag-ingestion.chunk` namespace. A `ChunkingProperties`
-`@ConfigurationProperties` POJO in `rag-ingestion-app` exposes them as a
-typed bean; the chunker (`MarkdownChunker` in `rag-ingestion-domain`,
-pure-Java) takes them as constructor args (no Spring import in `-domain`,
-per ADR-02).
+`@ConfigurationProperties` POJO in `rag-ingestion-infra` (Spring Boot type
+forbidden in `-app` per ADR-02) exposes them as a typed bean; the chunker
+(`MarkdownAwareChunker` in `rag-ingestion-domain`, pure-Java) takes the
+derived `ChunkingPolicy` as a constructor arg (no Spring import in
+`-domain`, per ADR-02).
+
+**Algorithm (M3.1):** `MarkdownAwareChunker` composes `SectionBuilder` +
+`WindowNormalizer`:
+
+1. `SectionBuilder` parses the body with commonmark-java (GFM tables +
+   strikethrough extensions enabled), walks the top level grouping blocks
+   into `Section`s separated by `Heading` nodes. Each section carries its
+   `headingPath` (h1..hN breadcrumb).
+2. `WindowNormalizer` packs blocks within each section greedily up to
+   `size-tokens`. Cross-section pack is forbidden — each section is ≥ 1
+   chunk. Oversize blocks are handled per type:
+   - Fenced code: atomic if ≤ `max-oversize-fence-tokens`, else line-split
+     with the original language tag re-emitted on each chunk.
+   - GFM table: same threshold, with the header row + separator repeated on
+     each split chunk.
+   - Paragraph: sentence-split via `SentenceSplitter` (default
+     `JdkBreakIteratorSentenceSplitter`, JDK-only); single sentences
+     exceeding `size-tokens` fall back to token-window slicing with WARN log.
+   - Lists / blockquotes: recurse into items / children.
+3. Chunks 2..N of a section get a `> Context: A > B > C` breadcrumb prefix
+   (budget ≤ `overlap-tokens`); top-level headings drop first when the
+   breadcrumb overflows budget.
+4. Trailing chunks shorter than `min-chunk-tokens` merge back into the
+   previous chunk in the same section.
 
 **Why `application.yml` and not constants:** PRD §"Acceptance criteria"
 says chunk size + overlap are "configurable". A `@ConfigurationProperties`
@@ -60,15 +94,18 @@ binding lets an operator override defaults via environment variable
 useful for the M3.1 re-embedding job experiments. Constants would lock the
 values at build time.
 
-**Considered alternatives:**
+**Considered alternatives (kept for posterity):**
 - (a) **512 + 64 overlap** (industry default for OpenAI `text-embedding-ada-002`-era pipelines). Rejected: BGE-M3 handles longer contexts well, and Korean documents need more semantic context per chunk than a 512-token window provides.
 - (b) **1024 + 128 overlap** (BGE-M3's commonly-quoted "preferred" size). Rejected: 1024 over-mixes topics in M2's long-form essays; recall on per-paragraph questions drops in informal benchmarking.
-- (c) **Semantic chunking** (split on headings + paragraph boundaries with a max-size cap). Rejected for M3 P0; the markdown-aware chunker is a nice M3.1 follow-up but adds complexity (heading-level awareness, code-block atomicity) that isn't justified yet. The simple token-window chunker treats the body as a single token stream after stripping fence markers.
+- (c) ~~**Semantic chunking** (split on headings + paragraph boundaries with a max-size cap). Rejected for M3 P0~~ — **adopted in M3.1.** The markdown-aware path is now default; the simple token-window chunker is retained as the parse-fallback safety net.
 
 **Chunker location (per the quadruplet rules in §4 below):**
-`MarkdownChunker` lives in `rag-ingestion-domain` — it's a pure-Java
-algorithm with no Spring/JPA/Kafka coupling. JTokkit jar is on `-domain`'s
-classpath (a leaf library, not a framework).
+`MarkdownAwareChunker` lives in `rag-ingestion-domain` — pure-Java
+algorithm with no Spring/JPA/Kafka coupling. commonmark-java + JTokkit jars
+are on `-domain`'s classpath (leaf libraries, not frameworks).
+`heading_path text[]` column added to `rag.document_chunks` via Flyway
+migration `V202605200003__add_chunk_heading_path.sql`; populated for every
+new ingest, backfilled by the operator-triggered `reembed` profile (§7).
 
 ### 2. Embedding retry policy — 3 retries, exponential backoff with jitter, classified errors
 
@@ -342,6 +379,12 @@ worth WARN-logging, not a hung consumer.
 | `playground.rag_ingestion.ingestion.duration` | Timer | `event_type` ∈ {uploaded, visibility_changed, deleted}; `outcome` |
 | `playground.rag_ingestion.dlq.routed` | Counter | `topic`, `reason` |
 | `playground.rag_ingestion.lock.wait_duration` | Timer | (Redisson `RLock` wait time) |
+| `playground.rag_ingestion.chunker.duration` (M3.1) | Timer | `outcome` ∈ {success, parse_fallback} |
+| `playground.rag_ingestion.chunker.oversize_fence_split` (M3.1) | Counter | — |
+| `playground.rag_ingestion.chunker.oversize_sentence_fallback` (M3.1) | Counter | — |
+| `playground.rag_ingestion.chunker.parse_fallback` (M3.1) | Counter | — |
+| `playground.rag_ingestion.reembed.documents` (M3.1) | Counter | `outcome` ∈ {success, skipped, failed} |
+| `playground.rag_ingestion.reembed.duration` (M3.1) | Timer | — |
 
 Names follow the Micrometer `<app>.<bc>.<subsystem>.<measurement>` shape;
 M5's dashboard pulls them via `/actuator/prometheus`.
@@ -354,6 +397,7 @@ M5's dashboard pulls them via `/actuator/prometheus`.
 |---|---|
 | **M3 P0** | Forward-only consumption. Kafka consumer group `rag-ingestion` starts at `latest` offset on first deploy. Pre-existing `docs.documents` rows (created in M2 before M3 shipped) are **not** auto-backfilled. |
 | **M3.1** | One-shot CLI via a dedicated Spring profile (`backfill`). Invocation: `./gradlew :rag-ingestion:rag-ingestion-api:bootRun --args="--spring.profiles.active=backfill --since=<ISO-8601>"`. Activates a `BackfillCommandLineRunner` bean (only present under the `backfill` profile) that scans `docs-api`'s `GET /internal/docs/public/{id}` for the candidate documentId list (from a Postgres query against `docs.documents` filtered by `created_at >= --since`) and replays them through the normal `IngestDocumentUseCase` (same lock, same idempotency). |
+| **M3.1 (re-embed, 2026-05-19)** | Sibling profile `reembed` for migrating the existing corpus to new chunker boundaries / new metadata columns. Invocation: `./gradlew :rag-ingestion:rag-ingestion-api:bootRun --args="--spring.profiles.active=reembed --playground.rag-ingestion.reembed.scope=all"`. Activates a `ReembedCommandLineRunner` bean (only under the `reembed` profile) that scans `rag.document_chunks` for distinct `document_id` values (scope-filtered: `all` / `user:<uid>` / `document:<docId>`) and re-runs `ReembedService.reembedOne` per document — same Redisson lock as live `uploaded` events, same `replaceAll` transaction, same `rag.document.ingested` emission. Per-document failures are isolated (skipped on 404, failed on permanent embed errors) and the run continues; exit code 2 if any document failed. |
 
 **Why `CommandLineRunner` + profile, not a separate executable:**
 - Reuses the entire wiring (Kafka factory excepted — the `backfill` profile
