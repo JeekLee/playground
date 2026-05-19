@@ -67,8 +67,8 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
         // updateVisibility path below which also relies on `now()`.
         jdbc.batchUpdate(
                 "INSERT INTO rag.document_chunks "
-                        + "(document_id, chunk_index, user_id, visibility, embedding, text, body_checksum) "
-                        + "VALUES (?, ?, ?, ?, ?::public.vector, ?, ?)",
+                        + "(document_id, chunk_index, user_id, visibility, embedding, text, heading_path, body_checksum) "
+                        + "VALUES (?, ?, ?, ?, ?::public.vector, ?, ?, ?)",
                 new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(java.sql.PreparedStatement ps, int i) throws java.sql.SQLException {
@@ -82,7 +82,9 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
                         // SQL above parses into a pgvector value.
                         ps.setString(5, new PGvector(chunk.embedding().values()).toString());
                         ps.setString(6, chunk.text().value());
-                        ps.setString(7, chunk.bodyChecksum().value());
+                        ps.setArray(7, ps.getConnection().createArrayOf(
+                                "text", chunk.headingPath().toArray(new String[0])));
+                        ps.setString(8, chunk.bodyChecksum().value());
                     }
 
                     @Override
