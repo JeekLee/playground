@@ -13,6 +13,7 @@ import com.playground.ragingestion.domain.model.DocumentChunk;
 import com.playground.ragingestion.domain.model.id.ChunkId;
 import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.domain.model.vo.BodyChecksum;
+import com.playground.ragingestion.domain.model.vo.ChunkDraft;
 import com.playground.ragingestion.domain.model.vo.ChunkText;
 import com.playground.ragingestion.domain.model.vo.Embedding;
 import com.playground.ragingestion.domain.service.MarkdownAwareChunker;
@@ -134,11 +135,8 @@ public class IngestionService {
                     eventChecksum, fetchedChecksum, event.documentId()));
         }
 
-        // TEMPORARY (Task 14 will clean up): adapt MarkdownAwareChunker → List<ChunkText> shim.
-        List<ChunkText> texts = chunker.chunk(body.body()).stream()
-                .map(com.playground.ragingestion.domain.model.vo.ChunkDraft::text)
-                .toList();
-        if (texts.isEmpty()) {
+        List<ChunkDraft> drafts = chunker.chunk(body.body());
+        if (drafts.isEmpty()) {
             // Empty body: purge any stale chunks and emit ingested with 0
             // count so downstream can render "queryable (but empty)" state.
             chunkRepository.deleteAll(event.documentId());
@@ -149,6 +147,7 @@ public class IngestionService {
             return;
         }
 
+        List<ChunkText> texts = drafts.stream().map(ChunkDraft::text).toList();
         List<Embedding> embeddings = embeddingPort.embed(texts);
         if (embeddings.size() != texts.size()) {
             throw new IllegalStateException(
@@ -157,15 +156,16 @@ public class IngestionService {
         }
 
         Instant now = Instant.now(clock);
-        List<DocumentChunk> chunks = new ArrayList<>(texts.size());
-        for (int i = 0; i < texts.size(); i++) {
+        List<DocumentChunk> chunks = new ArrayList<>(drafts.size());
+        for (int i = 0; i < drafts.size(); i++) {
+            ChunkDraft d = drafts.get(i);
             chunks.add(new DocumentChunk(
                     ChunkId.of(event.documentId(), i),
                     event.userId(),
                     event.visibility(),
-                    texts.get(i),
+                    d.text(),
                     embeddings.get(i),
-                    List.of(),                       // placeholder, Task 14 replaces with d.headingPath()
+                    d.headingPath(),
                     fetchedChecksum,
                     now));
         }
