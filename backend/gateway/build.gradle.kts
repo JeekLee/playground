@@ -20,6 +20,10 @@ dependencyManagement {
 dependencies {
     implementation(libs.spring.cloud.starter.gateway)
     implementation(libs.spring.boot.starter.actuator)
+    // Wires /actuator/prometheus for the M5 dashboard's Alloy scrape (per
+    // ADR-15). The bc-api convention plugin pulls this in for every BC -api
+    // module; gateway uses spring-boot-app directly so we add it here.
+    implementation("io.micrometer:micrometer-registry-prometheus")
     implementation(libs.spring.boot.starter.webflux)
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.oauth2.client)
