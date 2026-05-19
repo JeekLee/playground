@@ -45,4 +45,15 @@ public interface ChunkRepository {
 
     /** Count chunks for a document (test / observability aid). */
     int countByDocument(DocumentId documentId);
+
+    /**
+     * Return the immutable {@code (userId, visibility)} pair for the document
+     * by reading any chunk row, or empty if no chunks exist for the document.
+     *
+     * <p>Used by {@code ReembedService} to avoid a docs-api round-trip when
+     * reconstructing the chunk ownership context for re-ingest (M3.1 plan
+     * §Task 17). Both fields are invariant per document — every chunk row
+     * carries the same values.
+     */
+    Optional<ChunkOwnerMeta> findOwnerMeta(DocumentId documentId);
 }

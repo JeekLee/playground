@@ -33,7 +33,17 @@ public enum RagIngestionErrorCode implements ErrorCode {
 
     @MappedTo(InternalServerErrorException.class)
     CHUNK_PERSIST_FAILED("RAG-CHUNK-001",
-            "Failed to persist chunks for document {0}");
+            "Failed to persist chunks for document {0}"),
+
+    /**
+     * Docs-api returned 404 for the body fetch — document was deleted between
+     * the event arriving and the body being fetched. Used by
+     * {@code ReembedService} to signal {@code Outcome.SKIPPED} rather than
+     * routing to the DLQ.
+     */
+    @MappedTo(com.playground.shared.error.NotFoundException.class)
+    DOCUMENT_NOT_FOUND("RAG-DOCS-003",
+            "Document {0} not found in docs-api (404) — may have been deleted");
 
     private final String code;
     private final String defaultMessage;

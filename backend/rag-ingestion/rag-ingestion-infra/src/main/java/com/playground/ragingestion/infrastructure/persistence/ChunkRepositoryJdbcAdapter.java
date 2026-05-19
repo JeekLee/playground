@@ -1,13 +1,16 @@
 package com.playground.ragingestion.infrastructure.persistence;
 
 import com.pgvector.PGvector;
+import com.playground.ragingestion.application.repository.ChunkOwnerMeta;
 import com.playground.ragingestion.application.repository.ChunkRepository;
 import com.playground.ragingestion.domain.enums.Visibility;
 import com.playground.ragingestion.domain.model.DocumentChunk;
+import com.playground.ragingestion.domain.model.id.AuthorId;
 import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.domain.model.vo.BodyChecksum;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -118,5 +121,20 @@ public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
                 Integer.class,
                 documentId.value());
         return count == null ? 0 : count;
+    }
+
+    @Override
+    public Optional<ChunkOwnerMeta> findOwnerMeta(DocumentId documentId) {
+        try {
+            return Optional.ofNullable(jdbc.queryForObject(
+                    "SELECT user_id, visibility FROM rag.document_chunks "
+                            + "WHERE document_id = ? LIMIT 1",
+                    (rs, i) -> new ChunkOwnerMeta(
+                            AuthorId.of((UUID) rs.getObject("user_id")),
+                            Visibility.fromWire(rs.getString("visibility"))),
+                    documentId.value()));
+        } catch (EmptyResultDataAccessException e) {
+            return Optional.empty();
+        }
     }
 }

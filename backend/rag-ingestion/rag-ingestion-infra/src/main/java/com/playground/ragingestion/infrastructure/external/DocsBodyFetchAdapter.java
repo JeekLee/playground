@@ -77,6 +77,13 @@ public class DocsBodyFetchAdapter implements BodyFetchPort {
             log.warn(
                     "docs body-fetch non-retryable {} for document={} — DLQ-bound",
                     e.status, documentId, e);
+            // 404 → NotFoundException so ReembedService can catch it as SKIPPED
+            // without routing to the DLQ.
+            if (e.status.value() == 404) {
+                throw ExceptionCreator
+                        .of(RagIngestionErrorCode.DOCUMENT_NOT_FOUND, documentId.toString())
+                        .build();
+            }
             throw ExceptionCreator
                     .of(e.status.value() == 413
                             ? RagIngestionErrorCode.BODY_TOO_LARGE
