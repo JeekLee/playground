@@ -11,6 +11,7 @@ import com.playground.ragingestion.application.service.ReembedService;
 import com.playground.ragingestion.application.service.ReembedService.Outcome;
 import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.infrastructure.config.ReembedProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Assertions;
@@ -37,7 +38,7 @@ class ReembedCommandLineRunnerTest {
         when(service.reembedOne(any())).thenReturn(Outcome.SUCCESS);
 
         ReembedCommandLineRunner runner =
-                new ReembedCommandLineRunner(props, service, chunkRepository, ctx);
+                new ReembedCommandLineRunner(props, service, chunkRepository, ctx, new SimpleMeterRegistry());
         int exitCode = runner.runAndReportExitCode(new DefaultApplicationArguments());
 
         assertThat(exitCode).isZero();
@@ -55,7 +56,7 @@ class ReembedCommandLineRunnerTest {
                 .thenReturn(Outcome.FAILED);
 
         ReembedCommandLineRunner runner =
-                new ReembedCommandLineRunner(props, service, chunkRepository, ctx);
+                new ReembedCommandLineRunner(props, service, chunkRepository, ctx, new SimpleMeterRegistry());
         int exitCode = runner.runAndReportExitCode(new DefaultApplicationArguments());
 
         assertThat(exitCode).isEqualTo(2);
@@ -67,7 +68,7 @@ class ReembedCommandLineRunnerTest {
         props.setScope("document");
         // documentId not set — should throw
         ReembedCommandLineRunner runner =
-                new ReembedCommandLineRunner(props, service, chunkRepository, ctx);
+                new ReembedCommandLineRunner(props, service, chunkRepository, ctx, new SimpleMeterRegistry());
 
         Assertions.assertThrows(
                 IllegalArgumentException.class,
@@ -85,7 +86,7 @@ class ReembedCommandLineRunnerTest {
         when(service.reembedOne(any())).thenReturn(Outcome.SUCCESS);
 
         ReembedCommandLineRunner runner =
-                new ReembedCommandLineRunner(props, service, chunkRepository, ctx);
+                new ReembedCommandLineRunner(props, service, chunkRepository, ctx, new SimpleMeterRegistry());
         int exitCode = runner.runAndReportExitCode(new DefaultApplicationArguments());
 
         assertThat(exitCode).isZero();
@@ -99,7 +100,7 @@ class ReembedCommandLineRunnerTest {
         when(service.reembedOne(any())).thenReturn(Outcome.SKIPPED);
 
         ReembedCommandLineRunner runner =
-                new ReembedCommandLineRunner(props, service, chunkRepository, ctx);
+                new ReembedCommandLineRunner(props, service, chunkRepository, ctx, new SimpleMeterRegistry());
         int exitCode = runner.runAndReportExitCode(new DefaultApplicationArguments());
 
         assertThat(exitCode).isZero();

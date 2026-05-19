@@ -4,6 +4,8 @@ import com.playground.ragingestion.application.repository.ChunkRepository;
 import com.playground.ragingestion.application.service.ReembedService;
 import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.infrastructure.config.ReembedProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -42,16 +44,19 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
     private final ReembedService service;
     private final ChunkRepository chunkRepository;
     private final ConfigurableApplicationContext ctx;
+    private final MeterRegistry registry;
 
     public ReembedCommandLineRunner(
             ReembedProperties properties,
             ReembedService service,
             ChunkRepository chunkRepository,
-            ConfigurableApplicationContext ctx) {
+            ConfigurableApplicationContext ctx,
+            MeterRegistry registry) {
         this.properties = properties;
         this.service = service;
         this.chunkRepository = chunkRepository;
         this.ctx = ctx;
+        this.registry = registry;
     }
 
     @Override
@@ -70,6 +75,7 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
         List<UUID> ids = resolveCandidates();
         log.info("rag-ingestion: reembed start scope={} candidates={}", properties.getScope(), ids.size());
 
+        Timer.Sample sample = Timer.start(registry);
         int success = 0;
         int skipped = 0;
         int failed = 0;
@@ -81,6 +87,8 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
                 case SKIPPED -> skipped++;
                 case FAILED -> failed++;
             }
+            registry.counter("playground.rag_ingestion.reembed.documents",
+                    "outcome", o.name().toLowerCase()).increment();
             log.info("rag-ingestion: reembed documentId={} outcome={}", id, o);
             if (properties.getInterDocumentDelayMillis() > 0) {
                 try {
@@ -95,7 +103,9 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
         log.info("rag-ingestion: reembed done processed={} success={} skipped={} failed={} durationMs={}",
                 ids.size(), success, skipped, failed, elapsed);
 
-        return failed > 0 ? 2 : 0;
+        int exit = failed > 0 ? 2 : 0;
+        sample.stop(Timer.builder("playground.rag_ingestion.reembed.duration").register(registry));
+        return exit;
     }
 
     private List<UUID> resolveCandidates() {
