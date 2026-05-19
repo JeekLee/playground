@@ -5,12 +5,13 @@ import { Chip } from '@/shared/ui/chip';
 
 /**
  * Tile-grid widget — "Things you can try" 4-column grid pinned in
- * `docs/design/M1-identity.md`. M2-shipped tiles are now Home + Documents;
- * Chat (M4) and System status (M5) stay locked.
+ * `docs/design/M1-identity.md`. M2/M5-shipped tiles are Home + Documents +
+ * System status; Chat (M4) stays locked (auth-only — sidebar handles its
+ * "Sign in" badge separately).
  *
- * Documents tile becomes interactive on M2 — wraps the visual Tile in a
- * Next.js Link to `/docs` (community feed). Hover lift on the Tile
- * primitive triggers because neither `locked` nor `active` is set.
+ * Shipped tiles wrap the visual `Tile` in a Next.js Link to their
+ * destination route and carry a `success` "shipped" chip. Hover lift on
+ * the Tile primitive triggers because `locked` is not set.
  */
 
 export function TileGrid() {
@@ -58,21 +59,22 @@ export function TileGrid() {
           </>
         }
       />
-      <Tile
-        locked
-        icon={<Activity size={18} />}
-        title="System status"
-        description="Peek at how the platform is feeling — read-only metrics."
-        meta={
-          <>
-            <Chip variant="neutral">
-              <Lock size={11} aria-hidden="true" />
-              <span className="ml-xs">M5 — System status</span>
+      <Link
+        href="/metrics"
+        className="block rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <Tile
+          active
+          icon={<Activity size={18} />}
+          title="System status"
+          description="Peek at how the platform is feeling — read-only metrics."
+          meta={
+            <Chip variant="success" dot>
+              shipped
             </Chip>
-            <Chip variant="accent">PUBLIC when ready</Chip>
-          </>
-        }
-      />
+          }
+        />
+      </Link>
     </div>
   );
 }
