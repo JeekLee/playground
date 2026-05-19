@@ -195,3 +195,60 @@ The boot-time owner-lookup route on `identity-api` (`/internal/users/by-google-s
 The `PLAYGROUND_ANON` cookie + per-IP fallback for anonymous identity (ADR-09 original §"Anonymous identity contract") still governs the remaining public routes: `/`, `GET /api/docs`, `GET /api/docs/{id}`, `POST /api/docs/{id}/view`, `GET /api/docs/search?scope=public`, `GET /api/metrics/**` when shipped. Chat is the only route where anonymous = 401; everything else still treats `X-User-Id` as optionally absent.
 
 See `docs/adr/14-m4-rag-chat.md` §C + §G.4 and `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md` §7.6 + §8 for the full specification.
+
+## Amendment (2026-05-19, ADR-15)
+
+ADR-15 (M5 Metrics per-milestone) splits the M5 surface into a public
+dashboard + authenticated logs endpoint. The existing public
+`GET /api/metrics/**` row STAYS — it continues to cover the dashboard
+(`/api/metrics/dashboard`), services (`/api/metrics/services`), and
+timeseries (`/api/metrics/timeseries`) routes. A new authenticated row
+is added for `/api/metrics/logs/**`. The most-specific-match rule means
+the new logs row wins for `/api/metrics/logs/**` without removing the
+public row that still governs everything else under `/api/metrics/**`.
+
+### Route classification — new row (post-ADR-15)
+
+The authenticated section gains:
+
+| Pattern | Class | Reason |
+|---|---|---|
+| `GET /api/metrics/logs/**` | **authenticated** | Logs may surface user PII, error stack traces, or content not appropriate for anon viewers. Per-user rate-limit 60/min via Redisson `RRateLimiter`. |
+
+The existing public `GET /api/metrics/**` row is **unchanged in
+wording**; its scope is now interpreted as "anything under
+`/api/metrics/**` that isn't matched by a more-specific authenticated
+row" per the most-specific-match-wins rule.
+
+### Per-user rate limit on the logs endpoint
+
+The `/api/metrics/logs/**` row carries a per-user rate limit of **60
+requests/min/user**, enforced by `metrics-api` (not the gateway — the
+gateway only sees the auth header; the bucket is per-user). Backing:
+Redisson `RRateLimiter`, key `metrics:bucket:user:{userId}:logs` (per
+ADR-15 §C + §18). The existing per-IP cap on `/api/metrics/dashboard`
+(30/min/IP, per spec §8.2 and ADR-15 §18) is a separate denominator
+and applies to the public route.
+
+### Anonymous identity contract — unchanged
+
+ADR-09's original §"Anonymous identity contract" remains in force.
+`/api/metrics/dashboard`, `/api/metrics/services`,
+`/api/metrics/timeseries` are anonymous-OK — `X-User-Id` may be absent,
+and the metrics BC does not consult it for those routes (the dashboard
+payload has no user-scope component). The `PLAYGROUND_ANON` cookie is
+not consulted by the metrics BC; per-IP rate limiting on `/dashboard`
+uses `X-Forwarded-For` directly (mirrors ADR-12 §7's anonymous-read
+pattern).
+
+### Auth-lock badge — does NOT apply to `/metrics`
+
+ADR-14's auth-lock badge convention (`🔒 Sign in` for shipped-but-anon-locked
+routes) does **not** apply to the sidebar `System status` row.
+`/metrics` is public; the row goes from `🔒 M5` (milestone-lock,
+pre-ship) directly to no-badge (active, unconditional click →
+`/metrics`) when M5 ships. There is no middle state. This matches
+ADR-14's forward note "M5 Metrics is unaffected".
+
+See `docs/adr/15-m5-metrics.md` §14 + §18 + §C + §G.2 for the full
+specification.
