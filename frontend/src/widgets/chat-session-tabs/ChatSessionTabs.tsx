@@ -328,7 +328,13 @@ function ActiveTab({
           type="button"
           onClick={onMenuToggle}
           aria-label="Tab actions"
-          className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm text-text-muted opacity-0 transition-opacity duration-[140ms] hover:bg-surface-soft hover:text-text focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent group-hover:opacity-100"
+          // On hover-capable pointers (desktop) the menu trigger stays
+          // hidden until the tab is hovered or the trigger itself is
+          // keyboard-focused; touch devices have no :hover state, so we
+          // keep it visible there — otherwise the menu is permanently
+          // unreachable on mobile / tablet (spec §7.2 calls for the
+          // ⋯ menu on every tab).
+          className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm text-text-muted opacity-100 transition-opacity duration-[140ms] hover:bg-surface-soft hover:text-text focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
         >
           <MoreHorizontal size={14} aria-hidden="true" />
         </button>
