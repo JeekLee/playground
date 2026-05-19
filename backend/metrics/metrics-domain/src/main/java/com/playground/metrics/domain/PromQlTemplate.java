@@ -75,7 +75,14 @@ public final class PromQlTemplate {
                 SubstitutionKind.SERVICE, "MB"));
         m.put("jvm-heap-max", new Template(
                 "jvm-heap-max",
-                "jvm_memory_max_bytes{area=\"heap\",service=\"%s\"} / 1048576",
+                // `jvm_memory_max_bytes{area="heap"}` returns one row per G1
+                // memory pool, and G1's dynamic pools (Eden, Survivor) report
+                // -1 because their per-pool max is undefined. Only the Old
+                // Gen row carries the real -Xmx value. Micrometer ships
+                // `jvm_gc_max_data_size_bytes` as the single-value canonical
+                // "max heap usable across all generations" — that's the
+                // metric the dashboard wants.
+                "jvm_gc_max_data_size_bytes{service=\"%s\"} / 1048576",
                 SubstitutionKind.SERVICE, "MB"));
         m.put("jvm-nonheap", new Template(
                 "jvm-nonheap",
