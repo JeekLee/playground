@@ -1,26 +1,33 @@
 package com.playground.ragingestion.domain.service;
 
 /**
- * Immutable chunking parameters per ADR-13 §1. Constructor takes the four
- * tunables; the {@link #DEFAULT} instance corresponds to the ADR-pinned
- * defaults (800-token windows, 120-token overlap, cl100k-base tokenizer,
- * min-chunk 64 tokens). The application layer reads these from
- * {@code application.yml} via a {@code @ConfigurationProperties} POJO and
- * hands them to the chunker as constructor args (no Spring import in
- * {@code -domain}).
+ * Immutable chunking parameters per ADR-13 §1 (M3.1 amendment). Six fields:
+ * the four ADR-13 P0 tunables plus two M3.1 additions —
+ * {@code maxOversizeFenceTokens} (line-split threshold for oversized fences /
+ * tables) and {@code preserveHeadingPath} (toggle for the heading-aware
+ * prefix; disable to fall back to plain block packing).
+ *
+ * <p>{@code overlapTokens} is dual-meaning: in the normal markdown-aware path
+ * it caps the heading-prefix budget injected at chunk start; in the
+ * parse-fallback path it serves the historical role of "token-window stride"
+ * via {@link #stride()}. Spec §"Fallback 경로 한정".
  */
 public record ChunkingPolicy(
         int sizeTokens,
         int overlapTokens,
         int minChunkTokens,
-        String tokenizer
+        String tokenizer,
+        int maxOversizeFenceTokens,
+        boolean preserveHeadingPath
 ) {
 
     public static final ChunkingPolicy DEFAULT = new ChunkingPolicy(
             800,
             120,
             64,
-            "cl100k-base");
+            "cl100k-base",
+            800,
+            true);
 
     public ChunkingPolicy {
         if (sizeTokens <= 0) {
@@ -39,6 +46,10 @@ public record ChunkingPolicy(
         }
         if (tokenizer == null || tokenizer.isBlank()) {
             throw new IllegalArgumentException("tokenizer must not be blank");
+        }
+        if (maxOversizeFenceTokens <= 0) {
+            throw new IllegalArgumentException(
+                    "maxOversizeFenceTokens must be positive, got " + maxOversizeFenceTokens);
         }
     }
 
