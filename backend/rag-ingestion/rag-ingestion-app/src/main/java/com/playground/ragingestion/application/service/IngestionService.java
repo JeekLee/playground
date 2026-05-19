@@ -165,6 +165,7 @@ public class IngestionService {
                     event.visibility(),
                     texts.get(i),
                     embeddings.get(i),
+                    List.of(),                       // placeholder, Task 14 replaces with d.headingPath()
                     fetchedChecksum,
                     now));
         }
