@@ -104,7 +104,8 @@ class WindowNormalizerTest {
                 .filter(d -> d.text().value().contains("이것은"))
                 .forEach(d -> {
                     String t = d.text().value().trim();
-                    assertThat(t).matches(".*[.!?]\\s*");
+                    // Use DOTALL so heading-prefix newlines don't break the match.
+                    assertThat(t).matches("(?s).*[.!?]\\s*");
                 });
     }
 
@@ -128,5 +129,67 @@ class WindowNormalizerTest {
             drafts.subList(1, drafts.size()).forEach(d ->
                     assertThat(d.text().value()).contains("| col1 | col2 |"));
         }
+    }
+
+    @Test
+    void second_and_later_chunks_of_a_section_get_heading_prefix() {
+        // Force a section to split into ≥ 2 chunks.
+        // SectionBuilder creates two sections: ["Outer"] (just the heading node)
+        // and ["Outer","Inner"] (the ## Inner heading + body paragraphs).
+        StringBuilder md = new StringBuilder("# Outer\n\n## Inner\n\n");
+        String para = "Word ".repeat(200);  // ~200 tokens
+        for (int i = 0; i < 8; i++) md.append(para).append("\n\n");
+        List<ChunkDraft> drafts = normalizer.normalize(builder.build(md.toString()));
+        // Filter to only chunks from the ["Outer","Inner"] section.
+        List<ChunkDraft> innerChunks = drafts.stream()
+                .filter(d -> d.headingPath().contains("Inner"))
+                .toList();
+        assertThat(innerChunks.size()).isGreaterThan(1);
+        // First chunk of the section has the heading inline naturally.
+        assertThat(innerChunks.get(0).text().value()).contains("Inner");
+        // Subsequent chunks open with the breadcrumb prefix.
+        for (int i = 1; i < innerChunks.size(); i++) {
+            assertThat(innerChunks.get(i).text().value())
+                    .startsWith("> Context: ")
+                    .contains("Outer")
+                    .contains("Inner");
+        }
+    }
+
+    @Test
+    void heading_prefix_drops_top_levels_when_budget_overflows() {
+        // overlapTokens default 120 → if the breadcrumb exceeds, drop top headings.
+        // SectionBuilder creates sections for each heading level, then the deepest
+        // section (["A...", "B...", "C..."]) holds the body paragraphs.
+        String h1 = "A ".repeat(200);      // ~200 tokens
+        String h2 = "B ".repeat(10);
+        String h3 = "C ".repeat(5);
+        StringBuilder md = new StringBuilder("# ").append(h1).append("\n## ").append(h2)
+                .append("\n### ").append(h3).append("\n\n");
+        String para = "Word ".repeat(200);
+        for (int i = 0; i < 8; i++) md.append(para).append("\n\n");
+        List<ChunkDraft> drafts = normalizer.normalize(builder.build(md.toString()));
+        // Find chunks from the deepest section (path depth = 3).
+        List<ChunkDraft> deepChunks = drafts.stream()
+                .filter(d -> d.headingPath().size() == 3)
+                .toList();
+        assertThat(deepChunks.size()).isGreaterThan(1);
+        // Verify the second chunk's prefix does NOT contain the giant h1 text.
+        String secondPrefix = deepChunks.get(1).text().value();
+        assertThat(secondPrefix).startsWith("> Context: ");
+        assertThat(secondPrefix.split("\n", 2)[0].length()).isLessThan(600);
+    }
+
+    @Test
+    void short_trailing_chunk_in_a_section_merges_into_previous() {
+        // Trailing-merge: a section ending with a < minChunkTokens remainder
+        // gets folded into the previous chunk in the same section.
+        StringBuilder md = new StringBuilder("# X\n\n");
+        String big = "Word ".repeat(700);  // ~700 tokens — fits in 1 chunk
+        md.append(big).append("\n\n");
+        md.append("a b c.\n");             // ~3 tokens — would be a tiny trailer
+        List<ChunkDraft> drafts = normalizer.normalize(builder.build(md.toString()));
+        assertThat(drafts).hasSize(1);
+        assertThat(drafts.get(0).text().value()).endsWith("a b c.");
     }
 }
