@@ -59,7 +59,7 @@ Coordinate contract for the Figma mocks (every dashboard frame is 1440 × 900 wi
 | Service Health grid 6-cell row 1 (1110 × 56) | `(258, 170)` | `(1368, 226)` | 6 cells × 175 + 5 gaps × 12. |
 | Service Health grid 5-cell row 2 (923 × 56) | `(258, 238)` | `(1181, 294)` | 5 cells × 175 + 4 gaps × 12. Right edge ragged — the 5-cell row is intentionally narrower than row 1 (no need to stretch). |
 | Host card row (1116 × 96) | `(258, 336)` | `(1374, 432)` | 4 cards × 270 + 3 gaps × 12. |
-| JVM heap chart row (1116 × 128) | `(258, 474)` | `(1374, 602)` | 4 cards × 270 + 3 gaps × 12. |
+| JVM heap chart row | `(258, 474)` | dynamic | Auto-sized to the dashboard payload's `jvm[]`. Slice-1 ships 6 JVM-bearing services. The grid is `xl:grid-cols-6` (single row ≥1280 px), `lg:grid-cols-3` (2 rows of 3), `md:grid-cols-2`, else single column. Each card stays 128 px tall; width auto-sizes to the column track. The original `4 cards × 270` fixed grid was retired post-slice-1 when the row widened from 4 → 6 services. |
 | HTTP rate cards (175 × 236) × 3 + spark-latency wide (365 × 236) + spark-models (175 × 236) | `(258, 644)` to `(1374, 880)` | — | Mixed-width row anchored to the bottom of the viewport. |
 | Sidebar account footer card (200 × 66) | `(16, 818)` | `(216, 884)` | 16 px from sidebar bottom. |
 
@@ -85,9 +85,10 @@ Coordinate contract for the Figma mocks (every dashboard frame is 1440 × 900 wi
     - **MEMORY card:** `MEMORY` eyebrow → `12.4 / 64 GB` big number → progress bar (238 × 10, `surface.soft` bg + `accent` fill at 46/238 ≈ 19 %).
     - **DISK card:** `DISK` eyebrow → `42% · 420 GB` big number → progress bar (238 × 10, `accent` fill at 100/238 ≈ 42 %).
     - **LOAD AVG card:** `LOAD AVG` eyebrow → `1.2  0.8  0.6` big number → `1m · 5m · 15m` sub.
-  - **JVM heap per BC (y = 450 header, y = 474 cards, 4 cards × 270 × 128):**
-    - Each card: service name (`rag-chat-api`, `docs-api`, `identity-api`, `rag-ingestion-api`) in `text` 12 / 600 → `420 / 1024 MB` value in `accent` 17 / 600 → 238 × 48 chart area (`surface.soft` bg, `radius.sm` 6) with a 2 px `accent` line representing the heap-over-time series.
-    - Values: rag-chat 420/1024, docs 280/1024, identity 180/512, rag-ingestion 220/1024.
+  - **JVM heap per BC (y = 450 header, y = 474 cards, one card per JVM-bearing service × 128 height):**
+    - Slice-1 lists 6 JVM-bearing services in deterministic order: `gateway`, `identity-api`, `docs-api`, `rag-ingestion-api`, `rag-chat-api`, `metrics-api` (matches Alloy's `backend_bcs` scrape order). Grid is responsive: `xl:grid-cols-6` (single row on ≥1280 px), `lg:grid-cols-3` (2 rows × 3), `md:grid-cols-2`, else single-column.
+    - Each card: service name in `text` 12 / 600 → `420 / 1024 MB` value in `accent` 17 / 600 → chart area (`surface.soft` bg, `radius.sm` 6, fills remaining card width) with a 2 px `accent` line representing the heap-over-time series.
+    - Slice-1 sample values: rag-chat 420/1024, docs 280/1024, identity 180/512, rag-ingestion 220/1024, gateway / metrics-api typically smaller (gateway ~80–150 MB, metrics-api ~120–200 MB depending on load).
   - **HTTP request rate (y = 620 header, y = 644 cards, 3 cards × 175 × 236):** narrower portrait-shaped cards. Each: service name in `text` 12 / 600 → big `2.4 rps` in `accent` 18 / 700 → small `error 0%` (or `error 1.0%` for docs-api) in `text.muted` 11 / 400 → 151 × 144 chart area (`surface.soft` bg) with a 2 px `accent` line.
   - **spark-inference-gateway (y = 620 header, same row as HTTP rate, mixed-width):**
     - **Latency P95 card (365 × 236, x = 822):** title `Latency P95 (ms)`, value `340 ms` in `accent` 22 / 700, legend `● BGE-M3   ● Qwen3-32B` in `text.muted` 11 / 500, 341 × 154 chart area with two stacked 2 px lines: top `accent` (BGE-M3, faster), bottom `khaki` (#C2B88A — Qwen3-32B, slower).
