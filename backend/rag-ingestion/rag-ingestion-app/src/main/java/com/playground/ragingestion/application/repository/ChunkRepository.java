@@ -6,6 +6,7 @@ import com.playground.ragingestion.domain.model.id.DocumentId;
 import com.playground.ragingestion.domain.model.vo.BodyChecksum;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Repository port for {@code rag.document_chunks} per ADR-02 v2 (port lives
@@ -56,4 +57,19 @@ public interface ChunkRepository {
      * carries the same values.
      */
     Optional<ChunkOwnerMeta> findOwnerMeta(DocumentId documentId);
+
+    /**
+     * Return the distinct {@code document_id} values present in
+     * {@code rag.document_chunks}, ordered ascending. Used by
+     * {@code ReembedCommandLineRunner} (Task 18) for scope {@code all} to
+     * discover the full candidate set without loading chunk rows.
+     */
+    List<UUID> findAllDistinctDocumentIds();
+
+    /**
+     * Return the distinct {@code document_id} values owned by {@code userId}
+     * in {@code rag.document_chunks}, ordered ascending. Used by
+     * {@code ReembedCommandLineRunner} (Task 18) for scope {@code user}.
+     */
+    List<UUID> findDistinctDocumentIdsByUser(UUID userId);
 }
