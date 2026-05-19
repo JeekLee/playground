@@ -2,11 +2,8 @@ package com.playground.ragchat.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.playground.ragchat.domain.enums.Visibility;
-import com.playground.ragchat.domain.model.RetrievedChunk;
-import com.playground.ragchat.domain.model.id.DocumentId;
+import com.playground.ragchat.application.dto.CitationDto;
 import com.playground.ragchat.domain.model.id.MessageId;
-import com.playground.ragchat.domain.model.id.UserId;
 import com.playground.shared.chat.ChatStreamEvent;
 import java.util.List;
 import java.util.Map;
@@ -15,28 +12,39 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.codec.ServerSentEvent;
 
 /**
- * Direct tests for the SSE event mapping in {@link ChatStreamController}.
- * Wire-format assertions guard the PR-A compat layer: the
- * shared-kernel grammar emits {@link ChatStreamEvent.Phase} for the
- * retrieval phase, and the mapper translates it back to the pre-PR-A
- * wire event name {@code retrieval} so the frontend SSE consumer
- * doesn't break.
+ * Wire-grammar tests for {@link ChatStreamController#toSse}. PR B revision:
+ * <ul>
+ *   <li>The legacy {@code event: retrieval} is gone — progress events
+ *       now ride a single {@code event: phase} type discriminated by
+ *       {@code step}.</li>
+ *   <li>{@link CitationDto} cards arrive on the terminal
+ *       {@code event: done} (cited subset only).</li>
+ * </ul>
  */
 class ChatStreamControllerTest {
 
     @Test
-    void toSse_retrievalPhase_compatMapsToRetrievalEventName() {
-        List<RetrievedChunk> chunks = List.of(
-                new RetrievedChunk(1, DocumentId.of(UUID.randomUUID()), 3, "text",
-                        "Doc", UserId.of(UUID.randomUUID()), Visibility.PUBLIC));
+    void toSse_phaseEventCarriesStepLabelAndData() {
         ChatStreamEvent.Phase evt = new ChatStreamEvent.Phase(
-                "retrieval", "Retrieving chunks", Map.of("chunks", chunks));
+                "retrieval", "참고 문서 확인 중", Map.of("count", 6));
         ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
-        assertThat(sse.event()).isEqualTo("retrieval");
-        assertThat(sse.data()).isInstanceOf(Map.class);
+        assertThat(sse.event()).isEqualTo("phase");
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) sse.data();
-        assertThat(data).containsKey("citations");
+        assertThat(data).containsEntry("step", "retrieval");
+        assertThat(data).containsEntry("label", "참고 문서 확인 중");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> inner = (Map<String, Object>) data.get("data");
+        assertThat(inner).containsEntry("count", 6);
+    }
+
+    @Test
+    void toSse_phaseEventOmitsDataWhenEmpty() {
+        ChatStreamEvent.Phase evt = new ChatStreamEvent.Phase("thinking", "사고 중", Map.of());
+        ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) sse.data();
+        assertThat(data).doesNotContainKey("data");
     }
 
     @Test
@@ -49,17 +57,28 @@ class ChatStreamControllerTest {
     }
 
     @Test
-    void toSse_doneCarriesMessageIdAndCounts() {
+    void toSse_doneCarriesCitedSubset() {
         MessageId mid = MessageId.of(UUID.randomUUID());
+        List<CitationDto> cited = List.of(
+                new CitationDto(1, UUID.randomUUID().toString(), 3, "Doc title", "excerpt…", "public"),
+                new CitationDto(3, UUID.randomUUID().toString(), 7, "Another", "excerpt…", "public"));
         ServerSentEvent<Object> sse = ChatStreamController.toSse(
-                new ChatStreamEvent.Done(mid.value().toString(), 100, 200, null));
+                new ChatStreamEvent.Done(mid.value().toString(), 100, 200, cited));
         assertThat(sse.event()).isEqualTo("done");
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) sse.data();
         assertThat(data).containsKey("messageId");
         assertThat(data).containsEntry("tokensIn", 100);
         assertThat(data).containsEntry("tokensOut", 200);
-        // PR-A: null citations are dropped from the wire.
+        assertThat(data).extractingByKey("citations").asList().hasSize(2);
+    }
+
+    @Test
+    void toSse_doneOmitsCitationsWhenNull() {
+        ServerSentEvent<Object> sse = ChatStreamController.toSse(
+                new ChatStreamEvent.Done(UUID.randomUUID().toString(), 10, 20, null));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) sse.data();
         assertThat(data).doesNotContainKey("citations");
     }
 

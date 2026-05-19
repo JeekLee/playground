@@ -364,6 +364,7 @@ export function ChatPage({
                   content={streamingAssistant.content}
                   citations={streamingAssistant.citations}
                   status={mapStreamStatus(streamingAssistant.status)}
+                  phaseLabel={streamingAssistant.phaseLabel}
                   onStop={streamApi.stop}
                   onCitationClick={handleCitationClick}
                   accordion={

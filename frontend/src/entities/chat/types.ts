@@ -14,7 +14,7 @@ import type {
   MessageCitationDto,
   MessageDto,
   MessageRole,
-  RetrievalEventPayload,
+  PhaseEventPayload,
   SessionListItemDto,
   SseErrorCode,
   TokenEventPayload,
@@ -27,7 +27,7 @@ export type ChatSession = SessionListItemDto;
 export type Citation = MessageCitationDto;
 export type Message = MessageDto;
 export type SseEvent = ChatStreamEvent;
-export type RetrievalPayload = RetrievalEventPayload;
+export type PhasePayload = PhaseEventPayload;
 export type TokenPayload = TokenEventPayload;
 export type DonePayload = DoneEventPayload;
 export type ErrorPayload = ErrorEventPayload;
@@ -53,6 +53,13 @@ export interface StreamingTurn {
   content: string;
   citations: Citation[];
   status: StreamingTurnStatus;
+  /**
+   * Current progress label from the latest `phase` SSE event — rendered
+   * inline above the assistant bubble while {@link content} is empty
+   * (and replaced by the streamed text once the first token arrives).
+   * Null between turns and once the answer body starts filling in.
+   */
+  phaseLabel?: string;
   /** When status === 'error' — the SSE error payload. */
   error?: ErrorPayload;
 }

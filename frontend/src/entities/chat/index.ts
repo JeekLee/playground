@@ -5,7 +5,7 @@ export type {
   Citation,
   Message,
   SseEvent,
-  RetrievalPayload,
+  PhasePayload,
   TokenPayload,
   DonePayload,
   ErrorPayload,

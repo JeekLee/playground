@@ -168,14 +168,20 @@ Response (errors)
 
 ### 5.2 SSE event grammar
 
-Four event types, fixed order: one `retrieval`, ≥0 `token`, exactly one terminal (`done` OR `error`).
+> Revised 2026-05-19 (PR B): the legacy `retrieval` event is gone. Progress info now ships as `phase` events (≥0 of them), and citation cards arrive on the terminal `done` (cited subset only — `[N]` markers that survived in the assistant text, mapped back to the originally-retrieved chunks). The whole grammar is BC-agnostic and lives in `shared-kernel/chat/ChatStreamEvent` so future chat surfaces (tool-calling agent, second model line) emit identical events.
+
+Three streaming event types plus one terminal pair: ≥0 `phase`, ≥0 `token`, exactly one terminal `done` or `error`.
 
 ```
-event: retrieval
-data: {"citations":[
-        {"n":1,"documentId":"<uuid>","chunkIndex":3,"title":"ADR-13: M3 RAG-Ingestion","excerpt":"...","visibility":"public"},
-        {"n":2,"documentId":"<uuid>","chunkIndex":7,"title":"M3 PRD","excerpt":"...","visibility":"public"}
-      ]}
+event: phase
+data: {"step":"retrieval","label":"참고 문서 확인 중","data":{"count":6}}
+
+# (PR C onward — extra phase events from tool-calling)
+event: phase
+data: {"step":"tool_call","label":"공개 문서 검색 중","data":{"tool":"searchPublicDocs","args":{"query":"…"}}}
+
+event: phase
+data: {"step":"generating"}
 
 event: token
 data: {"delta":"800-token windows "}
@@ -184,16 +190,19 @@ event: token
 data: {"delta":"with 120-token overlap [1][2]…"}
 
 event: done
-data: {"messageId":"<uuid>","tokensIn":1234,"tokensOut":567}
+data: {"messageId":"<uuid>","tokensIn":1234,"tokensOut":567,"citations":[
+        {"n":1,"documentId":"<uuid>","chunkIndex":3,"title":"ADR-13: M3 RAG-Ingestion","excerpt":"…","visibility":"public"},
+        {"n":2,"documentId":"<uuid>","chunkIndex":7,"title":"M3 PRD","excerpt":"…","visibility":"public"}
+      ]}
 
 # OR (terminal alternative)
 event: error
 data: {"code":"GATEWAY_5XX|RATE_LIMIT|RETRIEVAL_EMPTY|ABORTED|INTERNAL","message":"<human-readable>"}
 ```
 
-- `retrieval` is **always emitted first** (even when citations is empty). The frontend uses its arrival to dismiss the "Thinking…" indicator and render the citation accordion skeleton.
-- `token` events deliver `delta` strings as they arrive from Spring AI's `Flux<ChatResponse>`. No transformation server-side — the LLM's `[N]` markers reach the client as-is and are matched against the citation list by `n`.
-- `done` is emitted after the last `token`; carries the assistant message's persisted ID and token counts. The frontend uses `messageId` to enable post-stream actions (regenerate, copy, etc. — those are PRD features, P1 candidates).
+- `phase` events are progress / status updates: `step` is the discriminator (`retrieval`, `tool_call`, `tool_result`, `thinking`, `generating`, …), `label` is a human-readable hint the UI may render verbatim, and `data` is a BC-specific payload (count, tool + args, etc.). 0+ allowed in any order; the UI uses the latest label to drive the "Thinking…" affordance line.
+- `token` events deliver `delta` strings as they arrive from Spring AI's `Flux<ChatResponse>`. No transformation server-side — the LLM's `[N]` markers reach the client as-is and are matched against the `done.citations` list by `n`.
+- `done` is emitted after the last `token`; carries the assistant message's persisted ID, token counts, and the **cited subset** of retrieved chunks (the `[N]`s that actually appeared in the final text). The frontend uses `messageId` to enable post-stream actions (regenerate, copy, etc. — those are PRD features, P1 candidates).
 - `error` is terminal. Once emitted, the SSE connection closes. The assistant message is **not** persisted when the stream ended in `error` (upstream LLM failure). Client disconnects without an `error` event (navigate-away, Stop button) do **not** abort the server pipeline — see §6.1 step 12 for the disconnect-tolerant persistence rule (revised 2026-05-18).
 
 ### 5.3 Session management endpoints (non-streaming + resume)
