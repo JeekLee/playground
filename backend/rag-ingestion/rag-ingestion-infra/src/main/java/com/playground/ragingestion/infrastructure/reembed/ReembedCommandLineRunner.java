@@ -56,6 +56,17 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        int exitCode = runAndReportExitCode(args);
+        System.exit(SpringApplication.exit(ctx, () -> exitCode));
+    }
+
+    /**
+     * Orchestration logic extracted for testability. Returns the exit code
+     * (0 = all success/skipped, 2 = at least one failure) without calling
+     * {@code System.exit}. Tests invoke this directly so that the test JVM
+     * is not terminated.
+     */
+    int runAndReportExitCode(ApplicationArguments args) {
         List<UUID> ids = resolveCandidates();
         log.info("rag-ingestion: reembed start scope={} candidates={}", properties.getScope(), ids.size());
 
@@ -84,8 +95,7 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
         log.info("rag-ingestion: reembed done processed={} success={} skipped={} failed={} durationMs={}",
                 ids.size(), success, skipped, failed, elapsed);
 
-        int exit = failed > 0 ? 2 : 0;
-        System.exit(SpringApplication.exit(ctx, () -> exit));
+        return failed > 0 ? 2 : 0;
     }
 
     private List<UUID> resolveCandidates() {
