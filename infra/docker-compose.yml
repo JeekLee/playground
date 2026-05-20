@@ -267,8 +267,15 @@ services:
         condition: service_healthy
       docs-api:
         condition: service_healthy   # body-fetch dependency per ADR-08 Exception 1
+    networks:
+      # Joined to two bridges: the playground compose default (postgres, kafka,
+      # redis, docs-api hops) AND the external `spark-inference-net` so the
+      # OpenAI-compatible `spark-inference-gateway` container's DNS resolves
+      # directly. See ADR-04 amendment (2026-05-20).
+      - default
+      - spark-inference-net
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # per ADR-04 — reach spark-inference-gateway
+      - "host.docker.internal:host-gateway"   # ADR-04 fallback path (host-process gateway)
     environment:
       # Explicit heap cap so `jvm_memory_max_bytes` reports a positive value
       # (the JVM in a container without -Xmx and without a cgroup memory
@@ -317,8 +324,14 @@ services:
         condition: service_healthy
       gateway:
         condition: service_started     # gateway must be up for /api/rag/chat/** routing
+    networks:
+      # Joined to two bridges (see rag-ingestion-api block + ADR-04 amendment
+      # 2026-05-20): playground default for db/cache/gateway hops, external
+      # `spark-inference-net` for direct DNS to `spark-inference-gateway`.
+      - default
+      - spark-inference-net
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # per ADR-04 — reach spark-inference-gateway
+      - "host.docker.internal:host-gateway"   # ADR-04 fallback path (host-process gateway)
     environment:
       # Explicit heap cap so `jvm_memory_max_bytes` reports a positive value
       # (the JVM in a container without -Xmx and without a cgroup memory
@@ -365,8 +378,15 @@ services:
         condition: service_healthy     # reserved for slice-2 rate limiter
       gateway:
         condition: service_started     # gateway must be up for /api/metrics/** routing
+    networks:
+      # Joined to two bridges (see ADR-04 amendment 2026-05-20): playground
+      # default for prometheus/loki/redis/gateway, external `spark-inference-net`
+      # so the §17 health-grid spark cell can probe `spark-inference-gateway` by
+      # name without bouncing through host.docker.internal.
+      - default
+      - spark-inference-net
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # per ADR-04 — reach spark-inference-gateway probe
+      - "host.docker.internal:host-gateway"   # ADR-04 fallback path (host-process gateway)
     environment:
       # Explicit heap cap so `jvm_memory_max_bytes` reports a positive value
       # (the JVM in a container without -Xmx and without a cgroup memory
@@ -515,3 +535,20 @@ volumes:
   prometheus-playground-data:
   loki-playground-data:
   alloy-playground-data:
+
+networks:
+  # Playground compose's default bridge — declared explicitly because once any
+  # service has a `networks:` block, compose stops auto-attaching the default.
+  default:
+  # The Spark inference stack (`spark-inference-gateway` + per-model backends
+  # like `spark-inference-qwen3-30b-a3b`, `spark-inference-bge-m3`) lives in a
+  # SEPARATE compose project on a bridge named `spark-inference-net`. Three
+  # playground services (`rag-ingestion-api`, `rag-chat-api`, `metrics-api`)
+  # join this bridge so the gateway's container DNS resolves directly. See
+  # ADR-04 amendment 2026-05-20.
+  #
+  # Operator prerequisite: the spark-stack compose project must be up first so
+  # the network already exists; otherwise `docker compose up` here errors with
+  # "network spark-inference-net declared as external, but could not be found."
+  spark-inference-net:
+    external: true
