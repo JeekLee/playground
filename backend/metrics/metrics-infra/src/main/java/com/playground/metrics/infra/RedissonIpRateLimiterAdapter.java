@@ -7,9 +7,6 @@ import org.redisson.api.RateType;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -36,13 +33,14 @@ import reactor.core.scheduler.Schedulers;
  * on a healthy Redis; the bounded-elastic dispatch keeps the WebFlux event
  * loop free even on the rare slow call.
  *
- * <p>The bean only registers when {@link RedissonClient} is on the context;
- * unit tests that bypass Redis (e.g.,
- * {@link com.playground.metrics.api.controller.DashboardControllerTest}'s
- * {@code TestConfig}) supply their own no-op {@link IpRateLimitPort} bean.
+ * <p>Wired by {@link RateLimitAdapterConfig} as a {@code @Bean} method with
+ * {@code @ConditionalOnBean(RedissonClient.class)} — NOT by component scan —
+ * because Spring evaluates {@code @ConditionalOnBean} on {@code @Component}
+ * classes during the scan phase, before {@code RedissonClient} is auto-
+ * configured, which would always evaluate the condition false and silently
+ * skip the bean. Putting the condition on a {@code @Bean} method delays
+ * evaluation until auto-config has finished.
  */
-@Component
-@ConditionalOnBean(RedissonClient.class)
 public class RedissonIpRateLimiterAdapter implements IpRateLimitPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedissonIpRateLimiterAdapter.class);
@@ -52,18 +50,9 @@ public class RedissonIpRateLimiterAdapter implements IpRateLimitPort {
     private final RedissonClient redisson;
     private final long limitPerMinute;
 
-    public RedissonIpRateLimiterAdapter(
-            RedissonClient redisson,
-            @Value("${playground.metrics.rate-limit.dashboard-per-min:${METRICS_DASHBOARD_RATE_LIMIT_PER_MIN:30}}")
-                    long limitPerMinute) {
+    public RedissonIpRateLimiterAdapter(RedissonClient redisson, long limitPerMinute) {
         this.redisson = redisson;
         this.limitPerMinute = limitPerMinute <= 0 ? 30L : limitPerMinute;
-    }
-
-    /** Test-only ctor for explicit limit injection. */
-    RedissonIpRateLimiterAdapter(RedissonClient redisson, long limitPerMinute, boolean test) {
-        this.redisson = redisson;
-        this.limitPerMinute = limitPerMinute;
     }
 
     @Override
