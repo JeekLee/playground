@@ -53,7 +53,14 @@ public class SparkGatewayProbeAdapter implements SparkGatewayProbePort {
         if (cached != null) {
             return Mono.just(cached);
         }
-        return webClient.head()
+        // GET (not HEAD): the post-2026-05-20 spark-inference-gateway is a
+        // uvicorn-based ASGI app that returns 405 for HEAD on `/v1/models`
+        // because FastAPI / Starlette does not auto-route HEAD onto GET
+        // handlers. The probe is reachability + verdict only — we drop the
+        // body via `toBodilessEntity()` so the bandwidth cost is the same as
+        // HEAD would have been if it worked. See ADR-15 §12 amendment
+        // 2026-05-20.
+        return webClient.get()
                 .uri("/v1/models")
                 .retrieve()
                 .toBodilessEntity()
