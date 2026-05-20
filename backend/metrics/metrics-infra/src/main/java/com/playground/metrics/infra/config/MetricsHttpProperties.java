@@ -35,13 +35,27 @@ public record MetricsHttpProperties(
         }
     }
 
-    public record SparkGateway(String baseUrl, long probeCacheTtlSeconds) {
+    /**
+     * @param apiKey Bearer token sent on every probe call. Null / blank means
+     *     no {@code Authorization} header — appropriate for a bare vLLM that
+     *     does not validate API keys (original ADR-04 host-process wiring); the
+     *     post-2026-05-20 spark-inference-gateway enforces Bearer auth, so in
+     *     that setup wire it via {@code METRICS_SPARK_GATEWAY_API_KEY} (or fall
+     *     back to {@code SPRING_AI_OPENAI_API_KEY} which the rag-chat /
+     *     rag-ingestion BCs already consume). See ADR-15 §12 amendment
+     *     2026-05-20.
+     */
+    public record SparkGateway(String baseUrl, long probeCacheTtlSeconds, String apiKey) {
         public SparkGateway {
             if (baseUrl == null || baseUrl.isBlank()) {
                 baseUrl = "http://host.docker.internal:10080";
             }
             if (probeCacheTtlSeconds <= 0) {
                 probeCacheTtlSeconds = 15L;
+            }
+            // Normalize blank → null so the adapter can do a single null-check.
+            if (apiKey != null && apiKey.isBlank()) {
+                apiKey = null;
             }
         }
     }
@@ -54,7 +68,7 @@ public record MetricsHttpProperties(
             loki = new Loki(null, 0);
         }
         if (sparkGateway == null) {
-            sparkGateway = new SparkGateway(null, 0);
+            sparkGateway = new SparkGateway(null, 0, null);
         }
     }
 }

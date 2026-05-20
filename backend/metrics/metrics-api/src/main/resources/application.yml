@@ -36,6 +36,12 @@ playground:
     spark-gateway:
       base-url: ${METRICS_SPARK_GATEWAY_BASE_URL:http://host.docker.internal:10080}
       probe-cache-ttl-seconds: 15
+      # Bearer token for the post-2026-05-20 spark-inference-gateway (ADR-15
+      # §12 amendment). Falls through METRICS_SPARK_GATEWAY_API_KEY (metrics-
+      # specific override) → SPRING_AI_OPENAI_API_KEY (shared with rag-chat /
+      # rag-ingestion) → empty (the original bare-vLLM ADR-04 wiring that
+      # did not validate keys).
+      api-key: ${METRICS_SPARK_GATEWAY_API_KEY:${SPRING_AI_OPENAI_API_KEY:}}
     # ADR-15 §C + §18 — per-IP token bucket on /api/metrics/dashboard. 30
     # req/min/IP is enough for a single page polling at 15s cadence (≈4 req/min)
     # with headroom for a developer with multiple tabs.

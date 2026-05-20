@@ -28,7 +28,7 @@ class LokiAdapterTest {
         MetricsHttpProperties props = new MetricsHttpProperties(
                 new MetricsHttpProperties.Prometheus(null, 0),
                 new MetricsHttpProperties.Loki(wm.baseUrl(), 15000),
-                new MetricsHttpProperties.SparkGateway(null, 0));
+                new MetricsHttpProperties.SparkGateway(null, 0, null));
         adapter = new LokiAdapter(WebClient.builder(), props);
     }
 

@@ -9,6 +9,7 @@ import com.playground.metrics.infra.config.MetricsHttpProperties;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -31,7 +32,16 @@ public class SparkGatewayProbeAdapter implements SparkGatewayProbePort {
     private final Cache<String, List<String>> modelsCache;
 
     public SparkGatewayProbeAdapter(WebClient.Builder builder, MetricsHttpProperties props) {
-        this.webClient = builder.baseUrl(props.sparkGateway().baseUrl()).build();
+        WebClient.Builder configured = builder.baseUrl(props.sparkGateway().baseUrl());
+        // Stamp the Bearer header as a default if an API key is configured —
+        // the post-2026-05-20 spark-inference-gateway returns 401 without it,
+        // which the verdict logic surfaces as `degraded` even when the gateway
+        // is healthy. Per ADR-15 §12 amendment.
+        String apiKey = props.sparkGateway().apiKey();
+        if (apiKey != null) {
+            configured = configured.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey);
+        }
+        this.webClient = configured.build();
         Duration ttl = Duration.ofSeconds(props.sparkGateway().probeCacheTtlSeconds());
         this.probeCache = Caffeine.newBuilder().expireAfterWrite(ttl).maximumSize(1).build();
         this.modelsCache = Caffeine.newBuilder().expireAfterWrite(ttl).maximumSize(1).build();
