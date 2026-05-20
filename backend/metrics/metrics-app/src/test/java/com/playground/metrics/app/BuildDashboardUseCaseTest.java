@@ -1,12 +1,15 @@
 package com.playground.metrics.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import com.playground.metrics.app.dto.ActuatorProbeResult;
 import com.playground.metrics.app.dto.DashboardResponse;
 import com.playground.metrics.app.dto.PrometheusSample;
 import com.playground.metrics.app.dto.SparkProbeResult;
+import com.playground.metrics.app.port.ActuatorHealthPort;
 import com.playground.metrics.app.port.PrometheusPort;
 import com.playground.metrics.app.port.SparkGatewayProbePort;
 import com.playground.metrics.domain.Range;
@@ -21,15 +24,17 @@ class BuildDashboardUseCaseTest {
     @Test
     void composesDashboardShapePerSpec5_2() {
         PrometheusPort prometheus = Mockito.mock(PrometheusPort.class);
+        ActuatorHealthPort actuator = Mockito.mock(ActuatorHealthPort.class);
         SparkGatewayProbePort spark = Mockito.mock(SparkGatewayProbePort.class);
 
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(
                         Map.of("service", "rag-chat-api"), 1_700_000_000L, 42.0))));
+        when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.reachableUp()));
         when(spark.probe()).thenReturn(Mono.just(SparkProbeResult.up()));
         when(spark.listModels()).thenReturn(Mono.just(List.of("BGE-M3", "Qwen3-32B")));
 
-        BuildServicesUseCase servicesUseCase = new BuildServicesUseCase(prometheus, spark);
+        BuildServicesUseCase servicesUseCase = new BuildServicesUseCase(prometheus, actuator, spark);
         BuildDashboardUseCase useCase = new BuildDashboardUseCase(servicesUseCase, prometheus, spark);
 
         DashboardResponse response = useCase.execute(Range.H_1).block();
@@ -57,14 +62,19 @@ class BuildDashboardUseCaseTest {
     @Test
     void survivesPrometheusErrorsPerWidget() {
         PrometheusPort prometheus = Mockito.mock(PrometheusPort.class);
+        ActuatorHealthPort actuator = Mockito.mock(ActuatorHealthPort.class);
         SparkGatewayProbePort spark = Mockito.mock(SparkGatewayProbePort.class);
 
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.error(new RuntimeException("prometheus down")));
+        // Whole observability stack down → actuator probe also fails. Each
+        // §9 row resolves to either down (scrape miss + actuator unreachable)
+        // or down (1 of 2 + actuator unreachable).
+        when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.unreachable()));
         when(spark.probe()).thenReturn(Mono.just(SparkProbeResult.down()));
         when(spark.listModels()).thenReturn(Mono.just(List.of()));
 
-        BuildServicesUseCase servicesUseCase = new BuildServicesUseCase(prometheus, spark);
+        BuildServicesUseCase servicesUseCase = new BuildServicesUseCase(prometheus, actuator, spark);
         BuildDashboardUseCase useCase = new BuildDashboardUseCase(servicesUseCase, prometheus, spark);
 
         DashboardResponse response = useCase.execute(Range.H_1).block();

@@ -94,4 +94,17 @@ class PromQlTemplateTest {
                 .extracting(PromQlTemplate.Template::unit)
                 .isEqualTo("MB");
     }
+
+    @Test
+    void serviceUpLastTwoScrapesForKnownService() {
+        // sum_over_time(up[12s]) — feeds 0/1/2 directly into HealthVerdict.from
+        assertThat(PromQlTemplate.serviceUpLastTwoScrapes("docs-api"))
+                .isEqualTo("sum_over_time(up{service=\"docs-api\"}[12s])");
+    }
+
+    @Test
+    void serviceUpLastTwoScrapesRejectsUnknown() {
+        assertThatThrownBy(() -> PromQlTemplate.serviceUpLastTwoScrapes("nope"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

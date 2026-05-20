@@ -244,6 +244,22 @@ public final class PromQlTemplate {
         return formatTemplate(TEMPLATES.get("service-up").promql(), svc);
     }
 
+    /**
+     * Counts {@code up == 1} samples in the last 2 scrape cycles (~10s at
+     * the 5s scrape cadence per ADR-15 §5). Returns 0/1/2 — the exact input
+     * shape {@link HealthVerdict#from(int, boolean, boolean)} expects per
+     * ADR-15 §9.
+     *
+     * <p>Window is 12 seconds (2 × 5s with 2s margin) so a scrape that lands
+     * right at the boundary still counts. Adjust if scrape cadence changes.
+     */
+    public static String serviceUpLastTwoScrapes(String svc) {
+        if (!ServiceAllowlist.contains(svc)) {
+            throw new IllegalArgumentException("Unknown service: " + svc);
+        }
+        return String.format("sum_over_time(up{service=\"%s\"}[12s])", svc);
+    }
+
     public static String jvmHeap(String svc) {
         return resolve("jvm-heap-" + svc);
     }
