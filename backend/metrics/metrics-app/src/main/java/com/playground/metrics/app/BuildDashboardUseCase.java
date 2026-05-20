@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -26,12 +27,16 @@ import reactor.core.publisher.Mono;
  * Bundled dashboard payload composer per spec §5.2 + ADR-15 §2.
  * Orchestrates the ~19 PromQL queries via {@link Mono#zip} so the
  * slowest-single-query is the gating factor (not the sum). Per ADR-15 §16
- * the P95 latency target is 400 ms; slice 1 is the happy-path baseline,
- * slice 2 layers in {@code PromQlBudgetEnforcer} + {@code "degraded": true}.
+ * the P95 latency target is 400 ms; the {@link PromQlBudgetEnforcer} guards
+ * each widget against a runaway query exceeding the 10s per-PromQL budget
+ * by substituting a {@code "degraded": true} cell instead of failing the
+ * whole composition (spec §7.3 + §8.2).
  *
- * <p>JVM-bearing services in the {@code jvm[]} array: the four BCs Story
- * 6 wants (rag-chat-api / docs-api / identity-api / rag-ingestion-api).
- * The {@code httpRate[]} array covers gateway + rag-chat-api + docs-api.
+ * <p>JVM-bearing services in the {@code jvm[]} array: every JVM-bearing
+ * service in the stack (5 BCs + gateway). The {@code httpRate[]} array
+ * covers gateway + rag-chat-api + docs-api. The {@code services[]} array
+ * reuses {@link BuildServicesUseCase}'s 11-cell result (6 BCs + spark
+ * gateway + 4 observability containers).
  */
 @Service
 public class BuildDashboardUseCase {
@@ -61,14 +66,21 @@ public class BuildDashboardUseCase {
     private final BuildServicesUseCase servicesUseCase;
     private final PrometheusPort prometheus;
     private final SparkGatewayProbePort sparkProbe;
+    private final PromQlBudgetEnforcer budgetEnforcer;
+    private final int pollIntervalSeconds;
 
     public BuildDashboardUseCase(
             BuildServicesUseCase servicesUseCase,
             PrometheusPort prometheus,
-            SparkGatewayProbePort sparkProbe) {
+            SparkGatewayProbePort sparkProbe,
+            PromQlBudgetEnforcer budgetEnforcer,
+            @Value("${playground.metrics.poll-interval-seconds:${METRICS_POLL_INTERVAL_S:15}}")
+                    int pollIntervalSeconds) {
         this.servicesUseCase = servicesUseCase;
         this.prometheus = prometheus;
         this.sparkProbe = sparkProbe;
+        this.budgetEnforcer = budgetEnforcer;
+        this.pollIntervalSeconds = pollIntervalSeconds <= 0 ? 15 : pollIntervalSeconds;
     }
 
     public Mono<DashboardResponse> execute(Range range) {
@@ -83,6 +95,7 @@ public class BuildDashboardUseCase {
                 .map(t -> new DashboardResponse(
                         Instant.now(),
                         range.token(),
+                        pollIntervalSeconds,
                         t.getT1(),
                         t.getT2(),
                         t.getT3(),
@@ -105,8 +118,9 @@ public class BuildDashboardUseCase {
         Mono<Double> mem = prometheus.instantQuery(PromQlTemplate.containerMem(name))
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        return Mono.zip(cpu, mem)
+        Mono<ContainerCell> composed = Mono.zip(cpu, mem)
                 .map(t -> new ContainerCell(name, t.getT1(), t.getT2(), null, 0));
+        return budgetEnforcer.wrap(composed, () -> ContainerCell.degraded(name));
     }
 
     private Mono<HostCell> hostCell() {
@@ -140,7 +154,7 @@ public class BuildDashboardUseCase {
                                 .onErrorReturn(0.0))
                 .map(t -> List.of(t.getT1(), t.getT2(), t.getT3()));
 
-        return Mono.zip(cpu, memUsed, memTotal, diskPct, diskUsedGb, diskTotalGb, loads)
+        Mono<HostCell> composed = Mono.zip(cpu, memUsed, memTotal, diskPct, diskUsedGb, diskTotalGb, loads)
                 .map(t -> new HostCell(
                         t.getT1(),
                         t.getT2(),
@@ -149,6 +163,7 @@ public class BuildDashboardUseCase {
                         t.getT5(),
                         t.getT6(),
                         t.getT7()));
+        return budgetEnforcer.wrap(composed, HostCell::degradedSentinel);
     }
 
     private Mono<SparkGatewayCell> sparkCell() {
@@ -159,12 +174,15 @@ public class BuildDashboardUseCase {
         Mono<Double> latency = prometheus.instantQuery(PromQlTemplate.sparkLatencyP95())
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        return Mono.zip(verdict, models, latency)
+        Mono<SparkGatewayCell> composed = Mono.zip(verdict, models, latency)
                 .map(t -> new SparkGatewayCell(
                         SPARK_GATEWAY_URL,
                         t.getT1().token(),
                         Math.round(t.getT3() * 1000.0),
                         t.getT2()));
+        return budgetEnforcer.wrap(composed,
+                () -> new SparkGatewayCell(SPARK_GATEWAY_URL,
+                        HealthVerdict.Status.DOWN.token(), 0L, List.of(), true));
     }
 
     private Mono<List<JvmCell>> jvmCells() {
@@ -186,13 +204,14 @@ public class BuildDashboardUseCase {
         Mono<Double> gcPause = prometheus.instantQuery(PromQlTemplate.jvmGcPause(svc))
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        return Mono.zip(heap, heapMax, threads, gcPause)
+        Mono<JvmCell> composed = Mono.zip(heap, heapMax, threads, gcPause)
                 .map(t -> new JvmCell(
                         svc,
                         t.getT1(),
                         t.getT2(),
                         (int) Math.round(t.getT3()),
                         t.getT4() * 1000.0));
+        return budgetEnforcer.wrap(composed, () -> JvmCell.degraded(svc));
     }
 
     private Mono<List<HttpRateCell>> httpRateCells() {
@@ -208,8 +227,9 @@ public class BuildDashboardUseCase {
         Mono<Double> errorRate = prometheus.instantQuery(PromQlTemplate.httpErrorRate(svc))
                 .map(BuildDashboardUseCase::firstValueOrZero)
                 .onErrorReturn(0.0);
-        return Mono.zip(rps, errorRate)
+        Mono<HttpRateCell> composed = Mono.zip(rps, errorRate)
                 .map(t -> new HttpRateCell(svc, t.getT1(), t.getT2()));
+        return budgetEnforcer.wrap(composed, () -> HttpRateCell.degraded(svc));
     }
 
     private static double firstValueOrZero(List<PrometheusSample> samples) {

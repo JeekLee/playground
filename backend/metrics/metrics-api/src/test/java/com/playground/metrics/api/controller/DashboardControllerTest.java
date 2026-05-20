@@ -8,6 +8,7 @@ import com.playground.metrics.api.advice.MetricsReactiveExceptionHandler;
 import com.playground.metrics.api.config.MetricsSecurityConfig;
 import com.playground.metrics.app.BuildDashboardUseCase;
 import com.playground.metrics.app.BuildServicesUseCase;
+import com.playground.metrics.app.PromQlBudgetEnforcer;
 import com.playground.metrics.app.dto.ActuatorProbeResult;
 import com.playground.metrics.app.dto.PrometheusSample;
 import com.playground.metrics.app.dto.SparkProbeResult;
@@ -131,7 +132,13 @@ class DashboardControllerTest {
         @Bean
         BuildDashboardUseCase buildDashboardUseCase(
                 BuildServicesUseCase services, PrometheusPort p, SparkGatewayProbePort s) {
-            return new BuildDashboardUseCase(services, p, s);
+            // Generous budget so unit tests never trip the degraded path
+            // accidentally; per-test enforcer-targeted coverage lives in
+            // PromQlBudgetEnforcerTest.
+            return new BuildDashboardUseCase(
+                    services, p, s,
+                    new PromQlBudgetEnforcer(30),
+                    15);
         }
 
         @Bean

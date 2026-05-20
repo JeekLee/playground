@@ -32,6 +32,11 @@ dependencies {
     // jackson-databind for the record-decoded DTOs in the adapters.
     "implementation"("com.fasterxml.jackson.core:jackson-databind")
 
+    // ADR-15 §C + §18 — Redisson RRateLimiter for the per-IP dashboard bucket
+    // (30/min) and the per-user logs bucket (60/min, M5.1). Same 3.34.x line
+    // M3/M4 already pin per ADR-13 §C + ADR-14 §B.
+    "implementation"("org.redisson:redisson-spring-boot-starter:3.34.1")
+
     // WireMock stubs Prometheus + Loki + spark-inference-gateway in adapter
     // tests (ADR-15 §H).
     "testImplementation"("org.wiremock:wiremock-standalone:3.9.2")
