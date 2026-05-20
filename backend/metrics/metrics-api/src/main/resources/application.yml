@@ -16,6 +16,13 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
       - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+  data:
+    # ADR-15 §C + §18 — Redisson Spring Boot starter reads these to wire its
+    # RedissonClient bean. Bucket keys (metrics:bucket:ip:*:dashboard) are
+    # namespaced inside the RedissonIpRateLimiterAdapter.
+    redis:
+      host: ${REDIS_HOST:redis-playground}
+      port: ${REDIS_PORT:6379}
 
 # ADR-15 §7 + §18 — upstream URLs + per-adapter timeouts.
 playground:
@@ -29,6 +36,19 @@ playground:
     spark-gateway:
       base-url: ${METRICS_SPARK_GATEWAY_BASE_URL:http://host.docker.internal:10080}
       probe-cache-ttl-seconds: 15
+    # ADR-15 §C + §18 — per-IP token bucket on /api/metrics/dashboard. 30
+    # req/min/IP is enough for a single page polling at 15s cadence (≈4 req/min)
+    # with headroom for a developer with multiple tabs.
+    rate-limit:
+      dashboard-per-min: ${METRICS_DASHBOARD_RATE_LIMIT_PER_MIN:30}
+      # M5.1 — per-user logs bucket (currently no-op pass-through; the port
+      # adapter ships when the logs UI lands).
+      logs-per-min: ${METRICS_LOGS_RATE_LIMIT_PER_MIN:60}
+    # ADR-15 §2 + §16 + spec §8.2 — per-PromQL-query timeout. Above this each
+    # widget falls back to a "degraded": true sentinel cell.
+    promql-budget-seconds: ${METRICS_PROMQL_BUDGET_S:10}
+    # ADR-15 §18 — backend echoes the polling cadence to the frontend.
+    poll-interval-seconds: ${METRICS_POLL_INTERVAL_S:15}
 
 management:
   endpoints:

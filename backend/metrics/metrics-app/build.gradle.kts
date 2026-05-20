@@ -17,4 +17,8 @@ dependencies {
     // modules ship Jackson via the WebFlux starter); only the annotation jar
     // is on the -app classpath.
     "implementation"("com.fasterxml.jackson.core:jackson-annotations")
+
+    // reactor-test for StepVerifier-based unit tests on the PromQlBudgetEnforcer
+    // and use-case-level Mono composition tests (ADR-15 §H).
+    "testImplementation"("io.projectreactor:reactor-test")
 }
