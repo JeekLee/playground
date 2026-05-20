@@ -1834,5 +1834,12 @@ gateway-up signal.
   the verdict — we now actually GET a 200 from the gateway instead of a
   401.
 
-ADR-15 §12's other pins (HEAD `/v1/models`, 15s Caffeine cache, P95 ≤
-100ms for `/api/metrics/services`) are unchanged.
+ADR-15 §12's other pins (15s Caffeine cache, P95 ≤ 100ms for
+`/api/metrics/services`) are unchanged.
+
+**HTTP method correction:** the original §12 pinned `HEAD /v1/models`,
+but the operator's FastAPI/uvicorn-based gateway returns 405 Method Not
+Allowed for HEAD on that route (Starlette does not auto-route HEAD onto
+GET handlers). The probe now uses `GET /v1/models` and discards the body
+via `WebClient`'s `toBodilessEntity()` — bandwidth cost is identical to
+HEAD if it had been supported.
