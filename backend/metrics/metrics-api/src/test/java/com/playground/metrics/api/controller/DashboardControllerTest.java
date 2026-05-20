@@ -1,5 +1,6 @@
 package com.playground.metrics.api.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -7,8 +8,10 @@ import com.playground.metrics.api.advice.MetricsReactiveExceptionHandler;
 import com.playground.metrics.api.config.MetricsSecurityConfig;
 import com.playground.metrics.app.BuildDashboardUseCase;
 import com.playground.metrics.app.BuildServicesUseCase;
+import com.playground.metrics.app.dto.ActuatorProbeResult;
 import com.playground.metrics.app.dto.PrometheusSample;
 import com.playground.metrics.app.dto.SparkProbeResult;
+import com.playground.metrics.app.port.ActuatorHealthPort;
 import com.playground.metrics.app.port.IpRateLimitPort;
 import com.playground.metrics.app.port.PrometheusPort;
 import com.playground.metrics.app.port.SparkGatewayProbePort;
@@ -40,14 +43,18 @@ class DashboardControllerTest {
     @Autowired
     SparkGatewayProbePort spark;
 
+    @Autowired
+    ActuatorHealthPort actuator;
+
     @BeforeEach
     void setUp() {
-        Mockito.reset(prometheus, spark);
+        Mockito.reset(prometheus, spark, actuator);
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(
                         Map.of("service", "rag-chat-api"), 1_700_000_000L, 1.0))));
         when(spark.probe()).thenReturn(Mono.just(SparkProbeResult.up()));
         when(spark.listModels()).thenReturn(Mono.just(List.of("BGE-M3", "Qwen3-32B")));
+        when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.reachableUp()));
     }
 
     @Test
@@ -111,8 +118,14 @@ class DashboardControllerTest {
         }
 
         @Bean
-        BuildServicesUseCase buildServicesUseCase(PrometheusPort p, SparkGatewayProbePort s) {
-            return new BuildServicesUseCase(p, s);
+        ActuatorHealthPort actuatorHealthPort() {
+            return Mockito.mock(ActuatorHealthPort.class);
+        }
+
+        @Bean
+        BuildServicesUseCase buildServicesUseCase(
+                PrometheusPort p, ActuatorHealthPort a, SparkGatewayProbePort s) {
+            return new BuildServicesUseCase(p, a, s);
         }
 
         @Bean
