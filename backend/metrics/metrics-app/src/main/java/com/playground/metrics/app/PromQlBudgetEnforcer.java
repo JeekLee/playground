@@ -3,6 +3,7 @@ package com.playground.metrics.app;
 import java.time.Duration;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -37,6 +38,11 @@ public class PromQlBudgetEnforcer {
 
     private final Duration budget;
 
+    // @Autowired explicitly because the class has a second package-private
+    // (Duration)-arg ctor for unit tests; without the annotation Spring sees
+    // two candidate ctors, falls back to looking for a no-arg, and fails the
+    // context with "No default constructor found".
+    @Autowired
     public PromQlBudgetEnforcer(
             @Value("${playground.metrics.promql-budget-seconds:${METRICS_PROMQL_BUDGET_S:" + DEFAULT_BUDGET_SECONDS + "}}")
                     int budgetSeconds) {
