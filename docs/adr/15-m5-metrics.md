@@ -1801,3 +1801,38 @@ docker logs (every container)
   bullets 4+5 retired, bullet list refreshed)
 - `docs/infra-requirements/be.md` (amended below by this ADR — new
   M5 Observability Stack section)
+
+## Amendment (2026-05-20) — spark probe joins spark-inference-net + Bearer auth
+
+The §12 / §17 verbatim assumed the spark-inference-gateway was the host
+process at `http://host.docker.internal:10080` without auth — the
+original ADR-04 wiring. The operator has since restructured spark into
+its own compose project on the `spark-inference-net` bridge with a
+Bearer-auth front door (see ADR-04 amendment 2026-05-20). Result: the
+metrics health-grid's spark cell probed an unreachable URL, OR (after
+PR #183 attached metrics-api to the bridge) hit the gateway but got
+401 → verdict logic mapped that to `degraded`, masking the actual
+gateway-up signal.
+
+**Decision:**
+- `metrics-api` reads `METRICS_SPARK_GATEWAY_BASE_URL` from the operator's
+  shared `${SPARK_INFERENCE_GATEWAY_URL}` (falling back to the original
+  `host.docker.internal:10080` if unset). One env-var change in `.env`
+  now covers all three BCs that talk to spark (rag-chat, rag-ingestion,
+  metrics).
+- `SparkGatewayProbeAdapter` stamps `Authorization: Bearer ${api-key}` as
+  a default header on every `HEAD /v1/models` and `GET /v1/models` call
+  when an API key is configured. The key falls through
+  `METRICS_SPARK_GATEWAY_API_KEY` (metrics-specific override) →
+  `SPRING_AI_OPENAI_API_KEY` (shared with rag-chat / rag-ingestion) →
+  empty (the bare-vLLM ADR-04 fallback that did not validate keys).
+- `MetricsHttpProperties.SparkGateway` record gains a nullable `apiKey`
+  field; blank is normalized to null so the adapter does a single
+  null-check.
+- The §9 verdict truth table is unchanged: a 200 response is still
+  required for `up`; non-200 is still `degraded`. The fix is upstream of
+  the verdict — we now actually GET a 200 from the gateway instead of a
+  401.
+
+ADR-15 §12's other pins (HEAD `/v1/models`, 15s Caffeine cache, P95 ≤
+100ms for `/api/metrics/services`) are unchanged.

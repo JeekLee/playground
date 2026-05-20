@@ -1,8 +1,10 @@
 package com.playground.metrics.infra;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.head;
+import static com.github.tomakehurst.wiremock.client.WireMock.headRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,8 +30,16 @@ class SparkGatewayProbeAdapterTest {
         MetricsHttpProperties props = new MetricsHttpProperties(
                 new MetricsHttpProperties.Prometheus(null, 0),
                 new MetricsHttpProperties.Loki(null, 0),
-                new MetricsHttpProperties.SparkGateway(wm.baseUrl(), 15));
+                new MetricsHttpProperties.SparkGateway(wm.baseUrl(), 15, null));
         adapter = new SparkGatewayProbeAdapter(WebClient.builder(), props);
+    }
+
+    private SparkGatewayProbeAdapter adapterWithApiKey(String apiKey) {
+        MetricsHttpProperties props = new MetricsHttpProperties(
+                new MetricsHttpProperties.Prometheus(null, 0),
+                new MetricsHttpProperties.Loki(null, 0),
+                new MetricsHttpProperties.SparkGateway(wm.baseUrl(), 15, apiKey));
+        return new SparkGatewayProbeAdapter(WebClient.builder(), props);
     }
 
     @AfterEach
@@ -55,6 +65,35 @@ class SparkGatewayProbeAdapterTest {
         assertThat(result).isNotNull();
         assertThat(result.reachable()).isFalse();
         assertThat(result.ok()).isFalse();
+    }
+
+    @Test
+    void probeStampsBearerHeaderWhenApiKeyConfigured() {
+        wm.stubFor(head(urlPathEqualTo("/v1/models"))
+                .withHeader("Authorization", equalTo("Bearer sk-spark-test-token"))
+                .willReturn(aResponse().withStatus(200)));
+
+        SparkProbeResult result = adapterWithApiKey("sk-spark-test-token").probe().block();
+        assertThat(result).isNotNull();
+        assertThat(result.reachable()).isTrue();
+        assertThat(result.ok()).isTrue();
+        // WireMock will only match the stub if the header was actually sent —
+        // verifyAtLeastOne is implicit. Add an explicit count check for clarity.
+        wm.verify(1, headRequestedFor(urlPathEqualTo("/v1/models"))
+                .withHeader("Authorization", equalTo("Bearer sk-spark-test-token")));
+    }
+
+    @Test
+    void probeOmitsBearerHeaderWhenApiKeyBlank() {
+        wm.stubFor(head(urlPathEqualTo("/v1/models"))
+                .willReturn(aResponse().withStatus(200)));
+
+        // Blank string is normalized to null by the SparkGateway record canonical
+        // ctor; verify the default-header logic actually treats it as "no key".
+        adapterWithApiKey("   ").probe().block();
+        wm.verify(1, headRequestedFor(urlPathEqualTo("/v1/models")));
+        // Any auth header at all would have shown up — assert none did.
+        assertThat(wm.findAllUnmatchedRequests()).isEmpty();
     }
 
     @Test

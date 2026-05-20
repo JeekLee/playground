@@ -397,7 +397,15 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       METRICS_PROMETHEUS_BASE_URL: http://prometheus-playground:9090
       METRICS_LOKI_BASE_URL: http://loki-playground:3100
-      METRICS_SPARK_GATEWAY_BASE_URL: http://host.docker.internal:10080
+      # Spark probe wiring — reuses the operator's `.env` SPARK_INFERENCE_GATEWAY_URL
+      # so the metrics health-grid sees the same endpoint rag-chat / rag-ingestion
+      # call (ADR-15 §12 amendment 2026-05-20). Falls back to the original
+      # host-process URL if `SPARK_INFERENCE_GATEWAY_URL` is not in `.env`.
+      METRICS_SPARK_GATEWAY_BASE_URL: ${SPARK_INFERENCE_GATEWAY_URL:-http://host.docker.internal:10080}
+      # Bearer token forwarded on every probe — same key rag-chat / rag-ingestion
+      # use, so a single `.env` change covers all three BCs. Blank → no header,
+      # which is fine for the bare-vLLM fallback that doesn't validate keys.
+      METRICS_SPARK_GATEWAY_API_KEY: ${METRICS_SPARK_GATEWAY_API_KEY:-${SPRING_AI_OPENAI_API_KEY:-}}
       REDIS_HOST: ${REDIS_HOST:-redis-playground}
       REDIS_PORT: ${REDIS_PORT:-6379}
     healthcheck:

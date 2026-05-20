@@ -30,7 +30,7 @@ class PrometheusAdapterTest {
         MetricsHttpProperties props = new MetricsHttpProperties(
                 new MetricsHttpProperties.Prometheus(wm.baseUrl(), 8000),
                 new MetricsHttpProperties.Loki(null, 0),
-                new MetricsHttpProperties.SparkGateway(null, 0));
+                new MetricsHttpProperties.SparkGateway(null, 0, null));
         adapter = new PrometheusAdapter(WebClient.builder(), props);
     }
 
