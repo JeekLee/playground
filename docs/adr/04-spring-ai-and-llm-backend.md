@@ -125,3 +125,48 @@ the first end-to-end exercise of the streaming path.
 
 See `docs/adr/14-m4-rag-chat.md` §1 + §4 + §6 + §17 for the full
 specification.
+
+## Amendment (2026-05-20) — compose-network attach replaces host.docker.internal
+
+The original wiring (§"LLM backend wiring" above) assumed the host directly
+runs a bare vLLM at `127.0.0.1:10080`, reached from compose via
+`extra_hosts: host.docker.internal:host-gateway`. The operator has since
+moved the Spark inference stack into a **separate compose project on a
+bridge named `spark-inference-net`**:
+
+- `spark-inference-gateway` container — Bearer-auth + model-routing layer,
+  the only one exposed to the host (host port `127.0.0.1:10080`).
+- `spark-inference-qwen3-30b-a3b`, `spark-inference-bge-m3` — backend model
+  servers, NO host port (compose-internal only).
+
+`host.docker.internal:10080` reaches the gateway via the host loopback
+hop, but only when the host process binds `0.0.0.0` (or a route exists
+from the docker bridge to the host's loopback) — fragile, and unnecessary
+when the rag-chat / rag-ingestion / metrics containers can join the same
+bridge directly.
+
+**Decision:** `rag-ingestion-api`, `rag-chat-api`, and `metrics-api` are
+now attached to two networks: the playground compose default (DB / Kafka /
+Redis / gateway hops) and the external `spark-inference-net`. Endpoint
+becomes `http://spark-inference-gateway:<container-port>` — DNS resolves
+to the gateway container's IP on the spark bridge with no host hop.
+
+- `infra/docker-compose.yml` declares `spark-inference-net` as
+  `external: true` and adds it to the three services' `networks:` lists.
+  The `default` network is now explicit because Compose stops
+  auto-attaching it once any service has a `networks:` block.
+- `extra_hosts: host.docker.internal:host-gateway` is **kept** on the same
+  three services as a fallback — it costs nothing and gives the operator
+  an escape route if the spark stack is ever swapped back to a host
+  process.
+- The `SPRING_AI_OPENAI_BASE_URL` env knob carries the actual endpoint;
+  the per-service `application.yml` defaults still point at
+  `host.docker.internal:10080` so a stand-alone compose run (without the
+  spark bridge) still finds a vLLM if one happens to run on the host.
+- Operator prerequisite: the spark-stack compose project must be up
+  first so `spark-inference-net` exists; otherwise `docker compose up`
+  errors with `network spark-inference-net declared as external, but
+  could not be found.`
+
+ADR-04's other consequences (no fallback model, OpenAI-compatible
+endpoint shape, model-name verification responsibility) are unchanged.
