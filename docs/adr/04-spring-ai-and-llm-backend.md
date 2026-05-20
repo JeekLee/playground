@@ -148,8 +148,14 @@ bridge directly.
 **Decision:** `rag-ingestion-api`, `rag-chat-api`, and `metrics-api` are
 now attached to two networks: the playground compose default (DB / Kafka /
 Redis / gateway hops) and the external `spark-inference-net`. Endpoint
-becomes `http://spark-inference-gateway:<container-port>` — DNS resolves
-to the gateway container's IP on the spark bridge with no host hop.
+becomes `http://spark-inference-gateway:8000` — DNS resolves to the gateway
+container's IP on the spark bridge with no host hop.
+
+The port distinction matters: the host's `127.0.0.1:10080` is the
+**outside** mapping of the gateway container's `8000`; from inside the
+bridge the gateway is reachable on `:8000` directly. (Shape (b) — host
+loopback fallback — still uses `:10080` because that's the host-facing
+port.)
 
 - `infra/docker-compose.yml` declares `spark-inference-net` as
   `external: true` and adds it to the three services' `networks:` lists.
