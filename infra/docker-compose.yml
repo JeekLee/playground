@@ -230,15 +230,32 @@ services:
         condition: service_healthy
       identity-api:
         condition: service_healthy   # boot-time owner resolution per ADR-12 §8
+    networks:
+      # M6 ADR-16 — docs-api now uses Spring AI Vision for PDF OCR fallback
+      # and so must reach `spark-inference-gateway:8000` by container DNS.
+      # Joined to two bridges, same pattern as rag-chat-api / rag-ingestion-api /
+      # metrics-api (ADR-04 amendment 2026-05-20 originally listed those three;
+      # M6 extends the same membership to docs-api). Without this attach,
+      # docs-api gets "Temporary failure in name resolution" on every OCR call.
+      - default
+      - spark-inference-net
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       # Explicit heap cap so `jvm_memory_max_bytes` reports a positive value
       # (the JVM in a container without -Xmx and without a cgroup memory
       # limit returns -1 for max, which displays as garbage on the M5
-      # dashboard). 512 MB suits personal-scale workload; operators may
-      # tune via the JAVA_TOOL_OPTIONS env var without rebuilding.
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx512m}
+      # dashboard).
+      #
+      # M6 ADR-16 — docs-api now does PDF page rendering for OCR fallback
+      # (PDFBox `PDFRenderer.renderImageWithDPI(150)` produces an RGB
+      # BufferedImage that's ~13 MB per A4 page, plus PNG + base64 + Spring
+      # AI request buffer per page). The original 512 MB cap (sufficient
+      # for M2's Markdown-only workload) OOM'd on the first real-world
+      # 55-page PDF. 1024 MB suits the page-by-page-sequential M6 P0
+      # workload with comfortable slack; operators tune via JAVA_TOOL_OPTIONS
+      # env override without rebuilding.
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx1024m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
