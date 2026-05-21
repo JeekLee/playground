@@ -7,21 +7,30 @@ import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/cn';
 import {
   importMarkdownDocument,
-  MAX_BODY_BYTES,
+  MAX_UPLOAD_BYTES,
+  UPLOAD_ERROR_COPY,
 } from '@/shared/api/docs';
 
 /**
  * `+ New document` button — composite of (a) the primary action button
  * (label = "Blank document" → navigates to `/docs/new`) and (b) a chevron
- * that opens a 200px dropdown with the second affordance, "Import .md…".
+ * that opens a 200px dropdown with the second affordance.
  *
- * Per design doc §"+ New document dropdown" the two affordances are:
- *   + Blank document       → /docs/new
- *   ↑ Import .md…          → native file picker, then POST /api/docs multipart
+ * Dropdown rows per M2 design doc §"+ New document dropdown" + M6
+ * design context §2.1 (the row 2 label is the one M6 change):
+ *   + Blank document             → /docs/new
+ *   ↑ Import .md or .pdf…        → native file picker, then POST /api/docs multipart
  *
- * The `.md` upload is also reachable by drag-drop onto the viewport (see
- * `DragDropImportOverlay`). The size cap (1 MB per ADR-12 §4) is checked
- * client-side here so an over-cap file never leaves the browser.
+ * Upload semantics:
+ *   - Native picker `accept` widens from `.md` → `.md,.pdf` per M6 §2.1.
+ *   - Client-side size cap is `MAX_UPLOAD_BYTES` (25 MB per ADR-16); over
+ *     that the file never leaves the browser and the toast says the same
+ *     thing the server's 413 would (kept aligned so the UX doesn't shift
+ *     between client + server reasons for the same outcome).
+ *   - On a 400/413 with a known `code`, the toast copy is sourced from
+ *     {@link UPLOAD_ERROR_COPY} (M6 design context §6.2).
+ *   - `.md` files are also reachable by drag-drop onto the viewport (see
+ *     `DragDropImportOverlay`).
  */
 
 export interface NewDocButtonProps {
@@ -55,10 +64,12 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
     };
   }, [open]);
 
-  // Auto-clear the inline error after 4s so the row doesn't sit forever.
+  // Auto-clear the inline error after 5s so the row doesn't sit forever.
+  // PDF error copy is longer than the M2 markdown copy, so the dwell goes
+  // 4s → 5s — enough to read "max 30 pages for OCR" without rushing.
   useEffect(() => {
     if (!errorMessage) return;
-    const id = window.setTimeout(() => setErrorMessage(null), 4000);
+    const id = window.setTimeout(() => setErrorMessage(null), 5000);
     return () => window.clearTimeout(id);
   }, [errorMessage]);
 
@@ -74,12 +85,13 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
       const file = event.target.files?.[0];
       event.target.value = '';
       if (!file) return;
-      if (!file.name.toLowerCase().endsWith('.md')) {
-        setErrorMessage('Only .md files are accepted.');
+      const name = file.name.toLowerCase();
+      if (!(name.endsWith('.md') || name.endsWith('.pdf'))) {
+        setErrorMessage(UPLOAD_ERROR_COPY.INVALID_FILE_TYPE);
         return;
       }
-      if (file.size > MAX_BODY_BYTES) {
-        setErrorMessage(`${file.name} is too large (>1 MB). Trim and try again.`);
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setErrorMessage(UPLOAD_ERROR_COPY.FILE_TOO_LARGE);
         return;
       }
       setImporting(true);
@@ -89,10 +101,14 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
         router.push(`/docs/${result.value.id}`);
       } else if (result.kind === 'unauthorized') {
         router.push('/login?next=' + encodeURIComponent('/docs/mine'));
+      } else if (result.kind === 'upload-rejected') {
+        setErrorMessage(UPLOAD_ERROR_COPY[result.code]);
       } else if (result.kind === 'too-large') {
-        setErrorMessage(`${file.name} is too large (>1 MB). Trim and try again.`);
+        setErrorMessage(
+          result.code ? UPLOAD_ERROR_COPY[result.code] : UPLOAD_ERROR_COPY.FILE_TOO_LARGE,
+        );
       } else {
-        setErrorMessage(`Couldn't import ${file.name}. Make sure it's a UTF-8 Markdown file.`);
+        setErrorMessage(`Couldn’t import ${file.name}. Please try again.`);
       }
     },
     [folderPath, router],
@@ -103,10 +119,13 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".md,text/markdown"
+        // M6 — picker accepts both `.md` and `.pdf` sources. The MIME hints
+        // (`text/markdown`, `application/pdf`) help browsers that resolve
+        // file dialogs by mime rather than extension.
+        accept=".md,.pdf,text/markdown,application/pdf"
         className="sr-only"
         onChange={handleFileChange}
-        aria-label="Import markdown file"
+        aria-label="Import .md or .pdf file"
       />
       <Button
         href={newDocHref}
@@ -135,7 +154,7 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
         <div
           role="menu"
           aria-label="New document options"
-          className="absolute right-0 top-[calc(100%+6px)] z-30 w-[220px] overflow-hidden rounded-md border border-border bg-surface shadow-pop"
+          className="absolute right-0 top-[calc(100%+6px)] z-30 w-[240px] overflow-hidden rounded-md border border-border bg-surface shadow-pop"
         >
           <a
             role="menuitem"
@@ -153,14 +172,15 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
             className="flex w-full items-center gap-sm border-t border-border px-md py-sm text-left text-small text-text hover:bg-surface-soft"
           >
             <Upload size={14} className="text-text-muted" aria-hidden="true" />
-            <span>{importing ? 'Importing…' : 'Import .md…'}</span>
+            <span>{importing ? 'Importing…' : 'Import .md or .pdf…'}</span>
           </button>
         </div>
       )}
       {errorMessage && (
         <p
           role="status"
-          className="pointer-events-none absolute right-0 top-[calc(100%+8px)] z-20 inline-flex items-center rounded-md border border-danger bg-danger-soft px-sm py-xs text-small text-danger shadow-card"
+          aria-live="polite"
+          className="absolute right-0 top-[calc(100%+8px)] z-20 inline-flex max-w-[360px] items-center rounded-md border border-danger bg-danger-soft px-sm py-xs text-small text-danger shadow-card"
         >
           {errorMessage}
         </p>

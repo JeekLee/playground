@@ -5,23 +5,27 @@ import { useRouter } from 'next/navigation';
 import { Upload } from 'lucide-react';
 import {
   importMarkdownDocument,
-  MAX_BODY_BYTES,
+  MAX_UPLOAD_BYTES,
+  UPLOAD_ERROR_COPY,
 } from '@/shared/api/docs';
 
 /**
- * Viewport-wide drag-drop overlay for `.md` import — design doc
- * §"+ New document dropdown + .md import affordance" "Drag-drop overlay
- * (active)" frame.
+ * Viewport-wide drag-drop overlay for source-file import. M2 shipped this
+ * as a `.md`-only path; M6 widens to `.md` + `.pdf` per design context
+ * §2.1 / §6.2.
  *
  * The overlay listens for `dragenter`/`dragover`/`dragleave`/`drop` on
  * `window`. Active state surfaces a centered dashed-border drop card. On
  * drop the file is uploaded via `POST /api/docs` multipart. Non-`.md`
- * files trigger a `danger` toast; oversize files surface the same toast
- * the dropdown's import path uses.
+ * / non-`.pdf` files trigger a `danger` toast (`INVALID_FILE_TYPE` copy);
+ * oversize files surface the `FILE_TOO_LARGE` copy. Backend-mapped errors
+ * (corrupted / encrypted / too many pages / OCR cap) use the same
+ * `UPLOAD_ERROR_COPY` dictionary so the NewDocButton and overlay never
+ * disagree on what to say.
  *
  * On `/docs/{id}` edit / `/docs/new` routes the visual mode is destructive
- * ("Drop .md to replace this document's body") per the design doc; S1
- * scope ships only `/docs/mine` (which always means a fresh document),
+ * ("Drop .md/.pdf to replace this document's body") per the design doc;
+ * S1 scope ships only `/docs/mine` (which always means a fresh document),
  * so we render the create variant here. Per-page destructive variant is
  * a follow-up.
  */
@@ -42,12 +46,46 @@ export function DragDropImportOverlay({
   const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-clear errors after 4s.
+  // Auto-clear errors after 5s — long enough to read the multi-clause
+  // PDF error copy (e.g., "Scanned PDF too long (max 30 pages for OCR).")
+  // without rushing the reader.
   useEffect(() => {
     if (!error) return;
-    const id = window.setTimeout(() => setError(null), 4000);
+    const id = window.setTimeout(() => setError(null), 5000);
     return () => window.clearTimeout(id);
   }, [error]);
+
+  const handleImport = useCallback(
+    async (file: File) => {
+      const name = file.name.toLowerCase();
+      if (!(name.endsWith('.md') || name.endsWith('.pdf'))) {
+        setError(UPLOAD_ERROR_COPY.INVALID_FILE_TYPE);
+        return;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setError(UPLOAD_ERROR_COPY.FILE_TOO_LARGE);
+        return;
+      }
+      setUploading(file.name);
+      const result = await importMarkdownDocument(file, { path: folderPath });
+      setUploading(null);
+      if (result.kind === 'ok') {
+        onImportComplete?.(result.value.id);
+        router.push(`/docs/${result.value.id}`);
+      } else if (result.kind === 'unauthorized') {
+        router.push('/login?next=' + encodeURIComponent('/docs/mine'));
+      } else if (result.kind === 'upload-rejected') {
+        setError(UPLOAD_ERROR_COPY[result.code]);
+      } else if (result.kind === 'too-large') {
+        setError(
+          result.code ? UPLOAD_ERROR_COPY[result.code] : UPLOAD_ERROR_COPY.FILE_TOO_LARGE,
+        );
+      } else {
+        setError(`Couldn’t import ${file.name}. Please try again.`);
+      }
+    },
+    [folderPath, onImportComplete, router],
+  );
 
   useEffect(() => {
     let dragCounter = 0;
@@ -81,27 +119,7 @@ export function DragDropImportOverlay({
       setActive(false);
       const file = e.dataTransfer?.files?.[0];
       if (!file) return;
-      if (!file.name.toLowerCase().endsWith('.md')) {
-        setError('Only .md files are accepted.');
-        return;
-      }
-      if (file.size > MAX_BODY_BYTES) {
-        setError(`${file.name} is too large (>1 MB). Trim and try again.`);
-        return;
-      }
-      setUploading(file.name);
-      const result = await importMarkdownDocument(file, { path: folderPath });
-      setUploading(null);
-      if (result.kind === 'ok') {
-        onImportComplete?.(result.value.id);
-        router.push(`/docs/${result.value.id}`);
-      } else if (result.kind === 'unauthorized') {
-        router.push('/login?next=' + encodeURIComponent('/docs/mine'));
-      } else if (result.kind === 'too-large') {
-        setError(`${file.name} is too large (>1 MB). Trim and try again.`);
-      } else {
-        setError(`Couldn't import ${file.name}. Make sure it's a UTF-8 Markdown file.`);
-      }
+      await handleImport(file);
     };
 
     window.addEventListener('dragenter', onEnter);
@@ -114,7 +132,7 @@ export function DragDropImportOverlay({
       window.removeEventListener('dragleave', onLeave);
       window.removeEventListener('drop', onDrop);
     };
-  }, [folderPath, router, onImportComplete]);
+  }, [handleImport]);
 
   const visible = active || !!uploading;
 
@@ -135,15 +153,19 @@ export function DragDropImportOverlay({
               </>
             ) : (
               <>
-                <p className="text-h3 text-text">Drop a Markdown file to import</p>
-                <p className="text-small text-text-muted">.md files only · 1 MB max</p>
+                <p className="text-h3 text-text">Drop a .md or .pdf to import</p>
+                <p className="text-small text-text-muted">Markdown or PDF · 25 MB max</p>
               </>
             )}
           </div>
         </div>
       )}
       {error && (
-        <div className="pointer-events-none fixed bottom-[24px] right-[24px] z-40 rounded-md border border-danger bg-danger-soft px-md py-sm text-small text-danger shadow-pop">
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed bottom-[24px] right-[24px] z-40 max-w-[360px] rounded-md border border-danger bg-danger-soft px-md py-sm text-small text-danger shadow-pop"
+        >
           {error}
         </div>
       )}

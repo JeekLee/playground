@@ -2,10 +2,12 @@ import Link from 'next/link';
 import { Eye, Heart } from 'lucide-react';
 import { Avatar } from '@/shared/ui/avatar';
 import { Chip } from '@/shared/ui/chip';
+import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { cn } from '@/shared/lib/cn';
 import {
   authorInitials,
   formatDate,
+  isPdfSourced,
   type DocumentListItem,
 } from '@/entities/document';
 
@@ -89,9 +91,12 @@ export function CommunityDocCard({
       </div>
       <div className="flex flex-1 flex-col gap-sm p-md">
         <div className="flex flex-1 flex-col gap-xs">
-          <h3 className="line-clamp-2 text-h3 text-text group-hover:text-accent">
-            {doc.title}
-          </h3>
+          <div className="flex items-start gap-sm">
+            <h3 className="line-clamp-2 min-w-0 flex-1 text-h3 text-text group-hover:text-accent">
+              {doc.title}
+            </h3>
+            {isPdfSourced(doc) && <PdfBadge className="relative top-[3px]" />}
+          </div>
           <p className="line-clamp-2 text-small text-text-muted">{doc.excerpt}</p>
         </div>
         <div className="flex flex-wrap items-center gap-x-sm gap-y-xs text-small text-text-muted">

@@ -5,6 +5,7 @@ export type {
   Document,
   DocumentListItem,
   FolderListItem,
+  MimeType,
   MyDocumentListItem,
   OwnerInfo,
   PatchDocumentRequest,
@@ -12,6 +13,7 @@ export type {
   Visibility,
 } from './types';
 export { authorInitials, displayInitials, formatDate, formatRelative } from './types';
+export { isPdfSourced } from '@/shared/api/docs';
 export {
   buildFolderTree,
   flattenFolderTree,

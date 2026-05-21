@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/button';
 import { Chip } from '@/shared/ui/chip';
+import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { BlockNoteEditor, useSaveShortcut } from '@/features/docs-editor';
 import { FolderPicker } from '@/features/folder-picker';
 import { ConfirmModal } from '@/widgets/confirm-modal';
@@ -16,6 +17,7 @@ import {
   publishDocument,
   unpublishDocument,
 } from '@/shared/api/docs';
+import { isPdfSourced } from '@/entities/document';
 import type { Document } from '@/entities/document';
 
 /**
@@ -235,14 +237,17 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
         )}
 
         <div className="mx-auto w-full max-w-[1100px] px-md py-xl">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Untitled"
-            aria-label="Document title"
-            className="w-full bg-transparent text-h1 text-text placeholder:text-text-subtle focus:outline-none"
-          />
+          <div className="flex flex-wrap items-center gap-md">
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Untitled"
+              aria-label="Document title"
+              className="min-w-0 flex-1 bg-transparent text-h1 text-text placeholder:text-text-subtle focus:outline-none"
+            />
+            {isPdfSourced(doc) && <PdfBadge className="relative top-[-2px]" />}
+          </div>
           <div className="mt-lg">
             <BlockNoteEditor initialBody={doc.body} onChange={setBody} />
           </div>

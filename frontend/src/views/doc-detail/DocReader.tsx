@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { Copy, Eye, Pencil } from 'lucide-react';
 import { Avatar } from '@/shared/ui/avatar';
 import { Chip } from '@/shared/ui/chip';
+import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { MarkdownReader } from '@/features/docs-reader';
 import { LikeButton } from '@/features/doc-like';
-import { formatRelative } from '@/entities/document';
+import { formatRelative, isPdfSourced } from '@/entities/document';
 import { incrementView } from '@/shared/api/docs';
 import type { Document } from '@/entities/document';
 
@@ -84,10 +85,15 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
     }
   };
 
+  const pdfSourced = isPdfSourced(doc);
+
   return (
     <article className="mx-auto flex w-full max-w-[1100px] flex-col gap-lg px-[28px] py-xl">
       <header className="flex flex-col gap-md">
-        <h1 className="text-h1 text-text">{doc.title}</h1>
+        <h1 className="flex flex-wrap items-center gap-md text-h1 text-text">
+          <span>{doc.title}</span>
+          {pdfSourced && <PdfBadge className="relative top-[-2px]" />}
+        </h1>
         <div className="flex flex-wrap items-center justify-between gap-md">
           <div className="flex items-center gap-sm">
             <Avatar initials={authorInitials} size="md" />
@@ -136,6 +142,21 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
             initialLikeCount={doc.likeCount}
             isAnonymous={!isAuthenticated}
           />
+          {pdfSourced && (
+            // M6 §2.6 — meta row gains "· source: .pdf" tail when the doc
+            // was uploaded as a PDF. The `(N pages)` portion sketched in
+            // the design doc is intentionally omitted — PRD elected not
+            // to persist `pdf_page_count` in P0.
+            <span
+              className="inline-flex items-center gap-xs text-small text-text-muted"
+              aria-label="Source file format: PDF"
+            >
+              <span aria-hidden="true">·</span>
+              <span>
+                source: <span className="font-mono text-[12px]">.pdf</span>
+              </span>
+            </span>
+          )}
           {copied && <Chip variant="success">Link copied</Chip>}
         </div>
       </header>
