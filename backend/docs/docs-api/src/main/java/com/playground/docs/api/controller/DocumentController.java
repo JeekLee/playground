@@ -6,8 +6,10 @@ import com.playground.docs.api.response.DocListResponse;
 import com.playground.docs.api.response.DocumentDetailResponse;
 import com.playground.docs.api.response.MyDocumentListResponse;
 import com.playground.docs.application.dto.CreateDocumentCommand;
+import com.playground.docs.application.port.PdfExtractorPort;
 import com.playground.docs.application.service.DocumentAppService;
 import com.playground.docs.application.service.DocumentFeedService;
+import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.exception.DocsErrorCode;
 import com.playground.docs.domain.model.vo.DocumentBody;
 import com.playground.shared.error.ExceptionCreator;
@@ -58,10 +60,29 @@ public class DocumentController {
 
     private final DocumentAppService docService;
     private final DocumentFeedService feedService;
+    /**
+     * M6 ADR-16 — optional PDF extractor port. Wired by docs-infra's
+     * {@code PdfExtractorAdapter}; nullable so the M2 standalone-MockMvc
+     * controller tests can construct the controller without a Spring AI
+     * {@code ChatClient} on the classpath. When null and a PDF arrives the
+     * controller throws {@link DocsErrorCode#INVALID_FILE_TYPE} as a
+     * defense-in-depth backstop (the multipart filter chain is the real
+     * gate — Spring DI resolves the bean in production).
+     */
+    private final PdfExtractorPort pdfExtractor;
 
     public DocumentController(DocumentAppService docService, DocumentFeedService feedService) {
+        this(docService, feedService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DocumentController(
+            DocumentAppService docService,
+            DocumentFeedService feedService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) PdfExtractorPort pdfExtractor) {
         this.docService = docService;
         this.feedService = feedService;
+        this.pdfExtractor = pdfExtractor;
     }
 
     @PostMapping(
@@ -76,11 +97,31 @@ public class DocumentController {
     }
 
     /**
-     * Multipart variant of {@code POST /api/docs} per M2 spec §6.1: accepts a
-     * {@code .md} file part + optional {@code title} + optional {@code path}.
-     * The file contents (UTF-8) become the document body; if {@code title} is
-     * absent the filename (sans {@code .md}/{@code .markdown} extension) is
-     * used as a fallback.
+     * Multipart variant of {@code POST /api/docs} per M2 spec §6.1 + M6
+     * ADR-16. Accepts:
+     * <ul>
+     *   <li>{@code .md} / {@code .markdown} file → contents become the document
+     *       body verbatim (UTF-8 decoded).</li>
+     *   <li>{@code .pdf} file → PDFBox extracts the text layer; pages with no
+     *       text layer fall back to Spring AI Vision OCR
+     *       ({@link PdfExtractorPort}). The resulting Markdown is stored in
+     *       {@code documents.body}; M3 rag-ingestion sees a regular Markdown
+     *       doc and needs zero code changes.</li>
+     * </ul>
+     *
+     * <p>Validation gate (3-step, ADR-16):
+     * <ol>
+     *   <li>Filename suffix — {@code .md}, {@code .markdown}, or {@code .pdf}
+     *       (case-insensitive).</li>
+     *   <li>{@code Content-Type} — {@code text/markdown} or
+     *       {@code application/pdf} (or absent, in which case the suffix-derived
+     *       type wins — browsers occasionally drop the header for
+     *       {@code .md}).</li>
+     *   <li>For {@code .pdf}: PDF magic bytes ({@code %PDF-} = {@code 0x25 50
+     *       44 46 2D}) at offset 0.</li>
+     * </ol>
+     *
+     * <p>If {@code title} is absent the filename (sans extension) is used.
      */
     @PostMapping(
             value = {"/", ""},
@@ -94,21 +135,48 @@ public class DocumentController {
         if (file == null || file.isEmpty()) {
             ExceptionCreator.of(DocsErrorCode.UPLOAD_FILE_MISSING).throwIt();
         }
-        // Defense in depth: the 1 MB cap is enforced by DocumentBody.of() in
-        // the application service, but rejecting oversize uploads here avoids
-        // copying the bytes off the multipart stream into memory only to fail
-        // the VO check downstream.
-        if (file.getSize() > DocumentBody.MAX_OCTET_LENGTH) {
+        // M6 ADR-16: 3-step input gate (filename → content-type → magic bytes).
+        MimeType mimeType = detectMimeType(file);
+
+        // Defense in depth: multipart cap (25 MB per ADR-16) is enforced by
+        // spring.servlet.multipart.max-file-size — fail-fast here so we avoid
+        // copying oversized bytes into memory only to fail downstream.
+        if (file.getSize() > MULTIPART_MAX_FILE_SIZE) {
+            ExceptionCreator.of(DocsErrorCode.FILE_TOO_LARGE).throwIt();
+        }
+
+        String body;
+        if (mimeType == MimeType.PDF) {
+            // Read raw bytes; PdfExtractorPort handles parse + Vision OCR.
+            byte[] pdfBytes = readFileBytes(file);
+            if (pdfExtractor == null) {
+                // Defense-in-depth — production wiring always provides the
+                // adapter, but the standalone-MockMvc tests construct the
+                // controller with a 2-arg ctor and no PDF support.
+                ExceptionCreator.of(DocsErrorCode.INVALID_FILE_TYPE).throwIt();
+            }
+            body = pdfExtractor.extractToMarkdown(pdfBytes);
+        } else {
+            // Markdown path — UTF-8 decode the file contents directly.
+            body = readFileAsUtf8(file);
+        }
+
+        // The DocumentBody VO enforces the 10 MB body cap (M6 ADR-16). PDFs
+        // that explode past 10 MB after extraction surface as BODY_TOO_LARGE.
+        if (body != null && body.getBytes(StandardCharsets.UTF_8).length > DocumentBody.MAX_OCTET_LENGTH) {
             ExceptionCreator.of(DocsErrorCode.BODY_TOO_LARGE).throwIt();
         }
-        String body = readFileAsUtf8(file);
+
         String resolvedTitle = (title == null || title.isBlank())
                 ? deriveTitleFromFilename(file.getOriginalFilename())
                 : title;
-        var command = new CreateDocumentCommand(author, resolvedTitle, body, path);
+        var command = new CreateDocumentCommand(author, resolvedTitle, body, path, mimeType);
         var detail = docService.create(command);
         return ResponseEntity.status(201).body(DocumentDetailResponse.from(detail));
     }
+
+    /** Multipart upload cap — 25 MB per ADR-16. */
+    static final long MULTIPART_MAX_FILE_SIZE = 25L * 1_048_576L;
 
     /**
      * Unified {@code GET /api/docs} per M2 spec §6.1 + §6.2. Mode selection:
@@ -258,6 +326,76 @@ public class DocumentController {
         }
     }
 
+    private static byte[] readFileBytes(MultipartFile file) {
+        try {
+            return file.getBytes();
+        } catch (IOException e) {
+            ExceptionCreator.of(DocsErrorCode.UPLOAD_FILE_MISSING).throwIt();
+            return null; // unreachable
+        }
+    }
+
+    /**
+     * M6 ADR-16 — 3-step input gate. Surface {@link DocsErrorCode#INVALID_FILE_TYPE}
+     * (400) on any mismatch.
+     *
+     * <ol>
+     *   <li>Filename suffix (case-insensitive): {@code .md}, {@code .markdown},
+     *       {@code .pdf}.</li>
+     *   <li>{@code Content-Type}: {@code text/markdown}, {@code text/plain}
+     *       (some browsers send it for .md), {@code application/pdf}, or
+     *       {@code application/octet-stream} (fallback when the browser
+     *       doesn't know the type — suffix wins). Must be consistent with
+     *       the suffix.</li>
+     *   <li>For {@code .pdf}: PDF magic bytes ({@code %PDF-}) at offset 0.</li>
+     * </ol>
+     */
+    private static MimeType detectMimeType(MultipartFile file) {
+        String filename = file.getOriginalFilename();
+        String lower = filename == null ? "" : filename.toLowerCase();
+        boolean suffixPdf = lower.endsWith(".pdf");
+        boolean suffixMd = lower.endsWith(".md") || lower.endsWith(".markdown");
+        if (!suffixPdf && !suffixMd) {
+            ExceptionCreator.of(DocsErrorCode.INVALID_FILE_TYPE).throwIt();
+        }
+
+        String contentType = file.getContentType();
+        if (suffixPdf) {
+            // Step 2 — content type. application/pdf is canonical; allow
+            // application/octet-stream (browsers without registered handlers)
+            // and null (raw uploads from curl) — the magic-byte check in step 3
+            // is what really gates the PDF path.
+            if (contentType != null
+                    && !"application/pdf".equalsIgnoreCase(contentType)
+                    && !"application/octet-stream".equalsIgnoreCase(contentType)) {
+                ExceptionCreator.of(DocsErrorCode.INVALID_FILE_TYPE).throwIt();
+            }
+            // Step 3 — magic bytes %PDF- at offset 0.
+            byte[] bytes = readFileBytes(file);
+            if (bytes == null || bytes.length < 5
+                    || bytes[0] != (byte) 0x25  // %
+                    || bytes[1] != (byte) 0x50  // P
+                    || bytes[2] != (byte) 0x44  // D
+                    || bytes[3] != (byte) 0x46  // F
+                    || bytes[4] != (byte) 0x2D) {  // -
+                ExceptionCreator.of(DocsErrorCode.INVALID_FILE_TYPE).throwIt();
+            }
+            return MimeType.PDF;
+        }
+        // Markdown branch — content type may be text/markdown, text/plain,
+        // application/octet-stream, or null. Allow them all; reject only
+        // when the type clearly indicates a different media (e.g.
+        // application/pdf).
+        if (contentType != null
+                && !"text/markdown".equalsIgnoreCase(contentType)
+                && !"text/plain".equalsIgnoreCase(contentType)
+                && !"application/octet-stream".equalsIgnoreCase(contentType)
+                && !contentType.toLowerCase().startsWith("text/")) {
+            ExceptionCreator.of(DocsErrorCode.INVALID_FILE_TYPE).throwIt();
+        }
+        return MimeType.MARKDOWN;
+    }
+
     private static String deriveTitleFromFilename(String filename) {
         if (filename == null || filename.isBlank()) {
             return "Untitled";
@@ -268,6 +406,9 @@ public class DocumentController {
             stripped = filename.substring(0, filename.length() - ".markdown".length());
         } else if (lower.endsWith(".md")) {
             stripped = filename.substring(0, filename.length() - ".md".length());
+        } else if (lower.endsWith(".pdf")) {
+            // M6 ADR-16 — PDF filename → title fallback strips the suffix too.
+            stripped = filename.substring(0, filename.length() - ".pdf".length());
         }
         if (stripped.isBlank()) {
             return "Untitled";

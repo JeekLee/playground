@@ -225,6 +225,7 @@ class DocumentMultipartUploadTest {
                 0L,              // viewCount
                 0L,              // likeCount
                 null,            // likedByMe
+                "text/markdown", // M6 mimeType
                 null,
                 now,
                 now);

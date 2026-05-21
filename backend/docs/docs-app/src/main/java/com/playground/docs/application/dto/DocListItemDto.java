@@ -23,6 +23,7 @@ public record DocListItemDto(
         Instant publishedAt,
         long viewCount,
         long likeCount,
-        Boolean likedByMe
+        Boolean likedByMe,
+        String mimeType
 ) {
 }

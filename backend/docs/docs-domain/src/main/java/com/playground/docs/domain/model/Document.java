@@ -1,5 +1,6 @@
 package com.playground.docs.domain.model;
 
+import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.model.id.AuthorId;
 import com.playground.docs.domain.model.id.DocumentId;
@@ -46,6 +47,7 @@ public final class Document {
     private final DocumentPath path;
     private final long viewCount;
     private final long likeCount;
+    private final MimeType mimeType;
     private final Instant publishedAt;
     private final Instant createdAt;
     private final Instant updatedAt;
@@ -59,6 +61,7 @@ public final class Document {
             DocumentPath path,
             long viewCount,
             long likeCount,
+            MimeType mimeType,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
@@ -76,6 +79,7 @@ public final class Document {
         }
         this.viewCount = viewCount;
         this.likeCount = likeCount;
+        this.mimeType = mimeType == null ? MimeType.MARKDOWN : mimeType;
         this.publishedAt = publishedAt;
         this.createdAt = Objects.requireNonNull(createdAt, "Document.createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "Document.updatedAt must not be null");
@@ -107,13 +111,39 @@ public final class Document {
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
-        this(id, authorId, title, body, visibility, path, 0L, 0L, publishedAt, createdAt, updatedAt);
+        this(id, authorId, title, body, visibility, path, 0L, 0L, MimeType.MARKDOWN, publishedAt, createdAt, updatedAt);
+    }
+
+    /**
+     * Backwards-compatible constructor (pre-M6, no {@code mimeType} field).
+     * Defaults {@code mimeType} to {@link MimeType#MARKDOWN}. Used by code paths
+     * that were written before the PDF support landed (S2/S3 unit tests, the
+     * counter-only increment helpers, etc.).
+     */
+    public Document(
+            DocumentId id,
+            AuthorId authorId,
+            DocumentTitle title,
+            DocumentBody body,
+            Visibility visibility,
+            DocumentPath path,
+            long viewCount,
+            long likeCount,
+            Instant publishedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, authorId, title, body, visibility, path, viewCount, likeCount, MimeType.MARKDOWN,
+                publishedAt, createdAt, updatedAt);
     }
 
     /**
      * Factory for a brand-new draft. Default visibility is {@link Visibility#PRIVATE}
      * per M2 spec §6.1 ({@code POST /api/docs} creates documents with
      * {@code visibility='private'} and {@code path='/'}). Counters start at 0.
+     *
+     * <p>Defaults {@code mimeType = MARKDOWN}; PDF uploads call the
+     * {@link #create(DocumentId, AuthorId, DocumentTitle, DocumentBody, DocumentPath, MimeType, Instant)}
+     * overload (M6 ADR-16).
      */
     public static Document create(
             DocumentId id,
@@ -121,6 +151,25 @@ public final class Document {
             DocumentTitle title,
             DocumentBody body,
             DocumentPath path,
+            Instant now) {
+        return create(id, authorId, title, body, path, MimeType.MARKDOWN, now);
+    }
+
+    /**
+     * M6 ADR-16 factory variant — caller passes the {@link MimeType} so PDF
+     * uploads can record their source media type alongside the extracted
+     * Markdown body. M2 callers (the JSON {@code POST /api/docs} path + the
+     * Markdown multipart variant) keep using the {@link #create(DocumentId,
+     * AuthorId, DocumentTitle, DocumentBody, DocumentPath, Instant)} shape
+     * above, which defaults to {@link MimeType#MARKDOWN}.
+     */
+    public static Document create(
+            DocumentId id,
+            AuthorId authorId,
+            DocumentTitle title,
+            DocumentBody body,
+            DocumentPath path,
+            MimeType mimeType,
             Instant now) {
         Objects.requireNonNull(now, "Document.create.now must not be null");
         return new Document(
@@ -132,6 +181,7 @@ public final class Document {
                 path,
                 0L,
                 0L,
+                mimeType == null ? MimeType.MARKDOWN : mimeType,
                 null,
                 now,
                 now);
@@ -167,6 +217,10 @@ public final class Document {
 
     public long likeCount() {
         return likeCount;
+    }
+
+    public MimeType mimeType() {
+        return mimeType;
     }
 
     public Instant publishedAt() {
@@ -212,6 +266,7 @@ public final class Document {
                 newPath == null ? this.path : newPath,
                 this.viewCount,
                 this.likeCount,
+                this.mimeType,
                 this.publishedAt,
                 this.createdAt,
                 now);
@@ -249,6 +304,7 @@ public final class Document {
                 this.path,
                 this.viewCount,
                 this.likeCount,
+                this.mimeType,
                 newPublishedAt,
                 this.createdAt,
                 now);
@@ -301,6 +357,7 @@ public final class Document {
                 this.path,
                 this.viewCount + 1,
                 this.likeCount,
+                this.mimeType,
                 this.publishedAt,
                 this.createdAt,
                 this.updatedAt);
@@ -324,6 +381,7 @@ public final class Document {
                 this.path,
                 this.viewCount,
                 this.likeCount + 1,
+                this.mimeType,
                 this.publishedAt,
                 this.createdAt,
                 this.updatedAt);
@@ -348,6 +406,7 @@ public final class Document {
                 this.path,
                 this.viewCount,
                 this.likeCount - 1,
+                this.mimeType,
                 this.publishedAt,
                 this.createdAt,
                 this.updatedAt);

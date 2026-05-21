@@ -9,6 +9,7 @@ import com.playground.docs.application.dto.PatchDocumentCommand;
 import com.playground.docs.application.port.IdentityLookupPort;
 import com.playground.docs.application.repository.DocumentLikeRepository;
 import com.playground.docs.application.repository.DocumentRepository;
+import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.event.DocumentDeleted;
 import com.playground.docs.domain.event.DocumentUploaded;
@@ -111,6 +112,9 @@ public class DocumentAppService {
         DocumentBody body = parseBody(command.body());
         DocumentPath path = parsePath(command.path());
         AuthorId authorId = AuthorId.of(command.authorId());
+        // M6 ADR-16 — MIME type defaults to MARKDOWN when the command was
+        // built via the M2 four-arg shorthand constructor.
+        MimeType mimeType = command.mimeType() == null ? MimeType.MARKDOWN : command.mimeType();
 
         Document doc = Document.create(
                 DocumentId.of(UUID.randomUUID()),
@@ -118,10 +122,13 @@ public class DocumentAppService {
                 title,
                 body,
                 path,
+                mimeType,
                 now);
         Document saved = repository.save(doc);
 
-        // Spec §5: uploaded fires on CREATE (always — the body is new).
+        // Spec §5: uploaded fires on CREATE (always — the body is new). The
+        // extracted Markdown is what M3 rag-ingestion sees, so PDF uploads
+        // require zero changes downstream (ADR-16 design constraint).
         publishUploaded(saved, now);
 
         return toDetailDto(saved, callerOwnsRow(saved, authorId.value()));

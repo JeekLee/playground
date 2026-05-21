@@ -44,6 +44,16 @@ public class DocumentJpaEntity {
     @Column(name = "like_count", nullable = false)
     private long likeCount;
 
+    /**
+     * M6 ADR-16 — source MIME type. Either {@code text/markdown} (M2 / M3 / M5
+     * uploads + every JSON {@code POST /api/docs} call) or
+     * {@code application/pdf} (M6 PDF upload, body holds the
+     * PDFBox-or-Vision-OCR-extracted Markdown). The DB CHECK constraint pins
+     * the same two literals.
+     */
+    @Column(name = "mime_type", nullable = false)
+    private String mimeType;
+
     @Column(name = "published_at")
     private Instant publishedAt;
 
@@ -66,6 +76,7 @@ public class DocumentJpaEntity {
             String path,
             long viewCount,
             long likeCount,
+            String mimeType,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
@@ -77,6 +88,7 @@ public class DocumentJpaEntity {
         this.path = path;
         this.viewCount = viewCount;
         this.likeCount = likeCount;
+        this.mimeType = mimeType;
         this.publishedAt = publishedAt;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -114,6 +126,10 @@ public class DocumentJpaEntity {
         return likeCount;
     }
 
+    public String getMimeType() {
+        return mimeType;
+    }
+
     public Instant getPublishedAt() {
         return publishedAt;
     }
@@ -148,6 +164,10 @@ public class DocumentJpaEntity {
 
     public void setLikeCount(long likeCount) {
         this.likeCount = likeCount;
+    }
+
+    public void setMimeType(String mimeType) {
+        this.mimeType = mimeType;
     }
 
     public void setPublishedAt(Instant publishedAt) {

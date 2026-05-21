@@ -129,7 +129,10 @@ public class DocumentFeedService {
                         doc.likeCount(),
                         // Authenticated caller → Boolean (true/false per row);
                         // anonymous → null (spec §6.4 omits the field).
-                        callerId == null ? null : likedIds.contains(doc.id().value())))
+                        callerId == null ? null : likedIds.contains(doc.id().value()),
+                        // M6 ADR-16: source MIME type so the doc card can
+                        // render a "(PDF)" badge without re-parsing the body.
+                        doc.mimeType().wireValue()))
                 .toList();
 
         String nextCursor = null;

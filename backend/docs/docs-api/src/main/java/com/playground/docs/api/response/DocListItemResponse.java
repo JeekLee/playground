@@ -18,7 +18,8 @@ public record DocListItemResponse(
         Instant publishedAt,
         long viewCount,
         long likeCount,
-        Boolean likedByMe) {
+        Boolean likedByMe,
+        String mimeType) {
 
     public static DocListItemResponse from(DocListItemDto dto) {
         return new DocListItemResponse(
@@ -31,6 +32,7 @@ public record DocListItemResponse(
                 dto.publishedAt(),
                 dto.viewCount(),
                 dto.likeCount(),
-                dto.likedByMe());
+                dto.likedByMe(),
+                dto.mimeType());
     }
 }

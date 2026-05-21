@@ -1,5 +1,6 @@
 package com.playground.docs.infrastructure.persistence;
 
+import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.model.Document;
 import com.playground.docs.domain.model.id.AuthorId;
@@ -27,6 +28,7 @@ public final class DocumentMapper {
                 DocumentPath.of(entity.getPath()),
                 entity.getViewCount(),
                 entity.getLikeCount(),
+                MimeType.fromWire(entity.getMimeType()),
                 entity.getPublishedAt(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
@@ -42,6 +44,7 @@ public final class DocumentMapper {
                 doc.path().value(),
                 doc.viewCount(),
                 doc.likeCount(),
+                doc.mimeType().wireValue(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());
@@ -58,6 +61,7 @@ public final class DocumentMapper {
         managed.setBody(source.body().value());
         managed.setVisibility(source.visibility().wireValue());
         managed.setPath(source.path().value());
+        managed.setMimeType(source.mimeType().wireValue());
         managed.setPublishedAt(source.publishedAt());
         managed.setUpdatedAt(source.updatedAt());
         return managed;

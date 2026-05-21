@@ -20,9 +20,13 @@ import reactor.netty.http.client.HttpClient;
  *       {@code http://docs-api:18082} per ADR-13 §B compose spec).</li>
  *   <li>Response timeout: 5 s.</li>
  *   <li>Connect timeout: 2 s.</li>
- *   <li>{@code maxInMemorySize}: 2 MB = 2× the 1 MB body cap (ADR-12 §4).
- *       Bodies exceeding 2 MB throw {@code DataBufferLimitException},
- *       classified as non-retryable by {@code DocsBodyFetchAdapter}.</li>
+ *   <li>{@code maxInMemorySize}: 12 MB. The M2 docs body cap was 1 MB (slack
+ *       2 MB); M6 (ADR-16) widens the docs body cap to 10 MB so PDF text
+ *       extraction can produce large Markdown bodies — bump the WebClient
+ *       buffer to 12 MB to match (10 MB body + 2 MB slack for JSON
+ *       envelope + checksum field). Bodies exceeding 12 MB throw
+ *       {@code DataBufferLimitException}, classified as non-retryable by
+ *       {@code DocsBodyFetchAdapter}.</li>
  * </ul>
  */
 @Configuration(proxyBeanMethods = false)
@@ -42,7 +46,7 @@ public class DocsApiClientConfig {
         return WebClient.builder()
                 .baseUrl(baseUrl)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
-                .codecs(c -> c.defaultCodecs().maxInMemorySize(2 * 1024 * 1024))
+                .codecs(c -> c.defaultCodecs().maxInMemorySize(12 * 1024 * 1024))
                 .build();
     }
 }

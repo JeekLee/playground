@@ -22,6 +22,7 @@ public record DocumentDetailResponse(
         long viewCount,
         long likeCount,
         Boolean likedByMe,
+        String mimeType,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -39,6 +40,7 @@ public record DocumentDetailResponse(
                 dto.viewCount(),
                 dto.likeCount(),
                 dto.likedByMe(),
+                dto.mimeType(),
                 dto.publishedAt(),
                 dto.createdAt(),
                 dto.updatedAt());

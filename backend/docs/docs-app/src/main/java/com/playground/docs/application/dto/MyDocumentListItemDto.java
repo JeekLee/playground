@@ -24,6 +24,7 @@ public record MyDocumentListItemDto(
         String path,
         long viewCount,
         long likeCount,
+        String mimeType,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -37,6 +38,7 @@ public record MyDocumentListItemDto(
                 doc.path().value(),
                 viewCount,
                 likeCount,
+                doc.mimeType().wireValue(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());

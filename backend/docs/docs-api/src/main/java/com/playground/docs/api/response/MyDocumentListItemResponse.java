@@ -15,6 +15,7 @@ public record MyDocumentListItemResponse(
         String path,
         long viewCount,
         long likeCount,
+        String mimeType,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -28,6 +29,7 @@ public record MyDocumentListItemResponse(
                 dto.path(),
                 dto.viewCount(),
                 dto.likeCount(),
+                dto.mimeType(),
                 dto.publishedAt(),
                 dto.createdAt(),
                 dto.updatedAt());

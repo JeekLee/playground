@@ -9,6 +9,7 @@ import com.playground.docs.application.dto.CreateDocumentCommand;
 import com.playground.docs.application.dto.DocumentDetailDto;
 import com.playground.docs.application.dto.PatchDocumentCommand;
 import com.playground.docs.application.repository.DocumentRepository;
+import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.exception.DocumentNotFoundException;
 import com.playground.docs.domain.model.Document;
 import com.playground.docs.domain.model.id.AuthorId;
@@ -63,6 +64,22 @@ class DocumentAppServiceTest {
         assertThat(detail.publishedAt()).isNull();
         assertThat(detail.createdAt()).isEqualTo(t0);
         assertThat(detail.updatedAt()).isEqualTo(t0);
+        // M6 ADR-16: M2-era four-arg constructor defaults mimeType to MARKDOWN.
+        assertThat(detail.mimeType()).isEqualTo("text/markdown");
+    }
+
+    @Test
+    void create_with_pdf_mime_type_propagates_through_to_detail() {
+        // M6 ADR-16: when the controller builds the command with mimeType=PDF
+        // (the PDF upload branch), the detail DTO must carry that value so
+        // the response payload + the documents.mime_type column reflect it.
+        UUID authorId = UUID.randomUUID();
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DocumentDetailDto detail = service.create(new CreateDocumentCommand(
+                authorId, "Hello", "extracted body", null, MimeType.PDF));
+
+        assertThat(detail.mimeType()).isEqualTo("application/pdf");
     }
 
     @Test

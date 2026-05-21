@@ -17,13 +17,15 @@ spring:
       port: ${REDIS_PORT:6379}
   servlet:
     multipart:
-      # Aligns with the 1 MB raw-MD body cap pinned by ADR-12 §4 /
-      # DocumentBody.MAX_OCTET_LENGTH. A small slack on max-request-size accounts
-      # for the multipart envelope (boundary headers + the optional title/path
-      # parts). Spring's default 1 MB cap would otherwise reject legitimate
-      # at-the-limit Markdown uploads.
-      max-file-size: 1MB
-      max-request-size: 2MB
+      # M6 ADR-16 — multipart cap raised to 25 MB so the PDF upload path can
+      # accept reasonable-size PDFs (the 200-page limit + 30 OCR-page limit
+      # in PdfExtractorAdapter is the real correctness bound). 1 MB was the
+      # M2 limit pinned to DocumentBody.MAX_OCTET_LENGTH (Markdown-only world);
+      # M6 widens both the body VO (10 MB) and the multipart cap (25 MB raw
+      # PDF). max-request-size adds 1 MB slack for the multipart envelope +
+      # optional title/path form parts.
+      max-file-size: 25MB
+      max-request-size: 26MB
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=docs
     username: ${POSTGRES_USER:playground}
@@ -73,6 +75,22 @@ spring:
         enabled: true
       kafka:
         enabled: true
+  ai:
+    # M6 ADR-16 — Spring AI 1.0 GA wired against spark-inference-gateway for
+    # the Vision OCR fallback (PDF pages with no text layer). Same starter
+    # and base URL the rag-chat (M4) + rag-ingestion (M3) services use per
+    # ADR-04; the only docs-BC-specific knob is the Vision model name.
+    openai:
+      base-url: ${SPRING_AI_OPENAI_BASE_URL:http://spark-inference-gateway:8000}
+      api-key: ${SPRING_AI_OPENAI_API_KEY:dummy-not-used}
+      chat:
+        options:
+          # M6 ADR-16 — multimodal Vision model. Default
+          # qwen3-vl-30b-a3b (loaded on the same spark-inference-gateway as
+          # the chat models); override via env when a different model is
+          # available without a docs-api rebuild.
+          model: ${SPRING_AI_VISION_MODEL:qwen3-vl-30b-a3b}
+          temperature: 0.1
 
 management:
   endpoints:
