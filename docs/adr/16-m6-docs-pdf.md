@@ -193,7 +193,7 @@ public class VisionOcrAdapter implements VisionOcrPort {
             .build();
         ChatOptions options = ChatOptions.builder()
             .model(props.visionModel())    // resolved from SPRING_AI_VISION_MODEL
-            .temperature(0.0)              // OCR is deterministic; no creativity wanted
+            .temperature(0.1)              // OCR is near-deterministic; 0.1 leaves tiny robustness slack vs strict 0.0
             .build();
         String raw = visionChat.prompt()
             .messages(userMessage)
@@ -659,10 +659,19 @@ load.
   in practice; the system prompt is clear.
 - The cleaned string is the page's contribution to `body`.
 
-**Why temperature 0.0:** OCR is a deterministic task — same image
-should yield same Markdown. Higher temperatures introduce drift
-between page-runs of the same PDF, which makes regression testing
-impossible.
+**Why temperature 0.1 (not 0.0):** OCR is a near-deterministic task — the
+same image should yield approximately the same Markdown. Strict 0.0 was
+the initial proposal, but the implementer pinned 0.1 in `docs-api`'s
+`application.yml`, and the post-2026-05-21 bench against the real KFI
+brief PDF showed 0.1 produces stable, high-fidelity output (heading +
+markdown table extraction matched the source closely on text pages
+p1/p28; the only quality issue surfaced was the runaway-loop on
+image-heavy p26, which is unrelated to temperature and is addressed by
+the `frequency-penalty` + `max-tokens` knobs documented in §7's pin
+table and the 2026-05-21 amendment). 0.1 is mid-conservative enough to
+keep regression testing meaningful while leaving a hair of robustness
+against tokenizer edge cases — for OCR pipelines this is the more
+common operating point than strict zero.
 
 ### 8. Caps — multipart size, total pages, OCR pages
 
