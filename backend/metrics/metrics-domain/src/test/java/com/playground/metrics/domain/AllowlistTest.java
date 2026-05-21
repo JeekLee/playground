@@ -60,8 +60,10 @@ class AllowlistTest {
         assertThat(ContainerAllowlist.contains("playground-postgres")).isTrue();
         assertThat(ContainerAllowlist.contains("playground-redis")).isTrue();
         assertThat(ContainerAllowlist.contains("playground-kafka-broker")).isTrue();
-        assertThat(ContainerAllowlist.contains("playground-kafka-init")).isTrue();
         assertThat(ContainerAllowlist.contains("playground-opensearch")).isTrue();
+        // kafka-init은 KNOWN_ENTRIES에선 빠졌지만 prefix regex는 통과
+        // (PromQL 쿼리 자체는 가능). dashboard 카드는 표시 안 됨.
+        assertThat(ContainerAllowlist.contains("playground-kafka-init")).isTrue();
     }
 
     @Test

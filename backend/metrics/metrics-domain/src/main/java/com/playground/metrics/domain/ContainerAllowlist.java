@@ -24,13 +24,16 @@ public final class ContainerAllowlist {
     private static final Pattern PLAYGROUND_PATTERN = Pattern.compile(
             "^playground-[a-z0-9]+(?:-[a-z0-9]+)*$");
 
-    /** 명시적 카탈로그 — dashboard 컨테이너 카드 렌더링용. */
+    /**
+     * 명시적 카탈로그 — dashboard 컨테이너 카드 렌더링용. kafka-init은 init
+     * container라 dashboard 카드에서 제외 (정상 exit 후 cAdvisor 메트릭 끊김).
+     * PromQL 호출 시 prefix regex는 통과하므로 metric query 자체는 가능.
+     */
     private static final Set<String> KNOWN_ENTRIES = unmodifiable(
             // Infra
             "playground-postgres",
             "playground-redis",
             "playground-kafka-broker",
-            "playground-kafka-init",
             "playground-opensearch",
             // Observability stack (M5)
             "playground-prometheus",

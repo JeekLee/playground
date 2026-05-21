@@ -22,7 +22,7 @@ import reactor.core.publisher.Mono;
 class BuildServicesUseCaseTest {
 
     @Test
-    void composesSeventeenCellsInCanonicalOrder() {
+    void composesSixteenCellsInCanonicalOrder() {
         PrometheusPort prometheus = Mockito.mock(PrometheusPort.class);
         ActuatorHealthPort actuator = Mockito.mock(ActuatorHealthPort.class);
         SparkGatewayProbePort spark = Mockito.mock(SparkGatewayProbePort.class);
@@ -40,8 +40,8 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        assertThat(cells).hasSize(17);
-        // ADR-15 §17 canonical order: 6 BCs, spark, 4 obs, 6 stack
+        assertThat(cells).hasSize(16);
+        // ADR-15 §17 canonical order: 6 BCs, spark, 4 obs, 5 stack
         assertThat(cells.stream().map(ServiceCell::name).toList())
                 .containsExactly(
                         "playground-backend-gateway",
@@ -59,7 +59,6 @@ class BuildServicesUseCaseTest {
                         "playground-postgres",
                         "playground-redis",
                         "playground-kafka-broker",
-                        "playground-kafka-init",
                         "playground-opensearch");
         cells.forEach(c -> assertThat(c.status()).isEqualTo("up"));
     }
@@ -162,7 +161,7 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        assertThat(cells).hasSize(17);
+        assertThat(cells).hasSize(16);
         // BC + obs (10): scrape clean + actuator error → degraded.
         // spark: up. stack (6): instantQuery 2 → age 2s → up.
         ServiceProbeTarget.ALL.stream()

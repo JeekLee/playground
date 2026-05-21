@@ -48,12 +48,12 @@ public final class ServiceAllowlist {
             "playground-cadvisor",
             // spark-inference-gateway (host process probed via HEAD /v1/models — §12)
             "spark-inference-gateway",
-            // 6 stack containers (cAdvisor container_last_seen age — ADR-15 §13 amended)
+            // 5 stack containers (cAdvisor container_last_seen age — ADR-15 §13 amended).
+            // kafka-init은 init container로 exit 후 영구 stopped — verdict 무의미.
             "playground-frontend",
             "playground-postgres",
             "playground-redis",
             "playground-kafka-broker",
-            "playground-kafka-init",
             "playground-opensearch");
 
     private ServiceAllowlist() {
