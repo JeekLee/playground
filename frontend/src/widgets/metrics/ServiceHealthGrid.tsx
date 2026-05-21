@@ -42,29 +42,53 @@ interface CellSpec {
   label: string;
 }
 
-// 4×4 grid 순서 — BC 우선, 그다음 obs, 그다음 stack. backend authority의
-// `BuildServicesUseCase.SERVICE_CELL_NAMES` 순서와 일치하는 한도 안에서.
-// status 정보 유무는 services[]에 해당 slug entry가 있는지로 dynamic 결정 —
-// 새 stack 컨테이너에 status가 부여되면 자동으로 ✅ icon 표시.
-const CELLS: ReadonlyArray<CellSpec> = [
-  // 6 BCs
-  { slug: 'playground-backend-gateway', label: 'gateway' },
-  { slug: 'playground-backend-identity-api', label: 'identity-api' },
-  { slug: 'playground-backend-docs-api', label: 'docs-api' },
-  { slug: 'playground-backend-rag-ingestion-api', label: 'rag-ingestion' },
-  { slug: 'playground-backend-rag-chat-api', label: 'rag-chat-api' },
-  { slug: 'playground-backend-metrics-api', label: 'metrics-api' },
-  // 4 observability
-  { slug: 'playground-prometheus', label: 'prometheus' },
-  { slug: 'playground-loki', label: 'loki' },
-  { slug: 'playground-alloy', label: 'alloy' },
-  { slug: 'playground-cadvisor', label: 'cadvisor' },
-  // 5 stack containers (kafka-init은 init container라 dashboard 제외)
-  { slug: 'playground-frontend', label: 'frontend' },
-  { slug: 'playground-postgres', label: 'postgres' },
-  { slug: 'playground-redis', label: 'redis' },
-  { slug: 'playground-kafka-broker', label: 'kafka-broker' },
-  { slug: 'playground-opensearch', label: 'opensearch' },
+interface SubSection {
+  id: string;
+  heading: string;
+  cells: ReadonlyArray<CellSpec>;
+}
+
+// 카드 종류는 status 유무로 dynamic 결정 (services[]에 entry 있으면 ✅).
+// 사용자가 읽는 카테고리 단위로 sub-section 분리:
+//   - applications: 운영자가 직접 운영하는 BC + frontend
+//   - metrics: 관측 stack (prometheus / loki / alloy / cadvisor)
+//   - datasources: 데이터 스토어 / 메시지 브로커
+// spark-inference-gateway는 Inference 섹션에 별도.
+// kafka-init은 init container라 제외.
+const SUB_SECTIONS: ReadonlyArray<SubSection> = [
+  {
+    id: 'applications',
+    heading: 'Applications',
+    cells: [
+      { slug: 'playground-backend-gateway', label: 'gateway' },
+      { slug: 'playground-backend-identity-api', label: 'identity-api' },
+      { slug: 'playground-backend-docs-api', label: 'docs-api' },
+      { slug: 'playground-backend-rag-ingestion-api', label: 'rag-ingestion' },
+      { slug: 'playground-backend-rag-chat-api', label: 'rag-chat-api' },
+      { slug: 'playground-backend-metrics-api', label: 'metrics-api' },
+      { slug: 'playground-frontend', label: 'frontend' },
+    ],
+  },
+  {
+    id: 'metrics-stack',
+    heading: 'Metrics',
+    cells: [
+      { slug: 'playground-prometheus', label: 'prometheus' },
+      { slug: 'playground-loki', label: 'loki' },
+      { slug: 'playground-alloy', label: 'alloy' },
+      { slug: 'playground-cadvisor', label: 'cadvisor' },
+    ],
+  },
+  {
+    id: 'datasources',
+    heading: 'Datasources',
+    cells: [
+      { slug: 'playground-postgres', label: 'postgres' },
+      { slug: 'playground-redis', label: 'redis' },
+      { slug: 'playground-kafka-broker', label: 'kafka-broker' },
+      { slug: 'playground-opensearch', label: 'opensearch' },
+    ],
+  },
 ];
 
 export interface ServiceHealthGridProps {
@@ -81,23 +105,31 @@ export function ServiceHealthGrid({ services, containers }: ServiceHealthGridPro
     : new Map();
 
   return (
-    <section aria-labelledby="metrics-service-health" className="flex flex-col gap-sm">
-      <h2 id="metrics-service-health" className="text-eyebrow text-text-muted">
-        Service health
-      </h2>
-      <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-4">
-        {CELLS.map(({ slug, label }) => (
-          <ServiceHealthCell
-            key={slug}
-            label={label}
-            status={bySvc.get(slug)}
-            resource={byContainer.get(slug)}
-            servicesLoaded={services !== null}
-            containersLoaded={containers !== null}
-          />
-        ))}
-      </div>
-    </section>
+    <div className="flex flex-col gap-md">
+      {SUB_SECTIONS.map((sub) => (
+        <section
+          key={sub.id}
+          aria-labelledby={`metrics-${sub.id}`}
+          className="flex flex-col gap-sm"
+        >
+          <h2 id={`metrics-${sub.id}`} className="text-eyebrow text-text-muted">
+            {sub.heading}
+          </h2>
+          <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-4">
+            {sub.cells.map(({ slug, label }) => (
+              <ServiceHealthCell
+                key={slug}
+                label={label}
+                status={bySvc.get(slug)}
+                resource={byContainer.get(slug)}
+                servicesLoaded={services !== null}
+                containersLoaded={containers !== null}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 
