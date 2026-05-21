@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test;
 class ServiceProbeTargetTest {
 
     @Test
-    void allCatalogHasSeventeenCellsInCanonicalOrder() {
-        assertThat(ServiceProbeTarget.ALL).hasSize(17);
+    void allCatalogHasSixteenCellsInCanonicalOrder() {
+        assertThat(ServiceProbeTarget.ALL).hasSize(16);
         assertThat(ServiceProbeTarget.ALL.stream().map(ServiceProbeTarget::name).toList())
                 .containsExactly(
                         "playground-backend-gateway",
@@ -34,15 +34,14 @@ class ServiceProbeTargetTest {
                         "playground-postgres",
                         "playground-redis",
                         "playground-kafka-broker",
-                        "playground-kafka-init",
                         "playground-opensearch");
     }
 
     @Test
-    void stackCatalogHasSixCellsWithNoProbeUrl() {
+    void stackCatalogHasFiveCellsWithNoProbeUrl() {
         long stack = ServiceProbeTarget.ALL.stream()
                 .filter(t -> t.kind() == ServiceProbeTarget.Kind.STACK).count();
-        assertThat(stack).isEqualTo(6);
+        assertThat(stack).isEqualTo(5);
         ServiceProbeTarget.ALL.stream()
                 .filter(t -> t.kind() == ServiceProbeTarget.Kind.STACK)
                 .forEach(t -> {

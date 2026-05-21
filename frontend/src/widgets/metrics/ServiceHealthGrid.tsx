@@ -59,12 +59,11 @@ const CELLS: ReadonlyArray<CellSpec> = [
   { slug: 'playground-loki', label: 'loki' },
   { slug: 'playground-alloy', label: 'alloy' },
   { slug: 'playground-cadvisor', label: 'cadvisor' },
-  // 6 stack containers
+  // 5 stack containers (kafka-init은 init container라 dashboard 제외)
   { slug: 'playground-frontend', label: 'frontend' },
   { slug: 'playground-postgres', label: 'postgres' },
   { slug: 'playground-redis', label: 'redis' },
   { slug: 'playground-kafka-broker', label: 'kafka-broker' },
-  { slug: 'playground-kafka-init', label: 'kafka-init' },
   { slug: 'playground-opensearch', label: 'opensearch' },
 ];
 

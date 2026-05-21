@@ -77,11 +77,12 @@ public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolea
             new ServiceProbeTarget("playground-loki",       Kind.OBSERVABILITY, "http://playground-loki:3100/ready",          true),
             new ServiceProbeTarget("playground-alloy",      Kind.OBSERVABILITY, "http://playground-alloy:12345/-/ready",      true),
             new ServiceProbeTarget("playground-cadvisor",   Kind.OBSERVABILITY, "http://playground-cadvisor:8080/healthz",    true),
-            // 6 stack containers — cAdvisor container_last_seen age per ADR-15 §13 (amended).
+            // 5 stack containers — cAdvisor container_last_seen age per ADR-15 §13 (amended).
+            // kafka-init은 정상적으로 한 번 돌고 exit하는 init container라 cAdvisor
+            // 메트릭이 끊김 → verdict 항상 down. dashboard에 의미 없으므로 제외.
             new ServiceProbeTarget("playground-frontend",     Kind.STACK, null, false),
             new ServiceProbeTarget("playground-postgres",     Kind.STACK, null, false),
             new ServiceProbeTarget("playground-redis",        Kind.STACK, null, false),
             new ServiceProbeTarget("playground-kafka-broker", Kind.STACK, null, false),
-            new ServiceProbeTarget("playground-kafka-init",   Kind.STACK, null, false),
             new ServiceProbeTarget("playground-opensearch",   Kind.STACK, null, false));
 }
