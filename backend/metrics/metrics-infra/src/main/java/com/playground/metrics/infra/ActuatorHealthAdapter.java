@@ -62,7 +62,10 @@ public class ActuatorHealthAdapter implements ActuatorHealthPort {
         return switch (target.kind()) {
             case BC -> probeActuator(target.probeUrl());
             case OBSERVABILITY -> probeReadiness(target.probeUrl());
-            case SPARK -> Mono.just(ActuatorProbeResult.unreachable());
+            // SPARK / STACK는 actuator path 안 씀 (각각 SparkGatewayProbePort,
+            // PrometheusPort container_last_seen으로 verdict). 호출되면 안 되지만
+            // switch exhaustive를 위해 case 등록.
+            case SPARK, STACK -> Mono.just(ActuatorProbeResult.unreachable());
         };
     }
 

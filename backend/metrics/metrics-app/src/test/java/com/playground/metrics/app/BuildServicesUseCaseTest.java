@@ -22,12 +22,16 @@ import reactor.core.publisher.Mono;
 class BuildServicesUseCaseTest {
 
     @Test
-    void composesElevenCellsInCanonicalOrder() {
+    void composesSeventeenCellsInCanonicalOrder() {
         PrometheusPort prometheus = Mockito.mock(PrometheusPort.class);
         ActuatorHealthPort actuator = Mockito.mock(ActuatorHealthPort.class);
         SparkGatewayProbePort spark = Mockito.mock(SparkGatewayProbePort.class);
 
-        // sum_over_time(up{}[12s]) = 2 → both scrapes up
+        // PrometheusPort.instantQuery는 두 종류 호출:
+        // (1) sum_over_time(up{...}[12s]) → value=2 → up (BC + obs)
+        // (2) time() - container_last_seen{...} → value=1.5 (age 1.5s, <30) → up (stack)
+        // Mockito가 어느 query인지 모르니 둘 다 통과하는 sample 반환: value=2
+        // → containerAgeSeconds(samples).get(0).value() = 2 → age 2s < 30 → up.
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(Map.of(), 1_700_000_000L, 2.0))));
         when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.reachableUp()));
@@ -36,8 +40,8 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        assertThat(cells).hasSize(11);
-        // ADR-15 §17 canonical order: 6 BCs, then spark, then 4 obs containers
+        assertThat(cells).hasSize(17);
+        // ADR-15 §17 canonical order: 6 BCs, spark, 4 obs, 6 stack
         assertThat(cells.stream().map(ServiceCell::name).toList())
                 .containsExactly(
                         "playground-backend-gateway",
@@ -50,7 +54,13 @@ class BuildServicesUseCaseTest {
                         "playground-prometheus",
                         "playground-loki",
                         "playground-alloy",
-                        "playground-cadvisor");
+                        "playground-cadvisor",
+                        "playground-frontend",
+                        "playground-postgres",
+                        "playground-redis",
+                        "playground-kafka-broker",
+                        "playground-kafka-init",
+                        "playground-opensearch");
         cells.forEach(c -> assertThat(c.status()).isEqualTo("up"));
     }
 
@@ -85,17 +95,31 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        // The 10 scrape-monitored cells are degraded; spark stays up because
-        // its verdict comes from the HEAD probe (which returned up()).
-        cells.stream()
-                .filter(c -> !c.name().equals("spark-inference-gateway"))
-                .forEach(c -> assertThat(c.status()).as(c.name()).isEqualTo("degraded"));
+        // 10 scrape-monitored cells (BC + obs): scrape clean + actuator
+        // unreachable → degraded per §9.
+        // spark: HEAD probe up → up.
+        // 6 stack: instantQuery value=2 → age 2s < 30 → up (§13 amended).
+        ServiceProbeTarget.ALL.stream()
+                .filter(t -> t.kind() == ServiceProbeTarget.Kind.BC
+                        || t.kind() == ServiceProbeTarget.Kind.OBSERVABILITY)
+                .forEach(t -> {
+                    ServiceCell c = cells.stream()
+                            .filter(x -> x.name().equals(t.name()))
+                            .findFirst().orElseThrow();
+                    assertThat(c.status()).as(t.name()).isEqualTo("degraded");
+                });
         assertThat(cells.stream()
                         .filter(c -> c.name().equals("spark-inference-gateway"))
-                        .findFirst()
-                        .orElseThrow()
-                        .status())
+                        .findFirst().orElseThrow().status())
                 .isEqualTo("up");
+        ServiceProbeTarget.ALL.stream()
+                .filter(t -> t.kind() == ServiceProbeTarget.Kind.STACK)
+                .forEach(t -> {
+                    ServiceCell c = cells.stream()
+                            .filter(x -> x.name().equals(t.name()))
+                            .findFirst().orElseThrow();
+                    assertThat(c.status()).as(t.name()).isEqualTo("up");
+                });
     }
 
     @Test
@@ -138,12 +162,18 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        assertThat(cells).hasSize(11);
-        // The 10 scrape-monitored cells: scrape clean (2/2) + actuator
-        // unreachable → degraded per §9. Spark stays up.
-        cells.stream()
-                .filter(c -> !c.name().equals("spark-inference-gateway"))
-                .forEach(c -> assertThat(c.status()).isEqualTo("degraded"));
+        assertThat(cells).hasSize(17);
+        // BC + obs (10): scrape clean + actuator error → degraded.
+        // spark: up. stack (6): instantQuery 2 → age 2s → up.
+        ServiceProbeTarget.ALL.stream()
+                .filter(t -> t.kind() == ServiceProbeTarget.Kind.BC
+                        || t.kind() == ServiceProbeTarget.Kind.OBSERVABILITY)
+                .forEach(t -> {
+                    ServiceCell c = cells.stream()
+                            .filter(x -> x.name().equals(t.name()))
+                            .findFirst().orElseThrow();
+                    assertThat(c.status()).as(t.name()).isEqualTo("degraded");
+                });
     }
 
     @Test

@@ -48,13 +48,19 @@ public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolea
         /** Four observability containers — 2xx on the tool-native readiness path. */
         OBSERVABILITY,
         /** spark-inference-gateway — HEAD probe via {@code SparkGatewayProbePort}. */
-        SPARK
+        SPARK,
+        /**
+         * Stack containers (postgres, redis, kafka, opensearch, frontend) —
+         * no Spring actuator, no HTTP readiness. Verdict comes from cAdvisor
+         * {@code container_last_seen} age per ADR-15 §13 (amended).
+         */
+        STACK
     }
 
     /**
-     * Eleven cells in ADR-15 §17 canonical order: 6 BCs, then spark, then 4
-     * observability containers. The order matches the dashboard's grid
-     * left-to-right / top-to-bottom layout.
+     * 17 cells: 6 BCs → spark → 4 observability → 6 stack containers.
+     * Order matches the dashboard's grid left-to-right / top-to-bottom
+     * layout (frontend filters spark into the Inference section).
      */
     public static final List<ServiceProbeTarget> ALL = List.of(
             // 6 BCs — actuator/health on compose-internal port (NOT via gateway)
@@ -70,5 +76,12 @@ public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolea
             new ServiceProbeTarget("playground-prometheus", Kind.OBSERVABILITY, "http://playground-prometheus:9090/-/healthy", true),
             new ServiceProbeTarget("playground-loki",       Kind.OBSERVABILITY, "http://playground-loki:3100/ready",          true),
             new ServiceProbeTarget("playground-alloy",      Kind.OBSERVABILITY, "http://playground-alloy:12345/-/ready",      true),
-            new ServiceProbeTarget("playground-cadvisor",   Kind.OBSERVABILITY, "http://playground-cadvisor:8080/healthz",    true));
+            new ServiceProbeTarget("playground-cadvisor",   Kind.OBSERVABILITY, "http://playground-cadvisor:8080/healthz",    true),
+            // 6 stack containers — cAdvisor container_last_seen age per ADR-15 §13 (amended).
+            new ServiceProbeTarget("playground-frontend",     Kind.STACK, null, false),
+            new ServiceProbeTarget("playground-postgres",     Kind.STACK, null, false),
+            new ServiceProbeTarget("playground-redis",        Kind.STACK, null, false),
+            new ServiceProbeTarget("playground-kafka-broker", Kind.STACK, null, false),
+            new ServiceProbeTarget("playground-kafka-init",   Kind.STACK, null, false),
+            new ServiceProbeTarget("playground-opensearch",   Kind.STACK, null, false));
 }

@@ -81,4 +81,31 @@ public final class HealthVerdict {
         }
         return ok ? Status.UP : Status.DEGRADED;
     }
+
+    /**
+     * Verdict for stack containers (postgres, redis, kafka, opensearch,
+     * frontend) per ADR-15 §13 (amended 2026-05-21).
+     *
+     * <p>원래 §13은 {@code container_last_seen} age + {@code container_tasks_state}
+     * 두 시그널을 조합했지만 — cgroup v2 + systemd cgroup driver 환경에서
+     * {@code container_tasks_state{state="running"}}이 0으로 emit되어 verdict가
+     * 모두 down으로 떨어짐. 운영 시 unreliable이라 single-signal로 단순화:
+     *
+     * <pre>
+     * cAdvisor container_last_seen age (s)  →  verdict
+     * --------------------------------------------------
+     * (empty — no metric)                      down
+     * &lt; 30 s                                   up
+     * &gt;= 30 s                                  degraded
+     * </pre>
+     *
+     * @param ageSeconds {@code time() - container_last_seen{name=...}} 결과 (초).
+     *     음수 또는 {@link Double#NaN}는 down (메트릭 없음 또는 invalid)으로 처리.
+     */
+    public static Status fromContainerAge(double ageSeconds) {
+        if (Double.isNaN(ageSeconds) || ageSeconds < 0) {
+            return Status.DOWN;
+        }
+        return ageSeconds < 30.0 ? Status.UP : Status.DEGRADED;
+    }
 }

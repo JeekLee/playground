@@ -69,7 +69,7 @@ class ServicesControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.services").isArray()
-                .jsonPath("$.services.length()").isEqualTo(11)
+                .jsonPath("$.services.length()").isEqualTo(17)
                 // ADR-15 §17 canonical order — assert each index
                 .jsonPath("$.services[0].name").isEqualTo("playground-backend-gateway")
                 .jsonPath("$.services[1].name").isEqualTo("playground-backend-identity-api")
@@ -82,6 +82,12 @@ class ServicesControllerTest {
                 .jsonPath("$.services[8].name").isEqualTo("playground-loki")
                 .jsonPath("$.services[9].name").isEqualTo("playground-alloy")
                 .jsonPath("$.services[10].name").isEqualTo("playground-cadvisor")
+                .jsonPath("$.services[11].name").isEqualTo("playground-frontend")
+                .jsonPath("$.services[12].name").isEqualTo("playground-postgres")
+                .jsonPath("$.services[13].name").isEqualTo("playground-redis")
+                .jsonPath("$.services[14].name").isEqualTo("playground-kafka-broker")
+                .jsonPath("$.services[15].name").isEqualTo("playground-kafka-init")
+                .jsonPath("$.services[16].name").isEqualTo("playground-opensearch")
                 // All up under the all-good mock setup
                 .jsonPath("$.services[0].status").isEqualTo("up")
                 .jsonPath("$.services[6].status").isEqualTo("up");
@@ -129,7 +135,7 @@ class ServicesControllerTest {
         // Guardrail: if a future PR widens ServiceProbeTarget.ALL beyond the
         // 11 cells issue #138 wired up, this slice test will surface it so
         // the frontend grid layout is updated in lock-step.
-        org.assertj.core.api.Assertions.assertThat(ServiceProbeTarget.ALL).hasSize(11);
+        org.assertj.core.api.Assertions.assertThat(ServiceProbeTarget.ALL).hasSize(17);
     }
 
     @Configuration(proxyBeanMethods = false)
