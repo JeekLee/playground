@@ -48,18 +48,23 @@ public class BuildDashboardUseCase {
      * (post-slice-1) widens this to "all JVM-bearing services". Same
      * deterministic order across polls so frontend card positions are
      * stable.
+     *
+     * <p>2026-05-21 amendment: service 라벨 값을 container_name과 일치하는
+     * {@code playground-backend-*} prefix로 통일 (ADR-15 §G).
      */
     private static final List<String> JVM_SERVICES = List.of(
-            "gateway",
-            "identity-api",
-            "docs-api",
-            "rag-ingestion-api",
-            "rag-chat-api",
-            "metrics-api");
+            "playground-backend-gateway",
+            "playground-backend-identity-api",
+            "playground-backend-docs-api",
+            "playground-backend-rag-ingestion-api",
+            "playground-backend-rag-chat-api",
+            "playground-backend-metrics-api");
 
     /** Three HTTP-bearing services per spec §5.2 httpRate[] array. */
     private static final List<String> HTTP_SERVICES = List.of(
-            "gateway", "rag-chat-api", "docs-api");
+            "playground-backend-gateway",
+            "playground-backend-rag-chat-api",
+            "playground-backend-docs-api");
 
     private static final String SPARK_GATEWAY_URL = "host.docker.internal:10080";
 

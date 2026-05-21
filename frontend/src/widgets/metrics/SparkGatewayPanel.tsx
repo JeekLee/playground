@@ -14,16 +14,40 @@ import { WidgetDegradeOverlay } from './WidgetDegradeOverlay';
  * the dashboard viewport per design context §1.5.
  *
  * - **Latency P95 (365 × 236):** title → big `340 ms` (`accent`,
- *   becomes `warning` when degraded) → 2-line legend (`● BGE-M3` in
- *   `accent`, `● Qwen3-32B` in `khaki`) → chart area with two
- *   `<Line>`s. Per design context §4.6 + ADR-15 §8: type `monotone`,
- *   2px stroke, dot off.
- * - **Models loaded (175 × 236):** title → `✅ BGE-M3` / `✅ Qwen3-32B`
- *   rows → HOST eyebrow + URL → UPTIME eyebrow + value.
+ *   becomes `warning` when degraded) → 2-line legend → chart with one
+ *   `<Line>` per endpoint URI. 2px stroke, type `monotone`, dot off
+ *   (per design context §4.6 + ADR-15 §8).
+ * - **Models loaded (175 × 236):** title → list of currently-loaded
+ *   models (from `sparkGateway.modelsLoaded`, dynamic — backend pulls
+ *   from `GET /v1/models`) → HOST + UPTIME footers.
+ *
+ * 2026-05-21 amendment: legend labels were hardcoded `BGE-M3`/`Qwen3-32B`
+ * (design context mockup). Real backend emits series per `uri` label
+ * (`/v1/embeddings`, `/v1/chat/completions`) — see `BuildTimeseriesUseCase.labelOf()`.
+ * Now we identify lines by URI pattern and render friendly names without
+ * locking to specific model identifiers (which churn — e.g., Qwen3-32B
+ * → Qwen3-30B-A3B swap).
  */
 
-const SERIES_LABEL_BGE = 'BGE-M3';
-const SERIES_LABEL_QWEN = 'Qwen3-32B';
+/** Endpoint URI → friendly endpoint name + chart color. */
+const ENDPOINT_PATTERNS: ReadonlyArray<{
+  match: RegExp;
+  label: string;
+  series: 'a' | 'b';
+}> = [
+  { match: /embed/i, label: 'embedding', series: 'a' },
+  { match: /chat|completion/i, label: 'chat', series: 'b' },
+];
+
+function endpointMeta(uriOrLabel: string): { label: string; series: 'a' | 'b' } {
+  for (const pattern of ENDPOINT_PATTERNS) {
+    if (pattern.match.test(uriOrLabel)) {
+      return { label: pattern.label, series: pattern.series };
+    }
+  }
+  // Fallback: unknown endpoint → show URI as-is on the "a" series.
+  return { label: uriOrLabel, series: 'a' };
+}
 
 export interface SparkGatewayPanelProps {
   spark: SparkGatewaySummary | null;
@@ -63,23 +87,32 @@ function SparkLatencyCard({
     enabled: true,
   });
 
-  const bge = series.data?.series.find((s) => s.label === SERIES_LABEL_BGE)
-    ?? series.data?.series[0];
-  const qwen = series.data?.series.find((s) => s.label === SERIES_LABEL_QWEN)
-    ?? series.data?.series[1];
+  // Identify the two series by their endpoint URI (backend emits
+  // `by (le, uri)` so series.label is the URI value). Fall back to
+  // positional order when label can't be classified.
+  const allSeries = series.data?.series ?? [];
+  let seriesA = allSeries.find((s) => endpointMeta(s.label).series === 'a');
+  let seriesB = allSeries.find((s) => endpointMeta(s.label).series === 'b');
+  if (!seriesA && !seriesB) {
+    seriesA = allSeries[0];
+    seriesB = allSeries[1];
+  }
+
+  const labelA = seriesA ? endpointMeta(seriesA.label).label : 'embedding';
+  const labelB = seriesB ? endpointMeta(seriesB.label).label : 'chat';
 
   // Merge the two series into a single chart dataset (recharts
   // expects one record per x).
-  const dataMap: Map<number, { t: number; bge?: number; qwen?: number }> = new Map();
-  for (const [t, v] of bge?.points ?? []) {
-    dataMap.set(t, { t, bge: v });
+  const dataMap: Map<number, { t: number; a?: number; b?: number }> = new Map();
+  for (const [t, v] of seriesA?.points ?? []) {
+    dataMap.set(t, { t, a: v });
   }
-  for (const [t, v] of qwen?.points ?? []) {
+  for (const [t, v] of seriesB?.points ?? []) {
     const existing = dataMap.get(t);
     if (existing) {
-      existing.qwen = v;
+      existing.b = v;
     } else {
-      dataMap.set(t, { t, qwen: v });
+      dataMap.set(t, { t, b: v });
     }
   }
   const data = Array.from(dataMap.values()).sort((a, b) => a.t - b.t);
@@ -115,8 +148,8 @@ function SparkLatencyCard({
         {valueText}
       </span>
       <div className="flex items-center gap-md text-[11px] font-medium text-text-muted">
-        <LegendDot color={color.accent} label={SERIES_LABEL_BGE} />
-        <LegendDot color={color.khaki} label={SERIES_LABEL_QWEN} />
+        <LegendDot color={color.accent} label={labelA} />
+        <LegendDot color={color.khaki} label={labelB} />
       </div>
       <div className="mt-auto h-[144px] w-full overflow-hidden rounded-sm bg-surface-soft">
         {isDegradedWidget ? (
@@ -129,7 +162,7 @@ function SparkLatencyCard({
               <YAxis hide domain={['dataMin', 'dataMax']} />
               <Line
                 type="monotone"
-                dataKey="bge"
+                dataKey="a"
                 stroke={color.accent}
                 strokeWidth={2}
                 dot={false}
@@ -138,7 +171,7 @@ function SparkLatencyCard({
               />
               <Line
                 type="monotone"
-                dataKey="qwen"
+                dataKey="b"
                 stroke={color.khaki}
                 strokeWidth={2}
                 dot={false}

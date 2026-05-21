@@ -44,7 +44,7 @@ class ActuatorHealthAdapterTest {
                         .withBody("{\"status\":\"UP\"}")));
 
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "docs-api", ServiceProbeTarget.Kind.BC,
+                "playground-backend-docs-api", ServiceProbeTarget.Kind.BC,
                 wm.baseUrl() + "/actuator/health", true);
 
         ActuatorProbeResult result = adapter.probe(target).block();
@@ -62,7 +62,7 @@ class ActuatorHealthAdapterTest {
                         .withBody("{\"status\":\"DOWN\"}")));
 
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "docs-api", ServiceProbeTarget.Kind.BC,
+                "playground-backend-docs-api", ServiceProbeTarget.Kind.BC,
                 wm.baseUrl() + "/actuator/health", true);
 
         ActuatorProbeResult result = adapter.probe(target).block();
@@ -81,7 +81,7 @@ class ActuatorHealthAdapterTest {
                         .withBody("{\"status\":\"OUT_OF_SERVICE\"}")));
 
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "docs-api", ServiceProbeTarget.Kind.BC,
+                "playground-backend-docs-api", ServiceProbeTarget.Kind.BC,
                 wm.baseUrl() + "/actuator/health", true);
 
         ActuatorProbeResult result = adapter.probe(target).block();
@@ -92,7 +92,7 @@ class ActuatorHealthAdapterTest {
     @Test
     void bcKindReturnsUnreachableOnConnectionRefused() {
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "docs-api", ServiceProbeTarget.Kind.BC,
+                "playground-backend-docs-api", ServiceProbeTarget.Kind.BC,
                 wm.baseUrl() + "/actuator/health", true);
         wm.stop(); // simulate refused connection
 
@@ -108,7 +108,7 @@ class ActuatorHealthAdapterTest {
                 .willReturn(aResponse().withStatus(200).withBody("Prometheus Server is Healthy.")));
 
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "prometheus-playground", ServiceProbeTarget.Kind.OBSERVABILITY,
+                "playground-prometheus", ServiceProbeTarget.Kind.OBSERVABILITY,
                 wm.baseUrl() + "/-/healthy", true);
 
         ActuatorProbeResult result = adapter.probe(target).block();
@@ -123,7 +123,7 @@ class ActuatorHealthAdapterTest {
                 .willReturn(aResponse().withStatus(503).withBody("Ingester not ready: still in initial state")));
 
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "loki-playground", ServiceProbeTarget.Kind.OBSERVABILITY,
+                "playground-loki", ServiceProbeTarget.Kind.OBSERVABILITY,
                 wm.baseUrl() + "/ready", true);
 
         ActuatorProbeResult result = adapter.probe(target).block();
@@ -134,7 +134,7 @@ class ActuatorHealthAdapterTest {
     @Test
     void observabilityKindReturnsUnreachableOnConnectionRefused() {
         ServiceProbeTarget target = new ServiceProbeTarget(
-                "cadvisor-playground", ServiceProbeTarget.Kind.OBSERVABILITY,
+                "playground-cadvisor", ServiceProbeTarget.Kind.OBSERVABILITY,
                 wm.baseUrl() + "/healthz", true);
         wm.stop();
 

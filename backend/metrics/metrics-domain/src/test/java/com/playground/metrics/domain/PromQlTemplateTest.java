@@ -9,16 +9,16 @@ class PromQlTemplateTest {
 
     @Test
     void resolveJvmHeapForKnownService() {
-        String promql = PromQlTemplate.resolve("jvm-heap-rag-chat-api");
+        String promql = PromQlTemplate.resolve("jvm-heap-playground-backend-rag-chat-api");
         assertThat(promql).isEqualTo(
-                "jvm_memory_used_bytes{area=\"heap\",service=\"rag-chat-api\"} / 1048576");
+                "jvm_memory_used_bytes{area=\"heap\",service=\"playground-backend-rag-chat-api\"} / 1048576");
     }
 
     @Test
     void resolveContainerCpuForKnownContainer() {
-        String promql = PromQlTemplate.resolve("container-cpu-postgres-playground");
+        String promql = PromQlTemplate.resolve("container-cpu-playground-postgres");
         assertThat(promql).isEqualTo(
-                "rate(container_cpu_usage_seconds_total{name=\"postgres-playground\"}[1m]) * 100");
+                "rate(container_cpu_usage_seconds_total{name=\"playground-postgres\"}[1m]) * 100");
     }
 
     @Test
@@ -30,10 +30,10 @@ class PromQlTemplateTest {
     @Test
     void resolveJvmGcPauseFillsRepeatedPlaceholder() {
         // Template uses %s twice; both must point to the same caller-supplied svc.
-        String promql = PromQlTemplate.resolve("jvm-gc-pause-rag-chat-api");
+        String promql = PromQlTemplate.resolve("jvm-gc-pause-playground-backend-rag-chat-api");
         assertThat(promql).isEqualTo(
-                "rate(jvm_gc_pause_seconds_sum{service=\"rag-chat-api\"}[5m]) "
-                        + "/ rate(jvm_gc_pause_seconds_count{service=\"rag-chat-api\"}[5m])");
+                "rate(jvm_gc_pause_seconds_sum{service=\"playground-backend-rag-chat-api\"}[5m]) "
+                        + "/ rate(jvm_gc_pause_seconds_count{service=\"playground-backend-rag-chat-api\"}[5m])");
     }
 
     @Test
@@ -62,7 +62,7 @@ class PromQlTemplateTest {
     void injectionAttemptViaMetricIdRejected() {
         // Story 9 attack: try to inject by tacking PromQL onto the metric id
         assertThatThrownBy(() -> PromQlTemplate.resolve(
-                "jvm-heap-rag-chat-api\"}|sum() OR x{"))
+                "jvm-heap-playground-backend-rag-chat-api\"}|sum() OR x{"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -76,8 +76,8 @@ class PromQlTemplateTest {
 
     @Test
     void serviceUpForKnownService() {
-        assertThat(PromQlTemplate.serviceUp("docs-api"))
-                .isEqualTo("up{service=\"docs-api\"}");
+        assertThat(PromQlTemplate.serviceUp("playground-backend-docs-api"))
+                .isEqualTo("up{service=\"playground-backend-docs-api\"}");
     }
 
     @Test
@@ -88,7 +88,7 @@ class PromQlTemplateTest {
 
     @Test
     void templateOfReturnsUnitForKnownMetric() {
-        assertThat(PromQlTemplate.templateOf("jvm-heap-rag-chat-api"))
+        assertThat(PromQlTemplate.templateOf("jvm-heap-playground-backend-rag-chat-api"))
                 .isPresent()
                 .get()
                 .extracting(PromQlTemplate.Template::unit)
@@ -97,9 +97,13 @@ class PromQlTemplateTest {
 
     @Test
     void serviceUpLastTwoScrapesForKnownService() {
-        // sum_over_time(up[12s]) — feeds 0/1/2 directly into HealthVerdict.from
-        assertThat(PromQlTemplate.serviceUpLastTwoScrapes("docs-api"))
-                .isEqualTo("sum_over_time(up{service=\"docs-api\"}[12s])");
+        // max by (service) (sum_over_time(up[12s])) — multiple-job emit
+        // (예: alloy가 prometheus job + observability_self job에서 동시 scrape)
+        // 시 가장 큰 값으로 정규화. 0/1/2를 HealthVerdict.from에 feed.
+        assertThat(PromQlTemplate.serviceUpLastTwoScrapes("playground-backend-docs-api"))
+                .isEqualTo(
+                        "max by (service) (sum_over_time("
+                                + "up{service=\"playground-backend-docs-api\"}[12s]))");
     }
 
     @Test

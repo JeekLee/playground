@@ -76,13 +76,12 @@ public class BuildServicesUseCase {
      * cell ordering across polls.
      */
     public Mono<List<ServiceCell>> execute() {
-        // Flux.concatMap (NOT flatMap) so ordering is preserved across the
-        // 11 inner Monos. Each inner Mono.zip parallelizes its two probes;
-        // the outer composition is sequential w.r.t. emission order but the
-        // probes themselves run concurrently because Reactor subscribes
-        // eagerly to the inner Monos.
+        // Flux.flatMapSequential — 순서는 보존하면서 inner Mono들을 eagerly
+        // subscribe해서 11개 셀의 probe를 병렬 실행. 이전 `concatMap`은 inner를
+        // 하나씩 직렬 subscribe해서 11 × probe latency = wall-clock이 됐었음.
+        // ADR-15 §16의 100ms P95 derivation은 fan-out 전제.
         return Flux.fromIterable(ServiceProbeTarget.ALL)
-                .concatMap(this::cellFor)
+                .flatMapSequential(this::cellFor)
                 .collectList();
     }
 

@@ -1843,3 +1843,139 @@ Allowed for HEAD on that route (Starlette does not auto-route HEAD onto
 GET handlers). The probe now uses `GET /v1/models` and discards the body
 via `WebClient`'s `toBodilessEntity()` — bandwidth cost is identical to
 HEAD if it had been supported.
+
+## Amendment (2026-05-21) — `playground-*` container_name prefix + 동적 디스커버리
+
+운영 환경에서 두 가지 결정론적 버그가 드러남 + 명명 규칙 통일 요구.
+
+**드러난 버그:**
+
+1. **모든 컨테이너 카드가 `cpuPct=0, memUsedMb=0`** — cAdvisor 0.49.1이
+   cgroup v2 + systemd cgroup driver 환경에서 root cgroup만 emit
+   (`container_cpu_usage_seconds_total{cpu="total",id="/"}`). 추가로
+   `--store_container_labels=false` 플래그가 `name` 라벨까지 stripping
+   하던 부작용 의심.
+2. **`/services`의 4 observability 셀이 항상 `degraded`** — §9의
+   "last 2 scrape cycles" 윈도우를 `[12s]`로 박았는데 Alloy의
+   `observability_self` job은 `scrape_interval = "10s"`. 결과적으로
+   `sum_over_time(up[12s])`가 1만 잡혀 `HealthVerdict.from(1, true, true)`
+   = DEGRADED 결정론적.
+3. **하드코딩 정리 요구** — 새 BC / stack 컨테이너 추가 시 backend의
+   `ServiceAllowlist` / `ContainerAllowlist` / `ServiceProbeTarget.ALL`
+   / `BuildDashboardUseCase.JVM_SERVICES` 4벌을 모두 갱신해야 하는 부담.
+
+### Decision
+
+**Naming convention.** 모든 playground 소유 컨테이너에 prefix 통일:
+
+| Category | Pattern | Examples |
+|---|---|---|
+| Backend BCs | `playground-backend-<bc>` | `playground-backend-gateway`, `playground-backend-identity-api`, ... |
+| Frontend | `playground-frontend` | (단일) |
+| Stack 단일 컨테이너 | `playground-<stack>` | `playground-postgres`, `playground-redis`, `playground-opensearch`, `playground-prometheus`, `playground-loki`, `playground-alloy`, `playground-cadvisor` |
+| Stack 다중 컨테이너 | `playground-<stack>-<role>` | `playground-kafka-broker`, `playground-kafka-init` |
+| External (spark) | (변경 없음) | `spark-inference-gateway`, `spark-inference-qwen3-30b-a3b`, `spark-inference-bge-m3` — 별도 compose project, GPU stack 공유 자산 |
+
+**Compose service key는 그대로 유지** — `identity-api:` 등의 키 변경
+없음. `container_name`만 변경. BC 간 HTTP URL (`http://identity-api:18081`)
+은 service key 기반 DNS로 동작 → ADR-07 / ADR-08 / ADR-10 / ADR-12 /
+ADR-13 / ADR-14 의 BC URL 표기는 변경 불필요 (별도 PR로 hostname 언급
+부분은 갱신 예정).
+
+**Service 라벨도 prefix 통일.** Alloy `prometheus.scrape` job의 명시적
+`service = "..."` 값을 `playground-*`로 갱신. `{service=~"playground-..."}`
+일관 매칭.
+
+**`scrape_interval` 통일.** `observability_self` job 10s → 5s. ADR-15
+§9의 `[12s]` window가 모든 scrape job에 안전하게 동작 (5s 간격에서는
+2~3개가 항상 잡힘).
+
+**cAdvisor 설정 수정.**
+- `--store_container_labels=false` 제거. `name` 라벨이 자동 emit되도록.
+- `/sys/fs/cgroup:/sys/fs/cgroup:ro` 볼륨 마운트 추가. cgroup v2 hierarchy
+  를 컨테이너에서 인식할 수 있게.
+
+**ServiceAllowlist / ContainerAllowlist 정규식 화이트리스트.** 명시적
+hardcoded set에서 **정규식 prefix 매칭 + 명시적 known-set 하이브리드**로
+전환:
+
+```java
+// metrics-domain/.../ServiceAllowlist.java
+private static final Pattern PLAYGROUND_PATTERN = Pattern.compile(
+        "^playground-[a-z0-9]+(?:-[a-z0-9]+)*$");
+private static final Set<String> EXTERNAL_WHITELIST = Set.of("spark-inference-gateway");
+
+public static boolean contains(String svc) {
+    if (svc == null) return false;
+    if (EXTERNAL_WHITELIST.contains(svc)) return true;
+    return PLAYGROUND_PATTERN.matcher(svc).matches();
+}
+```
+
+새 BC / 컨테이너가 prefix 규칙만 따르면 metrics 코드 변경 없이
+`{service=~"playground-..."}` 매칭을 통과. Injection 방어는 정규식이
+충분히 좁음 — `[a-z0-9-]+`만 허용, PromQL/LogQL 메타문자 차단. cAdvisor에
+실제로 그 이름의 컨테이너가 없으면 빈 결과 → 보안 risk 없음 (fail-closed).
+
+명시적 `KNOWN_ENTRIES` 카탈로그는 dashboard 컨테이너 카드 렌더링용으로
+유지 (P0). 진정한 런타임 발견 (Prometheus `label_values()` query 기반
+`ServiceProbeTarget.ALL` 동적 빌드)은 P1.
+
+**`ServiceProbeTarget.ALL` rename.** 11개 entry의 `name`과 `probeUrl`
+hostname을 prefix 적용된 값으로:
+
+| Cell | name | probeUrl |
+|---|---|---|
+| 1 | `playground-backend-gateway` | `http://playground-backend-gateway:18080/actuator/health` |
+| 2 | `playground-backend-identity-api` | `http://playground-backend-identity-api:18081/actuator/health` |
+| 3 | `playground-backend-docs-api` | `http://playground-backend-docs-api:18082/actuator/health` |
+| 4 | `playground-backend-rag-ingestion-api` | `http://playground-backend-rag-ingestion-api:18083/actuator/health` |
+| 5 | `playground-backend-rag-chat-api` | `http://playground-backend-rag-chat-api:18084/actuator/health` |
+| 6 | `playground-backend-metrics-api` | `http://playground-backend-metrics-api:18085/actuator/health` |
+| 7 | `spark-inference-gateway` | (n/a — HEAD probe via `SparkGatewayProbePort`) |
+| 8 | `playground-prometheus` | `http://playground-prometheus:9090/-/healthy` |
+| 9 | `playground-loki` | `http://playground-loki:3100/ready` |
+| 10 | `playground-alloy` | `http://playground-alloy:12345/-/ready` |
+| 11 | `playground-cadvisor` | `http://playground-cadvisor:8080/healthz` |
+
+**Network 이름.** compose default network → `playground-net`로 명시
+(`networks.default.name: playground-net`). 외부 `spark-inference-net`은
+그대로.
+
+**Image tag.** BC + frontend 빌드 산출물에 `image: playground/backend-<name>:dev`
+명시 (BC), `playground/frontend:dev` (frontend). 외부 이미지 (postgres,
+redis, kafka, ...)는 그대로.
+
+### Drive-by 코드 품질 fix
+
+같은 PR로 진행 (M5 dashboard가 거짓말하지 않게 만드는 일관된 작업):
+
+- `BuildServicesUseCase.execute()` `Flux.concatMap` → `flatMapSequential`.
+  11개 셀의 inner Mono들이 순차 subscribe되던 버그 fix. ADR-15 §16의
+  P95 100ms derivation은 fan-out 전제.
+- `BuildTimeseriesUseCase.labelOf()`에 `uri` 라벨 케이스 추가. spark-latency-p95
+  의 `by (le, uri)` 그룹 시리즈가 `label="value"`로 떨어지던 버그 fix.
+
+### Frontend amendment
+
+- `frontend/src/shared/lib/serviceLabel.ts` 새 헬퍼 — `displayName()`이
+  `playground-backend-X` → `X`로 표시용 짧은 이름 매핑.
+- `SparkGatewayPanel`의 `SERIES_LABEL_BGE`/`QWEN` 하드코딩 제거 — series
+  endpoint URI (`/v1/embeddings`, `/v1/chat/completions`)를 친화적 이름
+  (`embedding`, `chat`)으로 동적 매핑. 모델 swap에 영향 없음.
+
+### 별도 PR로 분리 (out of scope)
+
+- ADR-00 / ADR-01 / ADR-05 / ADR-07 / ADR-08 / ADR-10 / ADR-12 / ADR-13 /
+  ADR-14 의 hostname 언급 부분 갱신 (예: `postgres-playground:5432` →
+  `playground-postgres:5432`). 기능 영향 없음 (compose service key DNS가
+  옛 이름으로도 살아있음).
+- Compose project name 변경 (`infra` → `playground`). volume scope 영향
+  으로 데이터 손실 가능성. 별도 검토.
+- Spark stack rename (`spark-inference-*` → `playground-spark-*`). GPU
+  stack 공유 자산이라 사용자 결정으로 보류.
+- ADR-15 §9 scrape window kind별 분리 (`[22s]` for 10s scrapes 등) — 이번
+  PR에서 모든 scrape를 5s로 통일해서 자동 해소.
+- 이전 metrics-api 리뷰의 §2.2 (SecurityConfig catch-all), §2.3
+  (`RATE_LIMITED` 매핑) 등 코드 품질 fix.
+

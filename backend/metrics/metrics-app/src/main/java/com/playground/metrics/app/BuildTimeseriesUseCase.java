@@ -69,17 +69,31 @@ public class BuildTimeseriesUseCase {
     }
 
     private static String labelOf(PrometheusSeries series) {
-        // Prefer a single descriptive label — service > name > __name__ > "value".
+        // 우선순위: service > name > uri > __name__ > sorted-labels-join > "value".
+        // `uri`는 spark-latency-p95처럼 `by (le, uri)`로 그룹핑된 시리즈에 의미 있는
+        // 라벨 (예: `/v1/embeddings`, `/v1/chat/completions`). 이전엔 누락돼서
+        // spark widget의 두 line이 항상 같은 "value" 라벨을 받아 차트가 그려지지
+        // 않았음 (이전 리뷰 §2.6).
         if (series.labels().containsKey("service")) {
             return series.labels().get("service");
         }
         if (series.labels().containsKey("name")) {
             return series.labels().get("name");
         }
+        if (series.labels().containsKey("uri")) {
+            return series.labels().get("uri");
+        }
         if (series.labels().containsKey("__name__")) {
             return series.labels().get("__name__");
         }
-        return "value";
+        // Fallback: 라벨 set 자체를 키로 (deterministic 정렬). 빈 라벨은 "value".
+        if (series.labels().isEmpty()) {
+            return "value";
+        }
+        return series.labels().entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static Point toPoint(TimeseriesPoint p) {

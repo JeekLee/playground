@@ -257,7 +257,14 @@ public final class PromQlTemplate {
         if (!ServiceAllowlist.contains(svc)) {
             throw new IllegalArgumentException("Unknown service: " + svc);
         }
-        return String.format("sum_over_time(up{service=\"%s\"}[12s])", svc);
+        // `max by (service)`로 multiple-job emit을 정규화 — 예: alloy가
+        // prometheus.yml의 `job=alloy` (15s scrape, [12s] window에서 0~1개만
+        // 잡힘) + alloy 자체 `observability_self` (5s scrape, 2개 잡힘)에서
+        // 동시에 emit. samples.get(0)만 보던 호출자가 첫 job 값에 좌우되어
+        // false-positive `degraded`로 떨어지던 버그 fix. job별 sample의 가장
+        // 큰 값을 service에 대해 단일화.
+        return String.format(
+                "max by (service) (sum_over_time(up{service=\"%s\"}[12s]))", svc);
     }
 
     public static String jvmHeap(String svc) {

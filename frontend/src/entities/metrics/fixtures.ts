@@ -26,28 +26,28 @@ export const dashboardFixtureLoaded: DashboardResponse = {
   range: '1h',
   services: [
     // Row 1 — 6 BC cells (ADR-15 §17 #1–#6).
-    { name: 'gateway', status: 'up', since: '2026-05-19T04:10:02Z', uptimeSec: 12731, image: 'playground/gateway:0.4.1' },
-    { name: 'identity-api', status: 'up', since: '2026-05-19T04:10:11Z', uptimeSec: 12722, image: 'playground/identity-api:0.4.1' },
-    { name: 'docs-api', status: 'up', since: '2026-05-19T04:12:01Z', uptimeSec: 12612, image: 'playground/docs-api:0.4.1' },
-    { name: 'rag-ingestion', status: 'up', since: '2026-05-19T04:12:30Z', uptimeSec: 12583, image: 'playground/rag-ingestion:0.4.1' },
-    { name: 'rag-chat-api', status: 'up', since: '2026-05-19T05:28:14Z', uptimeSec: 8039, image: 'playground/rag-chat-api:0.4.1' },
-    { name: 'metrics-api', status: 'up', since: '2026-05-19T06:40:00Z', uptimeSec: 3733, image: 'playground/metrics-api:0.4.1' },
+    { name: 'playground-backend-gateway', status: 'up', since: '2026-05-19T04:10:02Z', uptimeSec: 12731, image: 'playground/backend-gateway:dev' },
+    { name: 'playground-backend-identity-api', status: 'up', since: '2026-05-19T04:10:11Z', uptimeSec: 12722, image: 'playground/backend-identity-api:dev' },
+    { name: 'playground-backend-docs-api', status: 'up', since: '2026-05-19T04:12:01Z', uptimeSec: 12612, image: 'playground/backend-docs-api:dev' },
+    { name: 'playground-backend-rag-ingestion-api', status: 'up', since: '2026-05-19T04:12:30Z', uptimeSec: 12583, image: 'playground/backend-rag-ingestion-api:dev' },
+    { name: 'playground-backend-rag-chat-api', status: 'up', since: '2026-05-19T05:28:14Z', uptimeSec: 8039, image: 'playground/backend-rag-chat-api:dev' },
+    { name: 'playground-backend-metrics-api', status: 'up', since: '2026-05-19T06:40:00Z', uptimeSec: 3733, image: 'playground/backend-metrics-api:dev' },
     // Row 2 — spark + 4 observability self cells (ADR-15 §17 #7–#11).
     { name: 'spark-inference-gateway', status: 'up', latencyP95Ms: 340, note: '2 models' },
-    { name: 'prometheus-playground', status: 'up', uptimeSec: 14000, note: '11 targets' },
-    { name: 'loki-playground', status: 'up', uptimeSec: 14000, note: '3d retention' },
-    { name: 'alloy-playground', status: 'up', uptimeSec: 14000, note: 'scraping 5 BCs' },
-    { name: 'cadvisor-playground', status: 'up', uptimeSec: 14000, note: '14 containers' },
+    { name: 'playground-prometheus', status: 'up', uptimeSec: 14000, note: '11 targets' },
+    { name: 'playground-loki', status: 'up', uptimeSec: 14000, note: '3d retention' },
+    { name: 'playground-alloy', status: 'up', uptimeSec: 14000, note: 'scraping 6 BCs' },
+    { name: 'playground-cadvisor', status: 'up', uptimeSec: 14000, note: '15 containers' },
   ],
   containers: [
-    { name: 'postgres-playground', cpuPct: 4.2, memUsedMb: 182, memLimitMb: 512, restartCount: 0 },
-    { name: 'redis-playground', cpuPct: 0.8, memUsedMb: 42, memLimitMb: 256, restartCount: 0 },
-    { name: 'kafka-playground', cpuPct: 11.5, memUsedMb: 620, memLimitMb: 1024, restartCount: 0 },
-    { name: 'opensearch-playground', cpuPct: 8.3, memUsedMb: 480, memLimitMb: 1024, restartCount: 0 },
-    { name: 'prometheus-playground', cpuPct: 1.1, memUsedMb: 110, memLimitMb: 512, restartCount: 0 },
-    { name: 'loki-playground', cpuPct: 0.9, memUsedMb: 95, memLimitMb: 512, restartCount: 0 },
-    { name: 'alloy-playground', cpuPct: 2.4, memUsedMb: 86, memLimitMb: 256, restartCount: 0 },
-    { name: 'cadvisor-playground', cpuPct: 1.8, memUsedMb: 64, memLimitMb: 256, restartCount: 0 },
+    { name: 'playground-postgres', cpuPct: 4.2, memUsedMb: 182, memLimitMb: 512, restartCount: 0 },
+    { name: 'playground-redis', cpuPct: 0.8, memUsedMb: 42, memLimitMb: 256, restartCount: 0 },
+    { name: 'playground-kafka-broker', cpuPct: 11.5, memUsedMb: 620, memLimitMb: 1024, restartCount: 0 },
+    { name: 'playground-opensearch', cpuPct: 8.3, memUsedMb: 480, memLimitMb: 1024, restartCount: 0 },
+    { name: 'playground-prometheus', cpuPct: 1.1, memUsedMb: 110, memLimitMb: 512, restartCount: 0 },
+    { name: 'playground-loki', cpuPct: 0.9, memUsedMb: 95, memLimitMb: 512, restartCount: 0 },
+    { name: 'playground-alloy', cpuPct: 2.4, memUsedMb: 86, memLimitMb: 256, restartCount: 0 },
+    { name: 'playground-cadvisor', cpuPct: 1.8, memUsedMb: 64, memLimitMb: 256, restartCount: 0 },
   ],
   host: {
     cpuPct: 18.2,
@@ -62,18 +62,20 @@ export const dashboardFixtureLoaded: DashboardResponse = {
     url: 'host.docker.internal:10080',
     status: 'up',
     latencyP95Ms: 340,
-    modelsLoaded: ['BGE-M3', 'Qwen3-32B'],
+    // 모델 이름은 backend가 `GET /v1/models`에서 가져온 그대로 (스왑 빈도가
+    // 높아 frontend에서 고정하지 않음).
+    modelsLoaded: ['bge-m3', 'qwen3-30b-a3b'],
   },
   jvm: [
-    { service: 'rag-chat-api', heapUsedMb: 420, heapMaxMb: 1024, threads: 48, gcPauseP95Ms: 12 },
-    { service: 'docs-api', heapUsedMb: 280, heapMaxMb: 1024, threads: 32, gcPauseP95Ms: 9 },
-    { service: 'identity-api', heapUsedMb: 180, heapMaxMb: 512, threads: 24, gcPauseP95Ms: 7 },
-    { service: 'rag-ingestion', heapUsedMb: 220, heapMaxMb: 1024, threads: 36, gcPauseP95Ms: 10 },
+    { service: 'playground-backend-rag-chat-api', heapUsedMb: 420, heapMaxMb: 1024, threads: 48, gcPauseP95Ms: 12 },
+    { service: 'playground-backend-docs-api', heapUsedMb: 280, heapMaxMb: 1024, threads: 32, gcPauseP95Ms: 9 },
+    { service: 'playground-backend-identity-api', heapUsedMb: 180, heapMaxMb: 512, threads: 24, gcPauseP95Ms: 7 },
+    { service: 'playground-backend-rag-ingestion-api', heapUsedMb: 220, heapMaxMb: 1024, threads: 36, gcPauseP95Ms: 10 },
   ],
   httpRate: [
-    { service: 'gateway', rps: 2.4, errorRate: 0.0 },
-    { service: 'rag-chat-api', rps: 0.8, errorRate: 0.0 },
-    { service: 'docs-api', rps: 1.6, errorRate: 0.01 },
+    { service: 'playground-backend-gateway', rps: 2.4, errorRate: 0.0 },
+    { service: 'playground-backend-rag-chat-api', rps: 0.8, errorRate: 0.0 },
+    { service: 'playground-backend-docs-api', rps: 1.6, errorRate: 0.01 },
   ],
 };
 
@@ -88,6 +90,8 @@ export const dashboardFixtureSparkDegraded: DashboardResponse = {
       ? { ...s, status: 'degraded' as const, latencyP95Ms: 3400, note: 'p95 3.4 s' }
       : s,
   ),
+  // spark-inference-gateway는 새 prefix가 적용된 도메인에서도 그대로
+  // (별도 stack, ADR-04).
   sparkGateway: {
     ...dashboardFixtureLoaded.sparkGateway,
     status: 'degraded',

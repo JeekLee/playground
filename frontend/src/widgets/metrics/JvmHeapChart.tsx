@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 import { cn } from '@/shared/lib/cn';
+import { displayName } from '@/shared/lib/serviceLabel';
 import { color } from '@/shared/ui/tokens';
 import { useTimeseries } from '@/features/metrics';
 import type { JvmSummary, RangePreset } from '@/entities/metrics';
@@ -77,7 +78,7 @@ export function JvmHeapChart({ service, jvm, range, pollKey }: JvmHeapChartProps
       )}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-text">{service}</span>
+        <span className="text-[12px] font-semibold text-text">{displayName(service)}</span>
         <span className={cn(
           'text-[11px] font-normal text-text-muted',
           isDegraded && 'text-danger',
@@ -142,14 +143,16 @@ export interface JvmHeapRowProps {
  * on the very first paint, before the dashboard payload has arrived —
  * once `jvm[]` is non-null the row iterates that array verbatim, so the
  * backend stays the source of truth for which services appear.
+ *
+ * 2026-05-21 amendment (ADR-15 §G): slugs는 container_name prefix와 일치.
  */
 const JVM_SLUGS_SSR_FALLBACK: ReadonlyArray<string> = [
-  'gateway',
-  'identity-api',
-  'docs-api',
-  'rag-ingestion-api',
-  'rag-chat-api',
-  'metrics-api',
+  'playground-backend-gateway',
+  'playground-backend-identity-api',
+  'playground-backend-docs-api',
+  'playground-backend-rag-ingestion-api',
+  'playground-backend-rag-chat-api',
+  'playground-backend-metrics-api',
 ];
 
 export function JvmHeapRow({ jvm, range, pollKey }: JvmHeapRowProps) {

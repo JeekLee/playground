@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Test;
  * Pins the {@link ServiceProbeTarget#ALL} catalog per ADR-15 §17 — eleven
  * cells in canonical order, with the per-cell probe metadata (URL + kind)
  * matching the ADR's mappings.
+ *
+ * <p>2026-05-21: name + probeUrl이 container_name prefix 규칙 (ADR-15 §G)로
+ * 통일된 후 테스트 갱신.
  */
 class ServiceProbeTargetTest {
 
@@ -16,17 +19,17 @@ class ServiceProbeTargetTest {
         assertThat(ServiceProbeTarget.ALL).hasSize(11);
         assertThat(ServiceProbeTarget.ALL.stream().map(ServiceProbeTarget::name).toList())
                 .containsExactly(
-                        "gateway",
-                        "identity-api",
-                        "docs-api",
-                        "rag-ingestion-api",
-                        "rag-chat-api",
-                        "metrics-api",
+                        "playground-backend-gateway",
+                        "playground-backend-identity-api",
+                        "playground-backend-docs-api",
+                        "playground-backend-rag-ingestion-api",
+                        "playground-backend-rag-chat-api",
+                        "playground-backend-metrics-api",
                         "spark-inference-gateway",
-                        "prometheus-playground",
-                        "loki-playground",
-                        "alloy-playground",
-                        "cadvisor-playground");
+                        "playground-prometheus",
+                        "playground-loki",
+                        "playground-alloy",
+                        "playground-cadvisor");
     }
 
     @Test
@@ -55,32 +58,32 @@ class ServiceProbeTargetTest {
     @Test
     void observabilityContainersUseNativeReadinessPaths() {
         // ADR-15 §17: Prometheus /-/healthy, Loki /ready, Alloy /-/ready, cAdvisor /healthz.
-        assertThat(probeOf("prometheus-playground").probeUrl())
-                .isEqualTo("http://prometheus-playground:9090/-/healthy");
-        assertThat(probeOf("loki-playground").probeUrl())
-                .isEqualTo("http://loki-playground:3100/ready");
-        assertThat(probeOf("alloy-playground").probeUrl())
-                .isEqualTo("http://alloy-playground:12345/-/ready");
-        assertThat(probeOf("cadvisor-playground").probeUrl())
-                .isEqualTo("http://cadvisor-playground:8080/healthz");
+        assertThat(probeOf("playground-prometheus").probeUrl())
+                .isEqualTo("http://playground-prometheus:9090/-/healthy");
+        assertThat(probeOf("playground-loki").probeUrl())
+                .isEqualTo("http://playground-loki:3100/ready");
+        assertThat(probeOf("playground-alloy").probeUrl())
+                .isEqualTo("http://playground-alloy:12345/-/ready");
+        assertThat(probeOf("playground-cadvisor").probeUrl())
+                .isEqualTo("http://playground-cadvisor:8080/healthz");
     }
 
     @Test
     void bcUrlsTargetComposeInternalPortsNotGateway() {
         // ADR-15 §9 — probe URLs MUST be compose-internal (avoids
         // self-referential loops on gateway health).
-        assertThat(probeOf("gateway").probeUrl())
-                .isEqualTo("http://gateway:18080/actuator/health");
-        assertThat(probeOf("identity-api").probeUrl())
-                .isEqualTo("http://identity-api:18081/actuator/health");
-        assertThat(probeOf("docs-api").probeUrl())
-                .isEqualTo("http://docs-api:18082/actuator/health");
-        assertThat(probeOf("rag-ingestion-api").probeUrl())
-                .isEqualTo("http://rag-ingestion-api:18083/actuator/health");
-        assertThat(probeOf("rag-chat-api").probeUrl())
-                .isEqualTo("http://rag-chat-api:18084/actuator/health");
-        assertThat(probeOf("metrics-api").probeUrl())
-                .isEqualTo("http://metrics-api:18085/actuator/health");
+        assertThat(probeOf("playground-backend-gateway").probeUrl())
+                .isEqualTo("http://playground-backend-gateway:18080/actuator/health");
+        assertThat(probeOf("playground-backend-identity-api").probeUrl())
+                .isEqualTo("http://playground-backend-identity-api:18081/actuator/health");
+        assertThat(probeOf("playground-backend-docs-api").probeUrl())
+                .isEqualTo("http://playground-backend-docs-api:18082/actuator/health");
+        assertThat(probeOf("playground-backend-rag-ingestion-api").probeUrl())
+                .isEqualTo("http://playground-backend-rag-ingestion-api:18083/actuator/health");
+        assertThat(probeOf("playground-backend-rag-chat-api").probeUrl())
+                .isEqualTo("http://playground-backend-rag-chat-api:18084/actuator/health");
+        assertThat(probeOf("playground-backend-metrics-api").probeUrl())
+                .isEqualTo("http://playground-backend-metrics-api:18085/actuator/health");
     }
 
     @Test
