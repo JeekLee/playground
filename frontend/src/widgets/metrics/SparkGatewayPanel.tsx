@@ -81,7 +81,10 @@ function SparkLatencyCard({
   pollKey: number | null;
 }) {
   const [retryNonce, setRetryNonce] = useState(0);
-  const series = useTimeseries('spark-latency', range, {
+  // metric id는 PromQlTemplate의 `spark-latency-p95` (full ADR-15 §10 id).
+  // 이전엔 `spark-latency`로 호출해서 항상 400 Unknown metric id → series.error
+  // → 카드가 항상 danger(빨강)로 떨어짐.
+  const series = useTimeseries('spark-latency-p95', range, {
     pollKey,
     retryNonce,
     enabled: true,
