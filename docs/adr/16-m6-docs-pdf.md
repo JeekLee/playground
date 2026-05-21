@@ -626,6 +626,8 @@ to **30 seconds** per page.
 | Retry classification | retryable: 5xx from `spark-inference-gateway`, `TimeoutException`, `ConnectException`, `IOException`. Non-retryable: 4xx (400 invalid input — payload structure error; 413 image too large — likely a degenerate page like a 64MB embedded photo, fail fast). |
 | Backoff before retry | 1 second fixed delay (single retry — no exponential ladder needed) |
 | Failure handling | both attempts failing → that page contributes an empty markdown string; loop continues for remaining pages |
+| **Per-page max-tokens** | **1200** (`spring.ai.openai.chat.options.max-tokens` on docs-api). A normal-page markdown lands at ~800-1100 completion tokens; 1200 leaves slack for dense text/table pages but caps runaway-loop blowups (see amendment 2026-05-21). |
+| **Per-call frequency penalty** | **0.5** (`spring.ai.openai.chat.options.frequency-penalty` on docs-api). Conservative mid-value within OpenAI's `[-2.0, 2.0]` range. Depresses repeated-token logits — kills the "same map label emitted 20×" hallucination on image-heavy pages without measurably affecting normal-page output (see amendment 2026-05-21). |
 | **Timeout-source layer** | Spring AI 1.0 wraps WebClient under the hood; setting `responseTimeout` on the WebClient bean (via `WebClient.Builder.exchangeStrategies(...)` indirectly + reactor netty `HttpClient.responseTimeout(Duration.ofSeconds(30))`) is the implementer-owned hook. Belt-and-suspenders `CompletableFuture.orTimeout(...)` in the adapter is also OK. |
 
 **System prompt (pinned — implementer transcribes verbatim):**
@@ -1471,3 +1473,50 @@ new vision-model property.
 
 See `docs/adr/16-m6-docs-pdf.md` §2 + §6 + §7 + §16 for the full
 specification.
+
+## Amendment 2026-05-21 (post-bench) — Vision OCR option tuning
+
+Empirical bench against the operator's real 55-page Korean brief PDF
+(KFI 청사 확충·이전사업 설계공모 지침서; HWP-export, text layer
+sound, 3 OCR-fallback pages out of 55 = 5.5%) surfaced a Vision-LLM
+failure mode the initial §7 spec did not cover: **image-heavy pages
+(maps, site diagrams) cause the model to hallucinate runaway repeated
+tokens** — e.g., the same road label `오송생명7로` emitted ~20 times
+in sequence — until `max_tokens` is exhausted. Worst-case page (p26,
+two-image site-overview map) ran 70 s wall time and consumed all 2000
+completion tokens before stop.
+
+Two yml-level safeguards have been added on the docs-api
+`spring.ai.openai.chat.options` block (Vision-only path; docs-api's
+only `ChatClient` consumer is `VisionOcrAdapter`):
+
+- **`max-tokens: 1200`** — normal-page markdown is ~800-1100 tokens;
+  the 1200 cap leaves slack for dense text/table pages while bounding
+  worst-case completion tokens.
+- **`frequency-penalty: 0.5`** — depresses repeated-token logits.
+  Conservative mid-value within OpenAI's `[-2.0, 2.0]` range; no
+  measurable impact on normal-page markdown quality observed in
+  bench.
+
+Re-bench results on the same three OCR pages (p1 표지, p26 지도,
+p28 현장사진):
+
+|                          | Before     | After      | Δ      |
+|--------------------------|------------|------------|--------|
+| Total latency            | 76.0 s     | 17.0 s     | -77 %  |
+| Average per page         | 25.3 s     | 5.7 s      | -77 %  |
+| Completion tokens        | 2095       | 489        | -77 %  |
+| p26 alone (worst case)   | 70.2 s     | 13.4 s     | -81 %  |
+
+All three pages stay well inside the §7 30-second per-page timeout
+(which remains the final safety net — these knobs just push the bad
+path off the worst cliff). Normal-page output (p1 표지, p28
+현장사진) is visually unchanged before/after; only the runaway-loop
+hallucination on p26 is bounded.
+
+The §7 Vision-call options table above carries the same two rows
+inline so the implementer-facing pin is in one place. The bench
+inputs + outputs live at `/tmp/m6-pdf-ocr-bench-v2.out` on the
+operator's machine (transient; the repro recipe is in the PR #190
+commit message `docs-api: cap Vision OCR max-tokens + add
+frequency-penalty`).
