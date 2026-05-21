@@ -27,7 +27,7 @@ public enum DocsErrorCode implements ErrorCode {
     TITLE_BLANK("DOCS-VALIDATION-001", "Document title must not be blank"),
 
     @MappedTo(BadRequestException.class)
-    BODY_TOO_LARGE("DOCS-VALIDATION-002", "Document body exceeds maximum size (1 MB)"),
+    BODY_TOO_LARGE("DOCS-VALIDATION-002", "Document body exceeds maximum size (10 MB)"),
 
     @MappedTo(BadRequestException.class)
     PATH_INVALID("DOCS-VALIDATION-003", "Document path is not in the required format: {0}"),
@@ -70,7 +70,64 @@ public enum DocsErrorCode implements ErrorCode {
      */
     @MappedTo(ServiceUnavailableException.class)
     SEARCH_UNAVAILABLE("DOCS-SEARCH-001",
-            "Search is temporarily unavailable");
+            "Search is temporarily unavailable"),
+
+    // --- M6 (ADR-16) PDF upload errors ---
+
+    /**
+     * Upload rejected because the file is neither Markdown nor PDF. Surfaced
+     * by the controller's 3-step gate (filename suffix → Content-Type →
+     * PDF magic bytes).
+     */
+    @MappedTo(BadRequestException.class)
+    INVALID_FILE_TYPE("DOCS-UPLOAD-001",
+            "Uploaded file must be Markdown (.md, .markdown) or PDF (.pdf)"),
+
+    /**
+     * PDFBox could not parse the PDF (truncated, malformed, non-PDF bytes
+     * past the magic check). 400 — the upload itself is bad.
+     */
+    @MappedTo(BadRequestException.class)
+    PDF_CORRUPTED("DOCS-UPLOAD-002",
+            "PDF file is corrupted or could not be parsed"),
+
+    /**
+     * PDFBox could open the document but it requires a password. M6 does not
+     * support owner-password decryption; the user is asked to remove the
+     * password and re-upload.
+     */
+    @MappedTo(BadRequestException.class)
+    PDF_ENCRYPTED("DOCS-UPLOAD-003",
+            "Encrypted PDFs are not supported; remove the password and re-upload"),
+
+    /**
+     * PDF page count exceeds the M6 cap (200 pages, ADR-16). Mapped to 400 to
+     * stay within ADR-11's six-exception hierarchy; HTTP 413 was considered
+     * but adding a seventh subclass would widen the shared contract.
+     */
+    @MappedTo(BadRequestException.class)
+    PDF_TOO_MANY_PAGES("DOCS-UPLOAD-004",
+            "PDF has too many pages (maximum 200)"),
+
+    /**
+     * The hybrid extraction algorithm fell back to Vision OCR for more pages
+     * than the M6 cap (30 OCR pages, ADR-16). Same 400 mapping rationale as
+     * {@link #PDF_TOO_MANY_PAGES}.
+     */
+    @MappedTo(BadRequestException.class)
+    PDF_TOO_MANY_OCR_PAGES("DOCS-UPLOAD-005",
+            "PDF requires Vision OCR for too many pages (maximum 30)"),
+
+    /**
+     * Multipart upload exceeded {@code spring.servlet.multipart.max-file-size}
+     * (25 MB per ADR-16). Surfaced when {@code MultipartFile.getSize()} reports
+     * a value over the cap; oversized requests at the transport layer surface
+     * as a {@code MaxUploadSizeExceededException} which the shared advice maps
+     * to a generic 400.
+     */
+    @MappedTo(BadRequestException.class)
+    FILE_TOO_LARGE("DOCS-UPLOAD-006",
+            "Uploaded file exceeds maximum size (25 MB)");
 
     private final String code;
     private final String defaultMessage;

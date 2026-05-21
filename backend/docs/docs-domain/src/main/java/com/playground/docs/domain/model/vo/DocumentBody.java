@@ -7,9 +7,11 @@ import java.util.HexFormat;
 import java.util.Objects;
 
 /**
- * Document body — raw GFM-flavored Markdown per M2 spec §4.3. Per ADR-12 §4 the
- * body is capped at 1 MB ({@value #MAX_OCTET_LENGTH} octets). Empty body is
- * allowed (drafting); null is not.
+ * Document body — raw GFM-flavored Markdown per M2 spec §4.3. Per M6 ADR-16
+ * the body is capped at 10 MB ({@value #MAX_OCTET_LENGTH} octets); the prior
+ * 1 MB cap (M2 ADR-12 §4) was widened so PDF uploads whose extracted Markdown
+ * grows past the original limit are accepted. Empty body is allowed
+ * (drafting); null is not.
  *
  * <p>The size cap is enforced against the UTF-8 octet length, not the Java
  * char-count, so multi-byte content is bounded correctly. The DB CHECK
@@ -23,8 +25,8 @@ import java.util.Objects;
  */
 public record DocumentBody(String value) {
 
-    /** 1 MB cap pinned by ADR-12 §4. */
-    public static final int MAX_OCTET_LENGTH = 1_048_576;
+    /** 10 MB cap pinned by M6 ADR-16 (was 1 MB under M2 ADR-12 §4). */
+    public static final int MAX_OCTET_LENGTH = 10 * 1_048_576;
 
     public DocumentBody {
         Objects.requireNonNull(value, "DocumentBody.value must not be null");

@@ -51,6 +51,7 @@ public record DocumentDetailDto(
         long viewCount,
         long likeCount,
         Boolean likedByMe,
+        String mimeType,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -75,6 +76,7 @@ public record DocumentDetailDto(
                 viewCount,
                 likeCount,
                 likedByMe,
+                doc.mimeType().wireValue(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());
