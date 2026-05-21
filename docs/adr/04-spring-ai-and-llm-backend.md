@@ -136,8 +136,10 @@ bridge named `spark-inference-net`**:
 
 - `spark-inference-gateway` container — Bearer-auth + model-routing layer,
   the only one exposed to the host (host port `127.0.0.1:10080`).
-- `spark-inference-qwen3-30b-a3b`, `spark-inference-bge-m3` — backend model
-  servers, NO host port (compose-internal only).
+- `spark-inference-qwen3-vl-30b-a3b`, `spark-inference-bge-m3` — backend
+  model servers, NO host port (compose-internal only). (The container was
+  named `spark-inference-qwen3-30b-a3b` until the 2026-05-21 swap; see
+  amendment at the end of this ADR.)
 
 `host.docker.internal:10080` reaches the gateway via the host loopback
 hop, but only when the host process binds `0.0.0.0` (or a route exists
