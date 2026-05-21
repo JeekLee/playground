@@ -40,17 +40,17 @@ class BuildServicesUseCaseTest {
         // ADR-15 §17 canonical order: 6 BCs, then spark, then 4 obs containers
         assertThat(cells.stream().map(ServiceCell::name).toList())
                 .containsExactly(
-                        "gateway",
-                        "identity-api",
-                        "docs-api",
-                        "rag-ingestion-api",
-                        "rag-chat-api",
-                        "metrics-api",
+                        "playground-backend-gateway",
+                        "playground-backend-identity-api",
+                        "playground-backend-docs-api",
+                        "playground-backend-rag-ingestion-api",
+                        "playground-backend-rag-chat-api",
+                        "playground-backend-metrics-api",
                         "spark-inference-gateway",
-                        "prometheus-playground",
-                        "loki-playground",
-                        "alloy-playground",
-                        "cadvisor-playground");
+                        "playground-prometheus",
+                        "playground-loki",
+                        "playground-alloy",
+                        "playground-cadvisor");
         cells.forEach(c -> assertThat(c.status()).isEqualTo("up"));
     }
 

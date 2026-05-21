@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 import { cn } from '@/shared/lib/cn';
+import { displayName } from '@/shared/lib/serviceLabel';
 import { color } from '@/shared/ui/tokens';
 import { useTimeseries } from '@/features/metrics';
 import type { HttpRateSummary, RangePreset } from '@/entities/metrics';
@@ -53,7 +54,7 @@ export function HttpRateChart({ service, http, range, pollKey }: HttpRateChartPr
         isDegraded ? 'border-danger bg-danger-soft' : 'border-border bg-surface',
       )}
     >
-      <span className="text-[12px] font-semibold text-text">{service}</span>
+      <span className="text-[12px] font-semibold text-text">{displayName(service)}</span>
       <span
         className={cn(
           'text-[18px] font-bold leading-none',
@@ -95,7 +96,14 @@ export function HttpRateChart({ service, http, range, pollKey }: HttpRateChartPr
   );
 }
 
-const HTTP_ORDER: ReadonlyArray<string> = ['gateway', 'rag-chat-api', 'docs-api'];
+// 2026-05-21 amendment (ADR-15 §G): slugs는 container_name prefix와 일치하는
+// `playground-backend-*` full name. 백엔드의 `BuildDashboardUseCase.HTTP_SERVICES`
+// 와 동일 순서.
+const HTTP_ORDER: ReadonlyArray<string> = [
+  'playground-backend-gateway',
+  'playground-backend-rag-chat-api',
+  'playground-backend-docs-api',
+];
 
 export interface HttpRateRowProps {
   http: HttpRateSummary[] | null;

@@ -32,21 +32,25 @@ import type { ServiceHealth, ServiceStatus } from '@/entities/metrics';
 // the wire, so the BC can ship rows in any order without breaking
 // the grid visually. (Per design context §2.1 the slug list is
 // pinned; missing slugs render the skeleton bullet variant.)
+//
+// 2026-05-21 amendment (ADR-15 §G): slugs는 container_name prefix와 일치하는
+// `playground-*` full name. label은 사용자 친화적 짧은 이름 (display name
+// helper 또는 명시적 override).
 const ROW_1: ReadonlyArray<{ slug: string; label: string }> = [
-  { slug: 'gateway', label: 'gateway' },
-  { slug: 'identity-api', label: 'identity-api' },
-  { slug: 'docs-api', label: 'docs-api' },
-  { slug: 'rag-ingestion', label: 'rag-ingestion' },
-  { slug: 'rag-chat-api', label: 'rag-chat-api' },
-  { slug: 'metrics-api', label: 'metrics-api' },
+  { slug: 'playground-backend-gateway', label: 'gateway' },
+  { slug: 'playground-backend-identity-api', label: 'identity-api' },
+  { slug: 'playground-backend-docs-api', label: 'docs-api' },
+  { slug: 'playground-backend-rag-ingestion-api', label: 'rag-ingestion' },
+  { slug: 'playground-backend-rag-chat-api', label: 'rag-chat-api' },
+  { slug: 'playground-backend-metrics-api', label: 'metrics-api' },
 ];
 
 const ROW_2: ReadonlyArray<{ slug: string; label: string }> = [
   { slug: 'spark-inference-gateway', label: 'spark-gateway' },
-  { slug: 'prometheus-playground', label: 'prometheus' },
-  { slug: 'loki-playground', label: 'loki' },
-  { slug: 'alloy-playground', label: 'alloy' },
-  { slug: 'cadvisor-playground', label: 'cadvisor' },
+  { slug: 'playground-prometheus', label: 'prometheus' },
+  { slug: 'playground-loki', label: 'loki' },
+  { slug: 'playground-alloy', label: 'alloy' },
+  { slug: 'playground-cadvisor', label: 'cadvisor' },
 ];
 
 export interface ServiceHealthGridProps {

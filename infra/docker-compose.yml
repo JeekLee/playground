@@ -6,7 +6,8 @@ services:
   # --- ADR-05: Postgres 16 + pgvector ---
   postgres-playground:
     image: pgvector/pgvector:pg16
-    container_name: postgres-playground
+    container_name: playground-postgres
+    hostname: playground-postgres
     environment:
       POSTGRES_DB: playground
       POSTGRES_USER: ${POSTGRES_USER:-playground}
@@ -25,7 +26,8 @@ services:
   # --- ADR-07 / ADR-08 amendment: Redis (sessions + rag-ingestion locks) ---
   redis-playground:
     image: redis:7-alpine
-    container_name: redis-playground
+    container_name: playground-redis
+    hostname: playground-redis
     ports:
       - "10279:6379"
     volumes:
@@ -39,7 +41,8 @@ services:
   # --- ADR-03: Kafka KRaft mode (no Zookeeper) ---
   kafka-playground:
     image: apache/kafka:3.8.0
-    container_name: kafka-playground
+    container_name: playground-kafka-broker
+    hostname: playground-kafka-broker
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -70,7 +73,9 @@ services:
     build:
       context: ../backend
       dockerfile: gateway/Dockerfile
-    container_name: gateway
+    image: playground/backend-gateway:dev
+    container_name: playground-backend-gateway
+    hostname: playground-backend-gateway
     depends_on:
       postgres-playground:
         condition: service_healthy
@@ -114,7 +119,9 @@ services:
     build:
       context: ../backend
       dockerfile: identity/identity-api/Dockerfile
-    container_name: identity-api
+    image: playground/backend-identity-api:dev
+    container_name: playground-backend-identity-api
+    hostname: playground-backend-identity-api
     depends_on:
       postgres-playground:
         condition: service_healthy
@@ -155,7 +162,8 @@ services:
       context: ./opensearch
       dockerfile: Dockerfile
     image: playground/opensearch:2.18.0-nori
-    container_name: opensearch-playground
+    container_name: playground-opensearch
+    hostname: playground-opensearch
     environment:
       cluster.name: opensearch-playground
       node.name: opensearch-playground
@@ -187,7 +195,8 @@ services:
   # if a new topic is added.
   kafka-init:
     image: apache/kafka:3.8.0
-    container_name: kafka-init
+    container_name: playground-kafka-init
+    hostname: playground-kafka-init
     depends_on:
       kafka-playground:
         condition: service_healthy
@@ -207,7 +216,9 @@ services:
     build:
       context: ../backend
       dockerfile: docs/docs-api/Dockerfile
-    container_name: docs-api
+    image: playground/backend-docs-api:dev
+    container_name: playground-backend-docs-api
+    hostname: playground-backend-docs-api
     depends_on:
       postgres-playground:
         condition: service_healthy
@@ -257,7 +268,9 @@ services:
     build:
       context: ../backend
       dockerfile: rag-ingestion/rag-ingestion-api/Dockerfile
-    container_name: rag-ingestion-api
+    image: playground/backend-rag-ingestion-api:dev
+    container_name: playground-backend-rag-ingestion-api
+    hostname: playground-backend-rag-ingestion-api
     depends_on:
       postgres-playground:
         condition: service_healthy
@@ -316,7 +329,9 @@ services:
     build:
       context: ../backend
       dockerfile: rag-chat/rag-chat-api/Dockerfile
-    container_name: rag-chat-api
+    image: playground/backend-rag-chat-api:dev
+    container_name: playground-backend-rag-chat-api
+    hostname: playground-backend-rag-chat-api
     depends_on:
       postgres-playground:
         condition: service_healthy
@@ -368,7 +383,9 @@ services:
     build:
       context: ../backend
       dockerfile: metrics/metrics-api/Dockerfile
-    container_name: metrics-api
+    image: playground/backend-metrics-api:dev
+    container_name: playground-backend-metrics-api
+    hostname: playground-backend-metrics-api
     depends_on:
       prometheus-playground:
         condition: service_healthy
@@ -422,7 +439,9 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
-    container_name: frontend
+    image: playground/frontend:dev
+    container_name: playground-frontend
+    hostname: playground-frontend
     depends_on:
       gateway:
         condition: service_healthy
@@ -440,16 +459,21 @@ services:
   # Pinned by ADR-15 §6 + §A. Read-only docker.sock + read-only host mounts.
   # NO host port — accessed by Alloy via compose-internal name only.
   cadvisor-playground:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: cadvisor-playground
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    container_name: playground-cadvisor
+    hostname: playground-cadvisor
+    # cgroup v2 + systemd cgroup driver 환경 대응 — root cgroup만 보이던 문제 fix.
+    # `--store_container_labels=false` 제거: cAdvisor가 자동 emit하는 `name` 라벨까지
+    # stripped됐었음 (whitelist는 docker labels만 영향이라 가정했으나 실측상 name도
+    # 비워짐). 카테고리 prefix 기반 PromQL 매칭은 이 라벨에 의존.
     command:
       - --docker_only=true
-      - --store_container_labels=false
       - --whitelisted_container_labels=service
     volumes:
       - /:/rootfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only docker socket (ADR-15 §6 + §20)
       - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro  # cgroup v2 hierarchy noexpose without explicit mount
       - /var/lib/docker:/var/lib/docker:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
@@ -466,7 +490,8 @@ services:
   # `127.0.0.1:9090`) to enable ad-hoc PromQL CLI access (ADR-15 §3 / spec §4.4).
   prometheus-playground:
     image: prom/prometheus:v2.54.1
-    container_name: prometheus-playground
+    container_name: playground-prometheus
+    hostname: playground-prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -491,7 +516,8 @@ services:
   # NO host port — accessed by metrics-api via compose-internal name only.
   loki-playground:
     image: grafana/loki:3.2.1
-    container_name: loki-playground
+    container_name: playground-loki
+    hostname: playground-loki
     command: ["-config.file=/etc/loki/config.yaml"]
     volumes:
       - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
@@ -513,7 +539,8 @@ services:
   # endpoints must be reachable at startup or Alloy back-offs spam logs).
   alloy-playground:
     image: grafana/alloy:v1.3.1
-    container_name: alloy-playground
+    container_name: playground-alloy
+    hostname: playground-alloy
     command:
       - run
       - /etc/alloy/config.alloy
@@ -547,7 +574,10 @@ volumes:
 networks:
   # Playground compose's default bridge — declared explicitly because once any
   # service has a `networks:` block, compose stops auto-attaching the default.
+  # `name:` pins the docker network name to `playground-net` regardless of the
+  # compose project name (otherwise docker prefixes it as `<project>_default`).
   default:
+    name: playground-net
   # The Spark inference stack (`spark-inference-gateway` + per-model backends
   # like `spark-inference-qwen3-30b-a3b`, `spark-inference-bge-m3`) lives in a
   # SEPARATE compose project on a bridge named `spark-inference-net`. Three

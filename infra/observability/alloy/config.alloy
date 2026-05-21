@@ -17,16 +17,19 @@
 // on a missing target until then.
 // =====================================================================
 
-// 1. Backend BC scrape — 5 jobs at 5s cadence
+// 1. Backend BC scrape — 6 jobs at 5s cadence
+// `__address__`는 compose service key 기반 DNS (변경 없음). `service` 라벨은
+// container_name과 동일한 `playground-backend-*` prefix로 통일 — PromQL의
+// `{service=~"^playground-(backend|frontend)-.*"}` 정규식 매칭을 위함.
 prometheus.scrape "backend_bcs" {
   job_name = "playground-bcs"
   targets = [
-    { __address__ = "gateway:18080",           service = "gateway",           __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "identity-api:18081",      service = "identity-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "docs-api:18082",          service = "docs-api",          __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "rag-ingestion-api:18083", service = "rag-ingestion-api", __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "rag-chat-api:18084",      service = "rag-chat-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "metrics-api:18085",       service = "metrics-api",       __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "gateway:18080",           service = "playground-backend-gateway",           __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "identity-api:18081",      service = "playground-backend-identity-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "docs-api:18082",          service = "playground-backend-docs-api",          __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "rag-ingestion-api:18083", service = "playground-backend-rag-ingestion-api", __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "rag-chat-api:18084",      service = "playground-backend-rag-chat-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "metrics-api:18085",       service = "playground-backend-metrics-api",       __metrics_path__ = "/actuator/prometheus" },
   ]
   scrape_interval = "5s"
   scrape_timeout  = "4s"
@@ -53,16 +56,19 @@ prometheus.scrape "host" {
 }
 
 // 4. Observability self-monitoring (Prometheus, Loki, Alloy itself, cAdvisor)
+// `scrape_interval`을 5s로 통일 (이전 10s) — ADR-15 §9의 last-2-scrape 윈도우
+// `[12s]`가 10s 간격에서는 1개만 잡혀 항상 degraded로 떨어지던 결정론적 버그
+// fix. service 라벨도 container_name과 일치하는 `playground-<stack>` prefix로.
 prometheus.scrape "observability_self" {
   job_name = "observability-self"
   targets = [
-    { __address__ = "prometheus-playground:9090", service = "prometheus-playground", __metrics_path__ = "/metrics" },
-    { __address__ = "loki-playground:3100",       service = "loki-playground",       __metrics_path__ = "/metrics" },
-    { __address__ = "alloy-playground:12345",     service = "alloy-playground",      __metrics_path__ = "/metrics" },
-    { __address__ = "cadvisor-playground:8080",   service = "cadvisor-playground",   __metrics_path__ = "/metrics" },
+    { __address__ = "prometheus-playground:9090", service = "playground-prometheus", __metrics_path__ = "/metrics" },
+    { __address__ = "loki-playground:3100",       service = "playground-loki",       __metrics_path__ = "/metrics" },
+    { __address__ = "alloy-playground:12345",     service = "playground-alloy",      __metrics_path__ = "/metrics" },
+    { __address__ = "cadvisor-playground:8080",   service = "playground-cadvisor",   __metrics_path__ = "/metrics" },
   ]
-  scrape_interval = "10s"
-  scrape_timeout  = "8s"
+  scrape_interval = "5s"
+  scrape_timeout  = "4s"
   forward_to = [prometheus.remote_write.local.receiver]
 }
 

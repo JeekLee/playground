@@ -15,8 +15,10 @@ global:
 scrape_configs:
   - job_name: alloy
     static_configs:
+      # `__address__`는 compose service key 기반 DNS (`alloy-playground:12345`)
+      # 그대로. `service` 라벨만 container_name과 일치하는 `playground-alloy`로.
       - targets: ["alloy-playground:12345"]
         labels:
-          service: alloy-playground
+          service: playground-alloy
     metrics_path: /metrics
     scrape_interval: 15s

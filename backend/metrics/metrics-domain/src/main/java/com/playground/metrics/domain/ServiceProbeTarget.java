@@ -27,6 +27,11 @@ import java.util.List;
  * four observability containers. {@code BuildServicesUseCase} consumes
  * {@link #ALL} verbatim so the response array order is stable.
  *
+ * <p>2026-05-21 amendment (ADR-15 §G): name 필드는 container_name과 일치하는
+ * {@code playground-*} prefix로 통일. probeUrl도 container_name 기반 hostname
+ * 사용 — compose의 service key DNS와 container_name DNS 둘 다 살아있지만,
+ * 라벨/이름이 모든 경로에서 일관되도록 container_name으로 통일.
+ *
  * @param name service identifier matching {@link ServiceAllowlist}
  * @param kind probe shape selector (see {@link Kind})
  * @param probeUrl absolute URL of the secondary-signal endpoint, or
@@ -53,17 +58,17 @@ public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolea
      */
     public static final List<ServiceProbeTarget> ALL = List.of(
             // 6 BCs — actuator/health on compose-internal port (NOT via gateway)
-            new ServiceProbeTarget("gateway",            Kind.BC, "http://gateway:18080/actuator/health",          true),
-            new ServiceProbeTarget("identity-api",       Kind.BC, "http://identity-api:18081/actuator/health",     true),
-            new ServiceProbeTarget("docs-api",           Kind.BC, "http://docs-api:18082/actuator/health",         true),
-            new ServiceProbeTarget("rag-ingestion-api",  Kind.BC, "http://rag-ingestion-api:18083/actuator/health",true),
-            new ServiceProbeTarget("rag-chat-api",       Kind.BC, "http://rag-chat-api:18084/actuator/health",     true),
-            new ServiceProbeTarget("metrics-api",        Kind.BC, "http://metrics-api:18085/actuator/health",      true),
+            new ServiceProbeTarget("playground-backend-gateway",           Kind.BC, "http://playground-backend-gateway:18080/actuator/health",           true),
+            new ServiceProbeTarget("playground-backend-identity-api",      Kind.BC, "http://playground-backend-identity-api:18081/actuator/health",      true),
+            new ServiceProbeTarget("playground-backend-docs-api",          Kind.BC, "http://playground-backend-docs-api:18082/actuator/health",          true),
+            new ServiceProbeTarget("playground-backend-rag-ingestion-api", Kind.BC, "http://playground-backend-rag-ingestion-api:18083/actuator/health", true),
+            new ServiceProbeTarget("playground-backend-rag-chat-api",      Kind.BC, "http://playground-backend-rag-chat-api:18084/actuator/health",      true),
+            new ServiceProbeTarget("playground-backend-metrics-api",       Kind.BC, "http://playground-backend-metrics-api:18085/actuator/health",       true),
             // spark-inference-gateway — HEAD /v1/models per ADR-15 §12 (host process; no scrape, no actuator)
             new ServiceProbeTarget("spark-inference-gateway", Kind.SPARK, null, false),
             // 4 observability containers — native readiness endpoints per ADR-15 §17
-            new ServiceProbeTarget("prometheus-playground", Kind.OBSERVABILITY, "http://prometheus-playground:9090/-/healthy", true),
-            new ServiceProbeTarget("loki-playground",       Kind.OBSERVABILITY, "http://loki-playground:3100/ready",          true),
-            new ServiceProbeTarget("alloy-playground",      Kind.OBSERVABILITY, "http://alloy-playground:12345/-/ready",      true),
-            new ServiceProbeTarget("cadvisor-playground",   Kind.OBSERVABILITY, "http://cadvisor-playground:8080/healthz",    true));
+            new ServiceProbeTarget("playground-prometheus", Kind.OBSERVABILITY, "http://playground-prometheus:9090/-/healthy", true),
+            new ServiceProbeTarget("playground-loki",       Kind.OBSERVABILITY, "http://playground-loki:3100/ready",          true),
+            new ServiceProbeTarget("playground-alloy",      Kind.OBSERVABILITY, "http://playground-alloy:12345/-/ready",      true),
+            new ServiceProbeTarget("playground-cadvisor",   Kind.OBSERVABILITY, "http://playground-cadvisor:8080/healthz",    true));
 }
