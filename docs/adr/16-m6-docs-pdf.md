@@ -1483,7 +1483,251 @@ new vision-model property.
 See `docs/adr/16-m6-docs-pdf.md` §2 + §6 + §7 + §16 for the full
 specification.
 
-## Amendment 2026-05-21 (post-bench) — Vision OCR option tuning
+## Amendment 2026-05-22 — M6.1 async extraction + all-page Vision + page cap 100
+
+This amendment substantially supersedes ADR-16's hybrid extraction
+algorithm and synchronous-request-thread shape. It is the M6.1 companion
+to **ADR-12's amendment 2026-05-22** (the M6.1 master amendment that
+collapses rag-ingestion into docs); read that first for the BC-level
+context. This block captures only the M6-PDF-specific shifts.
+
+### A16.1. Hybrid PDFBox-first algorithm — retired
+
+**Decision (supersedes §3):** the per-page PDFBox-text-extraction path
+is **dropped**. Every PDF page goes through Vision OCR (Qwen3-VL).
+PDFBox is retained for **page rendering only** (`PDFRenderer.renderImageWithDPI`
+per §6, unchanged); `PDFTextStripper` is no longer used.
+
+**Why the hybrid loses:** the post-2026-05-21 bench surfaced that
+PDFBox-extracted text from text-layer pages is clean character-wise but
+**structurally flat** — no heading semantics, no table structure, footnotes
+folded into body, two-column reading order collapsed to a single stream.
+For Korean architectural briefs (the primary M6 corpus), structure is
+the load-bearing signal for downstream retrieval. Vision OCR preserves
+heading depth + tables + figure captions naturally because the model
+reads the rendered page, not the underlying content stream.
+
+**Algorithm shape after M6.1** (replaces §3's pseudo-code):
+
+```java
+// docs-app — ExtractionWorkflow.runPdf(byte[] pdfBytes) sketch.
+PDDocument doc;
+try {
+    doc = Loader.loadPDF(pdfBytes);
+} catch (InvalidPasswordException e) {
+    failExtraction(docId, "PDF_ENCRYPTED");
+    return;
+} catch (IOException e) {
+    failExtraction(docId, "PDF_CORRUPTED");
+    return;
+}
+
+int totalPages = doc.getNumberOfPages();
+if (totalPages > MAX_PAGES_TOTAL) {                  // 100 per A16.2
+    failExtraction(docId, "PDF_TOO_MANY_PAGES: " + totalPages + " > " + MAX_PAGES_TOTAL);
+    return;
+}
+
+PDFRenderer renderer = new PDFRenderer(doc);
+
+// Render + Vision call per page, parallelized across the dedicated
+// ExtractionExecutor (A12.6 in ADR-12 amendment — N=5).
+CompletableFuture<String>[] perPage = new CompletableFuture[totalPages];
+for (int p = 0; p < totalPages; p++) {
+    final int pageIndex = p;
+    perPage[p] = CompletableFuture.supplyAsync(() -> {
+        BufferedImage img = renderer.renderImageWithDPI(pageIndex, RENDER_DPI, ImageType.RGB);
+        byte[] pngBytes = toPng(img);
+        try {
+            return visionOcrPort.renderToMarkdownWithRetry(pngBytes, RETRY_ATTEMPTS);
+        } catch (VisionTimeoutException | VisionGatewayException e) {
+            log.warn("Vision OCR failed for page {} after retries; empty contribution. cause={}", pageIndex, e);
+            return "";   // graceful per-page degradation — preserved from §3
+        }
+    }, extractionExecutor);
+}
+
+CompletableFuture.allOf(perPage).join();
+return Arrays.stream(perPage).map(CompletableFuture::join).collect(joining("\n\n"));
+```
+
+The order-preserving join (`Arrays.stream(perPage)` indexed) keeps page
+order intact regardless of completion order. Per-page Vision retry +
+empty-markdown-fallback semantics are preserved verbatim from §3.
+
+**`OCR_FALLBACK_THRESHOLD` retired** (was 30 characters per §3). The
+`playground.docs.pdf.ocr-fallback-threshold-chars` property is removed.
+
+**ADR-16 §10's `PdfExtractorAdapter` simplifies:** it no longer wraps
+`PDFTextStripper`. Its only PDFBox surface area is `PDFRenderer` for
+page-image rendering. The unit-test matrix shrinks accordingly (the
+"PDFBox returns short text → triggers OCR" branch is gone; every
+test fixture goes straight to Vision OCR).
+
+### A16.2. Page cap — single 100 cap (200/30 two-cap retired)
+
+**Decision (supersedes §8):** the dual `max-pages-total: 200` /
+`max-pages-ocr: 30` strategy is retired. M6.1 pins **`max-pages-total:
+100`** as the single cap. The `max-pages-ocr` property is removed; the
+`DocsErrorCode.PDF_TOO_MANY_OCR_PAGES` (`DOCS-PDF-005`) enum constant is
+retired (the migration that removes it is folded into the M6.1 PR set —
+implementer's call whether to keep the enum constant for backward-compat
+of any logged error codes; the architect recommends deletion since no
+runtime path can produce it after this amendment).
+
+**Why 100:** at ~5-10s/page Vision wall time × 100 pages ÷ 5 parallel =
+~2-3 min worst-case extraction wall time. 200 pages would push to
+~4-7 min, into the "user gives up and reloads" territory even with the
+async SSE shape.
+
+**Enforcement location:** moves from "sync request thread inside
+`DocumentController.createMultipart`" to "async worker inside
+`ExtractionWorkflow.runPdf` after PDFBox `loadPDF`". On overflow, the
+worker writes `extraction_status='failed'`, `extraction_reason='PDF_TOO_MANY_PAGES: {N} > 100'`,
+broadcasts SSE `failed`, commits. No `docs.document.uploaded` event
+publishes — the chunker + embedder never run for a failed extraction.
+
+### A16.3. Extraction lives in the async worker, not the request thread
+
+**Decision (supersedes §12):** the M6 P0 "synchronous extraction on the
+request thread" pattern is retired. The `POST /api/docs` controller now
+returns `201 Created` immediately after the multipart-to-MinIO stream
+and the `documents` row INSERT; extraction work happens on the dedicated
+`ExtractionExecutor` (ADR-12 amendment A12.6 — N=5). See ADR-12 amendment
+A12.5 for the full step-by-step.
+
+The original §12 concerns (Tomcat thread starvation, 60s idle timeout)
+are eliminated. Worst-case extraction wall time (2-3 min per A16.2) is
+absorbed by the async pipeline; the user sees an "Analyzing..." overlay
+streamed via SSE.
+
+### A16.4. Original PDF bytes — retained in MinIO (partial reversal of §13)
+
+**Decision (partially supersedes §13):** the M6 P0 "discard original
+PDF bytes" policy is retired. M6.1 streams the upload's bytes to the
+new `minio-playground` sidecar (ADR-12 amendment A12.4); the original
+file lives in MinIO for the lifetime of the `docs.documents` row,
+cascade-deleted on row removal.
+
+This unblocks two real requirements:
+1. The async worker (A16.3) can fetch the blob *after* the upload
+   request thread has returned.
+2. The user-visible "download the source PDF" affordance becomes
+   trivial — `GET /api/docs/{id}/source` streams from MinIO with the
+   doc's visibility check applied.
+
+§13's "no `docs.document_attachments` table" rationale is preserved (no
+new Postgres table; MinIO is the binary store). §13's "no
+`documents.binary_blob` column" is preserved (no in-row binary in
+Postgres). The reversal is narrow: original bytes are retained, just in
+MinIO rather than Postgres.
+
+### A16.5. Vision LLM options — per-page timeout raised 30s → 60s
+
+**Decision (refines §7):** the per-page Vision call timeout rises from
+**30 seconds to 60 seconds**. The other knobs (temperature 0.1,
+max-tokens 1200, frequency-penalty 0.5, retry 1, fallback empty
+markdown) are preserved verbatim.
+
+**Rationale:** the post-2026-05-21 bench (ADR-16 §7's lower amendment
+block) reduced worst-case page latency from 70s → 13s, comfortably
+under 30s. But the **all-page** path (A16.1) submits every page,
+including pages that would previously have been handled by PDFBox in
+sub-second. Some pages (dense-image figure pages, mixed-script
+multi-table pages) still hover near 20-25s. A 30s cap with 1 retry
+risks two consecutive timeouts on a single page that's just slow, not
+broken. 60s gives a 4× safety margin without changing the budget
+materially (60s × 100 pages ÷ 5 parallel = 1200s worst case = 20 min
+absolute degenerate ceiling, which is a ceiling-of-ceilings, not a P95).
+
+§7's option table is amended:
+
+| Concern | Pre-M6.1 pin | M6.1 pin | Reason |
+|---|---|---|---|
+| Per-page timeout | 30s | **60s** | All-page submission widens the per-page latency distribution |
+| Other knobs | (preserved) | (preserved) | — |
+
+### A16.6. Module placement — adapters re-homed into the docs quadruplet
+
+**Decision (refines §10):** with rag-ingestion absorbed into docs
+(ADR-12 amendment A12.1), the M6 PDF adapters stay in `docs-infra`
+unchanged in shape. The `PdfExtractorAdapter` simplifies (drops
+`PDFTextStripper`) per A16.1. The `VisionOcrAdapter` is unchanged.
+Both now live in the consolidated `backend/docs/docs-infra/` module
+alongside the embedding + pgvector + Redisson adapters that move from
+the retired `rag-ingestion-infra`.
+
+The `ExtractPdfTextUseCase` (in `docs-app`) is **renamed** to
+`ExtractionWorkflow.runPdf(...)` to reflect its new role as the worker
+that runs *after* the upload commits, rather than the use case the
+controller invokes on the request thread. The MD branch becomes
+`ExtractionWorkflow.runMarkdown(...)`. Both share the same
+`ExtractionWorkflow` orchestrator that handles the post-extraction
+steps (DB update, SSE broadcast, Kafka outbox publish).
+
+### A16.7. ADR-08 — no longer "no amendment"; rag-ingestion exception retired
+
+**Decision (refines §C — "ADR-08 no amendment" confirmation):** the
+ADR-08 amendment 2026-05-22 (M6.1) **retires Exception 1** (rag-ingestion
+→ docs-api `/internal/docs/public/{id}/body` HTTP for body fetch). With
+the BCs consolidated, the body fetch is an in-process JPA SELECT — not
+HTTP, not cross-BC. The `/internal/docs/public/{id}/body` route on
+docs-api is kept defensively (a future BC may revive it under a new
+ADR-08 exception) but has no caller in M6.1.
+
+The "BC → spark-inference-gateway via Spring AI" row in ADR-08's
+allowed-channels table is preserved unchanged. M6.1's Vision LLM call
+stays inside that sanctioned envelope.
+
+### A16.8. Test strategy — async test shapes
+
+**Decision (refines §14):** the four-layer test pyramid carries over,
+but two of the layers' assertions shift to match the async pipeline:
+
+| Layer | M6 P0 (pre-M6.1) | M6.1 |
+|---|---|---|
+| `docs-app` slice | "Given a mocked `PdfExtractorPort` returning various strings, assert the per-page dispatch decision (PDFBox vs OCR)" | "Given a mocked `VisionOcrPort` returning per-page markdown, assert the page-order-preserving join + the page-cap-exceeded transition to `failed`" |
+| `docs-infra` integration | "Real PDFBox extraction; PDFBox-extracts-text path tested against text-fixtures" | "Real PDFBox **rendering only**; every page goes to WireMock-stubbed Vision. The text-extract-only fixtures (`text-only-3pages.pdf`) now exercise the all-page Vision-via-WireMock path" |
+| `docs-api` end-to-end | "POST multipart .pdf → assert 201 + body in row" | "POST multipart .pdf → assert 201 + `extraction_status='processing'` immediately; subscribe to SSE; assert `completed` event arrives; assert body in row after `completed`" |
+| Manual E2E | "Manual review of extracted Markdown on real Qwen3-VL deployment" | (unchanged) |
+
+The `text-only-3pages.pdf` and `scanned-cover-text-body-3pages.pdf`
+fixtures stay relevant — they just exercise different paths (no longer
+"hybrid PDFBox + OCR per page"; now "all pages OCR"). The
+`encrypted-3pages.pdf` and `corrupted-truncated.pdf` fixtures continue
+to test the failure paths (now landing in `extraction_status='failed'`
+instead of throwing on the request thread).
+
+The `oversized-201pages.pdf` fixture is **resized** to
+`oversized-101pages.pdf` to match the new 100-cap.
+
+### A16.9. Consequences (M6.1-specific, additive to ADR-16's original)
+
+- **Positive:** structural fidelity of extracted markdown improves uniformly across the corpus (heading hierarchy, tables, two-column reading order, footnotes). Downstream chunking + retrieval benefits.
+- **Positive:** the request thread is freed within milliseconds of the multipart-to-MinIO stream completing. Tomcat thread pool pressure under concurrent uploads drops to near-zero.
+- **Positive:** original PDF bytes are recoverable. Future re-extraction under better Vision models is one job away, not a re-upload campaign.
+- **Negative:** every page incurs a Vision LLM call. At personal scale this is acceptable (dollars), at audience scale it would force re-introducing the hybrid path or a cheaper text-only model for pre-classification.
+- **Negative:** the per-PDF wall time bound grows from "~5s for text-only PDFs" (M6 P0 hybrid happy path) to "~2-3 min for any PDF up to the page cap" (M6.1 all-page). Acceptable behind the async + SSE shape; the user is no longer waiting on the request.
+- **Negative:** the M6 P0 cap (200 / 30) is tightened to 100. Some real briefs (architecture competition packages routinely run 80-120 pages with image-heavy appendices) sit right at the new ceiling. If real-world uploads bunch against the cap, M6.2 can raise to 150 once the Vision LLM serving budget supports it.
+
+### A16.10. ADR-04 — preserved as-is; docs-api becomes sole Vision user
+
+**Decision (refines ADR-04 amendment):** the 2026-05-21 amendment to
+ADR-04 (Vision modality introduction) is preserved verbatim. M6.1
+narrows the operator-facing statement: **docs-api is now the sole BC
+exercising the Vision modality** (rag-chat and rag-ingestion never used
+it; rag-ingestion no longer exists). This is informational; the ADR-04
+invariants (Spring AI 1.0 GA pin, `spark-inference-gateway` base URL,
+no fallback model) are unaffected.
+
+---
+
+## Original amendment 2026-05-21 (post-bench) — Vision OCR option tuning
+
+> The pre-M6.1 amendment below is preserved for history. Its Vision-LLM
+> option pins (`max-tokens: 1200`, `frequency-penalty: 0.5`,
+> temperature 0.1) carry over verbatim into the M6.1 algorithm; only the
+> per-page timeout is raised (30s → 60s per A16.5 above).
 
 Empirical bench against the operator's real 55-page Korean brief PDF
 (KFI 청사 확충·이전사업 설계공모 지침서; HWP-export, text layer
