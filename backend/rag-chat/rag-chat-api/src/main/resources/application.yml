@@ -53,7 +53,7 @@ spring:
       api-key: ${SPRING_AI_OPENAI_API_KEY:dummy-not-used}
       chat:
         options:
-          model: ${SPRING_AI_CHAT_MODEL:qwen3-30b-a3b}
+          model: ${SPRING_AI_CHAT_MODEL:qwen3-vl-30b-a3b}
           # ADR-14 §B — default chat temperature. Auto-title overrides to 0.1
           # at call site per ADR-14 §6.
           temperature: 0.2
