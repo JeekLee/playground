@@ -252,12 +252,14 @@ services:
       # BufferedImage that's ~13 MB per A4 page, plus PNG + base64 + Spring
       # AI request body buffer per page). The MultipartFile.getBytes() path
       # also pins the full uploaded PDF (≤25 MB cap) in memory while
-      # extraction is in progress. The original 512 MB cap OOM'd on the
-      # first real 55-page PDF; 1 GB also proved tight under concurrent
-      # Spring AI buffering, so M6 lands at 2 GB which suits a single-PDF
-      # page-by-page workload with comfortable slack. Operators tune via
-      # JAVA_TOOL_OPTIONS env override without rebuilding.
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx2048m}
+      # extraction is in progress. Step ladder during M6 P0 rollout:
+      # 512 MB OOM'd on the first 55-page PDF → 1 GB still tight under
+      # Spring AI buffering → 2 GB held but cut it close → operator
+      # picks 4 GB as the comfortable headroom for concurrent uploads
+      # and any future markdown-reformat pass that may queue more LLM
+      # output in memory. Operators tune via JAVA_TOOL_OPTIONS env
+      # override without rebuilding.
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx4096m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
