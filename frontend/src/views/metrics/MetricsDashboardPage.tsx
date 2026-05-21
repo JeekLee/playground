@@ -5,7 +5,6 @@ import { AlertTriangle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/shared/lib/cn';
 import {
-  ContainerResourceTable,
   HostStatusRow,
   HttpRateRow,
   JvmHeapRow,
@@ -80,7 +79,10 @@ export function MetricsDashboardPage() {
           />
         ) : null}
         <div className="mx-auto flex max-w-[1208px] flex-col gap-lg px-lg py-md">
-          <ServiceHealthGrid services={data?.services ?? null} />
+          <ServiceHealthGrid
+            services={data?.services ?? null}
+            containers={data?.containers ?? null}
+          />
           <HostStatusRow
             host={data?.host ?? null}
             range={range}
@@ -92,7 +94,6 @@ export function MetricsDashboardPage() {
             pollKey={updatedAt}
           />
           <BottomMixedRow data={data} range={range} pollKey={updatedAt} />
-          <ContainerResourceTable containers={data?.containers ?? null} />
         </div>
       </div>
       <ScreenReaderStatus status={status} consecutiveFailures={consecutiveFailures} />

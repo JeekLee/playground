@@ -89,7 +89,36 @@ public class BuildServicesUseCase {
         return switch (target.kind()) {
             case SPARK -> sparkCell(target);
             case BC, OBSERVABILITY -> scrapeAndActuatorCell(target);
+            case STACK -> stackCell(target);
         };
+    }
+
+    /**
+     * Stack container verdict — cAdvisor {@code container_last_seen} age 단일
+     * 시그널로 결정 (ADR-15 §13 amended). actuator도 없고 {@code up{}} scrape
+     * 도 없는 컨테이너 (postgres / redis / kafka / opensearch / frontend).
+     */
+    private Mono<ServiceCell> stackCell(ServiceProbeTarget target) {
+        return prometheus.instantQuery(PromQlTemplate.containerLastSeenAge(target.name()))
+                .map(samples -> containerAgeSeconds(samples))
+                .map(age -> {
+                    HealthVerdict.Status status = HealthVerdict.fromContainerAge(age);
+                    return new ServiceCell(target.name(), status.token(), null, null, null, null, null);
+                })
+                // PromQL 오류 → down (정보 없음)
+                .onErrorReturn(downCell(target.name()));
+    }
+
+    /**
+     * `time() - container_last_seen` 결과를 단일 age로 추출. 빈 결과 또는
+     * NaN은 {@link Double#NaN} 반환 → {@link HealthVerdict#fromContainerAge}가
+     * down으로 처리.
+     */
+    static double containerAgeSeconds(List<PrometheusSample> samples) {
+        if (samples == null || samples.isEmpty()) {
+            return Double.NaN;
+        }
+        return samples.get(0).value();
     }
 
     /**

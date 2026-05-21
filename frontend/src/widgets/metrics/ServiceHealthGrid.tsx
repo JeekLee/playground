@@ -2,162 +2,185 @@
 
 import { CheckCircle2, AlertTriangle, OctagonAlert, Circle } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
-import type { ServiceHealth, ServiceStatus } from '@/entities/metrics';
+import { displayName } from '@/shared/lib/serviceLabel';
+import type {
+  ContainerSummary,
+  ServiceHealth,
+  ServiceStatus,
+} from '@/entities/metrics';
 
 /**
- * ServiceHealthGrid — the 11-cell service health grid.
+ * ServiceHealthGrid — 16-cell unified container grid.
  *
- * **11 cells per ADR-15 §17** (NOT the 6-cell wireframe in spec §7.1
- * which is out of date — design context §1 calls this out explicitly):
- *   Row 1 (6 BCs): gateway · identity-api · docs-api · rag-ingestion ·
- *                  rag-chat-api · metrics-api
- *   Row 2 (5 cells): spark-inference-gateway · prometheus-playground ·
- *                    loki-playground · alloy-playground · cadvisor-playground
+ * 2026-05-21 amendment: ADR-15 §17의 11-cell service health grid +
+ * 별도 Containers 섹션을 단일 4×4 grid로 통합. spark-inference-gateway는
+ * Inference 섹션으로 분리 (Models loaded 카드에 status icon이 박힘).
  *
- * Each cell is 175 × 56 with 12px gaps. Row 2 is intentionally ragged
- * on the right — only 5 cells, not stretched to match row 1's width
- * (per design context §1 coordinate table).
+ * 16 카드 = 6 BC + 4 observability + 6 stack containers:
+ *   Row 1 (BCs):    gateway · identity-api · docs-api · rag-ingestion-api
+ *   Row 2 (BCs):    rag-chat-api · metrics-api · frontend · prometheus
+ *   Row 3 (obs):    loki · alloy · cadvisor · postgres
+ *   Row 4 (stack):  redis · kafka-broker · kafka-init · opensearch
  *
- * Visual variants (per design context §4.1):
- *  - `up`        — surface bg, border `border`, glyph `success`.
- *  - `degraded`  — `warning.soft` bg, `warning` border + glyph.
- *  - `down`      — `danger.soft` bg, `danger` border + glyph.
- *  - skeleton (status missing) — surface bg, `text.subtle` bullet glyph.
+ * 카드 종류:
+ *   - status + cpu/mem 둘 다 (BC + obs): services[] + containers[] 둘 다 hit.
+ *   - cpu/mem only (stack): containers[]만 hit, status는 `—`.
  *
- * Verdict source: ADR-15 §9 (BCs), §12 (spark probe), §17 (4
- * observability self-cells use each tool's native readiness endpoint).
+ * 카드 visual variant (per design context §4.1):
+ *   - `up`        — surface bg, border `border`, glyph `success`.
+ *   - `degraded`  — `warning.soft` bg, `warning` border + glyph.
+ *   - `down`      — `danger.soft` bg, `danger` border + glyph.
+ *   - status 없음 (stack) — surface bg, border `border`, glyph `text.subtle` bullet.
+ *   - skeleton (data null) — surface bg, `text.subtle` bullet glyph.
+ *
+ * Verdict source: ADR-15 §9 (BCs + observability — Prometheus `up{}` +
+ * actuator/readiness probe), ADR-15 §12 (spark — Inference 섹션으로 분리).
  */
 
-// Canonical row layout — driven by the slug, not the array order on
-// the wire, so the BC can ship rows in any order without breaking
-// the grid visually. (Per design context §2.1 the slug list is
-// pinned; missing slugs render the skeleton bullet variant.)
-//
-// 2026-05-21 amendment (ADR-15 §G): slugs는 container_name prefix와 일치하는
-// `playground-*` full name. label은 사용자 친화적 짧은 이름 (display name
-// helper 또는 명시적 override).
-const ROW_1: ReadonlyArray<{ slug: string; label: string }> = [
+interface CellSpec {
+  slug: string;
+  label: string;
+}
+
+// 4×4 grid 순서 — BC 우선, 그다음 obs, 그다음 stack. backend authority의
+// `BuildServicesUseCase.SERVICE_CELL_NAMES` 순서와 일치하는 한도 안에서.
+// status 정보 유무는 services[]에 해당 slug entry가 있는지로 dynamic 결정 —
+// 새 stack 컨테이너에 status가 부여되면 자동으로 ✅ icon 표시.
+const CELLS: ReadonlyArray<CellSpec> = [
+  // 6 BCs
   { slug: 'playground-backend-gateway', label: 'gateway' },
   { slug: 'playground-backend-identity-api', label: 'identity-api' },
   { slug: 'playground-backend-docs-api', label: 'docs-api' },
   { slug: 'playground-backend-rag-ingestion-api', label: 'rag-ingestion' },
   { slug: 'playground-backend-rag-chat-api', label: 'rag-chat-api' },
   { slug: 'playground-backend-metrics-api', label: 'metrics-api' },
-];
-
-const ROW_2: ReadonlyArray<{ slug: string; label: string }> = [
-  { slug: 'spark-inference-gateway', label: 'spark-gateway' },
+  // 4 observability
   { slug: 'playground-prometheus', label: 'prometheus' },
   { slug: 'playground-loki', label: 'loki' },
   { slug: 'playground-alloy', label: 'alloy' },
   { slug: 'playground-cadvisor', label: 'cadvisor' },
+  // 6 stack containers
+  { slug: 'playground-frontend', label: 'frontend' },
+  { slug: 'playground-postgres', label: 'postgres' },
+  { slug: 'playground-redis', label: 'redis' },
+  { slug: 'playground-kafka-broker', label: 'kafka-broker' },
+  { slug: 'playground-kafka-init', label: 'kafka-init' },
+  { slug: 'playground-opensearch', label: 'opensearch' },
 ];
 
 export interface ServiceHealthGridProps {
-  /**
-   * Services array from `DashboardResponse.services`. When null, the
-   * grid renders all 11 cells in skeleton state (design context
-   * Frame 3).
-   */
   services: ServiceHealth[] | null;
+  containers: ContainerSummary[] | null;
 }
 
-export function ServiceHealthGrid({ services }: ServiceHealthGridProps) {
-  const bySlug: Map<string, ServiceHealth> = services
+export function ServiceHealthGrid({ services, containers }: ServiceHealthGridProps) {
+  const bySvc: Map<string, ServiceHealth> = services
     ? new Map(services.map((s) => [s.name, s]))
+    : new Map();
+  const byContainer: Map<string, ContainerSummary> = containers
+    ? new Map(containers.map((c) => [c.name, c]))
     : new Map();
 
   return (
     <section aria-labelledby="metrics-service-health" className="flex flex-col gap-sm">
-      <h2
-        id="metrics-service-health"
-        className="text-eyebrow text-text-muted"
-      >
+      <h2 id="metrics-service-health" className="text-eyebrow text-text-muted">
         Service health
       </h2>
-      {/* Two rows. Row 1: 6 cells. Row 2: 5 cells, left-aligned (intentional ragged-right). */}
-      <div className="flex flex-col gap-[12px]">
-        <div className="grid grid-cols-6 gap-[12px]">
-          {ROW_1.map(({ slug, label }) => (
-            <ServiceHealthCell key={slug} slug={slug} label={label} entry={bySlug.get(slug)} />
-          ))}
-        </div>
-        <div className="grid grid-cols-6 gap-[12px]">
-          {ROW_2.map(({ slug, label }) => (
-            <ServiceHealthCell key={slug} slug={slug} label={label} entry={bySlug.get(slug)} />
-          ))}
-          {/* Sixth column intentionally empty — ragged-right per design. */}
-          <div aria-hidden="true" />
-        </div>
+      <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-4">
+        {CELLS.map(({ slug, label }) => (
+          <ServiceHealthCell
+            key={slug}
+            label={label}
+            status={bySvc.get(slug)}
+            resource={byContainer.get(slug)}
+            servicesLoaded={services !== null}
+            containersLoaded={containers !== null}
+          />
+        ))}
       </div>
     </section>
   );
 }
 
 interface ServiceHealthCellProps {
-  slug: string;
   label: string;
-  entry: ServiceHealth | undefined;
+  status: ServiceHealth | undefined;
+  resource: ContainerSummary | undefined;
+  servicesLoaded: boolean;
+  containersLoaded: boolean;
 }
 
-function ServiceHealthCell({ label, entry }: ServiceHealthCellProps) {
-  // Missing entry → render the skeleton bullet variant (Frame 3 row
-  // pattern). Per design context §2.3: icon `•` in `text.subtle`,
-  // service name `—`, detail `loading…`.
-  if (!entry) {
-    return (
-      <div className="flex h-[56px] flex-col justify-center gap-[2px] rounded-md border border-border bg-surface px-[12px] py-[10px]">
-        <div className="flex items-center gap-sm">
-          <Circle size={10} aria-hidden="true" className="text-text-subtle" />
-          <span className="truncate text-[13px] font-semibold text-text-subtle">—</span>
-        </div>
-        <span className="ml-[18px] truncate text-[11px] font-normal text-text-muted">
-          loading…
-        </span>
-      </div>
-    );
+function ServiceHealthCell({
+  label,
+  status,
+  resource,
+  servicesLoaded,
+  containersLoaded,
+}: ServiceHealthCellProps) {
+  // Skeleton: 양쪽 데이터가 모두 아직 안 도착했으면 placeholder.
+  if (!servicesLoaded && !containersLoaded) {
+    return <SkeletonCell label={label} />;
   }
 
-  const detail = buildDetailLine(entry);
-  const variant = VARIANTS[entry.status];
+  const variant: keyof typeof VARIANTS = status?.status ?? 'neutral';
+  const v = VARIANTS[variant];
 
   return (
-    <div className={cn('flex h-[56px] flex-col justify-center gap-[2px] rounded-md border px-[12px] py-[10px]', variant.cell)}>
+    <div className={cn(
+      'flex h-[84px] flex-col justify-between gap-[2px] rounded-md border px-[12px] py-[10px]',
+      v.cell,
+    )}>
       <div className="flex items-center gap-sm">
-        <StatusGlyph status={entry.status} />
+        <StatusGlyph status={status?.status} />
         <span className="truncate text-[13px] font-semibold text-text">{label}</span>
       </div>
       <span className="ml-[18px] truncate text-[11px] font-normal text-text-muted">
-        {detail}
+        {detailLine(status)}
+      </span>
+      <span className="ml-[18px] truncate text-[11px] font-medium text-text">
+        {resourceLine(resource)}
       </span>
     </div>
   );
 }
 
-const VARIANTS: Record<ServiceStatus, { cell: string }> = {
+function SkeletonCell({ label }: { label: string }) {
+  return (
+    <div className="flex h-[84px] flex-col justify-between gap-[2px] rounded-md border border-border bg-surface px-[12px] py-[10px]">
+      <div className="flex items-center gap-sm">
+        <Circle size={10} aria-hidden="true" className="text-text-subtle" />
+        <span className="truncate text-[13px] font-semibold text-text-subtle">{label}</span>
+      </div>
+      <span className="ml-[18px] truncate text-[11px] font-normal text-text-muted">loading…</span>
+      <span className="ml-[18px] truncate text-[11px] font-medium text-text-subtle">—</span>
+    </div>
+  );
+}
+
+type VariantKey = ServiceStatus | 'neutral';
+const VARIANTS: Record<VariantKey, { cell: string }> = {
   up: { cell: 'bg-surface border-border' },
   degraded: { cell: 'bg-warning-soft border-warning' },
   down: { cell: 'bg-danger-soft border-danger' },
+  neutral: { cell: 'bg-surface border-border' },
 };
 
-function StatusGlyph({ status }: { status: ServiceStatus }) {
+function StatusGlyph({ status }: { status?: ServiceStatus }) {
   if (status === 'up') {
     return <CheckCircle2 size={13} aria-hidden="true" className="text-success" />;
   }
   if (status === 'degraded') {
     return <AlertTriangle size={13} aria-hidden="true" className="text-warning" />;
   }
-  return <OctagonAlert size={13} aria-hidden="true" className="text-danger" />;
+  if (status === 'down') {
+    return <OctagonAlert size={13} aria-hidden="true" className="text-danger" />;
+  }
+  // status 없음 (stack 컨테이너) — bullet
+  return <Circle size={10} aria-hidden="true" className="text-text-subtle" />;
 }
 
-/**
- * The detail-line copy in each cell. Falls back through:
- *   1. `note` (free-form from BC, used for observability cells
- *      and spark degraded).
- *   2. Uptime → `up · 3h 32m` / `down · last seen …`.
- *   3. Status-only `up` / `degraded` / `down`.
- */
-function buildDetailLine(entry: ServiceHealth): string {
+function detailLine(entry: ServiceHealth | undefined): string {
+  if (!entry) return '—';
   if (entry.note) {
     return `${entry.status} · ${entry.note}`;
   }
@@ -168,6 +191,21 @@ function buildDetailLine(entry: ServiceHealth): string {
     return `up · p95 ${entry.latencyP95Ms} ms`;
   }
   return entry.status;
+}
+
+function resourceLine(resource: ContainerSummary | undefined): string {
+  if (!resource) return '—';
+  const cpu = resource.cpuPct;
+  const mem = resource.memUsedMb;
+  if (cpu === 0 && mem === 0) return '—';
+  return `${cpu.toFixed(1)}% · ${formatMb(mem)}`;
+}
+
+function formatMb(mb: number): string {
+  if (mb >= 1024) {
+    return `${(mb / 1024).toFixed(1)} GB`;
+  }
+  return `${Math.round(mb)} MB`;
 }
 
 function formatUptime(seconds: number): string {

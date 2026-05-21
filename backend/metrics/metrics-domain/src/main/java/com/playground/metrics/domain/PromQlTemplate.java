@@ -267,6 +267,22 @@ public final class PromQlTemplate {
                 "max by (service) (sum_over_time(up{service=\"%s\"}[12s]))", svc);
     }
 
+    /**
+     * 스택 컨테이너의 verdict 시그널 — cAdvisor가 마지막으로 메트릭을 emit한 후
+     * 흐른 초. {@code HealthVerdict#fromContainerAge}가 이 값을 받아 ADR-15 §13
+     * (amended) 룰로 verdict 결정.
+     *
+     * <p>cAdvisor는 같은 컨테이너에 대해 cgroup level별로 여러 row를 emit하므로
+     * {@code max by (name)}으로 가장 최신 emit 시점을 단일화.
+     */
+    public static String containerLastSeenAge(String name) {
+        if (!ContainerAllowlist.contains(name)) {
+            throw new IllegalArgumentException("Unknown container: " + name);
+        }
+        return String.format(
+                "time() - max by (name) (container_last_seen{name=\"%s\"})", name);
+    }
+
     public static String jvmHeap(String svc) {
         return resolve("jvm-heap-" + svc);
     }
