@@ -60,11 +60,14 @@ public class BuildDashboardUseCase {
             "playground-backend-rag-chat-api",
             "playground-backend-metrics-api");
 
-    /** Three HTTP-bearing services per spec §5.2 httpRate[] array. */
-    private static final List<String> HTTP_SERVICES = List.of(
-            "playground-backend-gateway",
-            "playground-backend-rag-chat-api",
-            "playground-backend-docs-api");
+    /**
+     * Every HTTP-bearing Spring Boot BC. Spec §5.2는 원래 3개 (gateway,
+     * rag-chat-api, docs-api)였지만, 2026-05-21 amendment에서 운영 가시성
+     * 위해 6개 BC 전체로 확장 — 모든 actuator/Spring MVC traffic을 한
+     * row에 노출. rag-ingestion-api처럼 HTTP 트래픽 적은 BC도 actuator
+     * health-check + Spring observation을 통해 rate가 비등하게 나옴.
+     */
+    private static final List<String> HTTP_SERVICES = JVM_SERVICES;
 
     private static final String SPARK_GATEWAY_URL = "host.docker.internal:10080";
 

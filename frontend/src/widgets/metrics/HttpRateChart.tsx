@@ -96,13 +96,16 @@ export function HttpRateChart({ service, http, range, pollKey }: HttpRateChartPr
   );
 }
 
-// 2026-05-21 amendment (ADR-15 §G): slugs는 container_name prefix와 일치하는
-// `playground-backend-*` full name. 백엔드의 `BuildDashboardUseCase.HTTP_SERVICES`
-// 와 동일 순서.
+// 2026-05-21 amendment (ADR-15 §G): 모든 BC를 표시. 백엔드의
+// `BuildDashboardUseCase.HTTP_SERVICES`와 동일 순서 (6개 BC). rag-ingestion-api
+// 처럼 HTTP 트래픽 적은 BC도 actuator health-check rate가 visible.
 const HTTP_ORDER: ReadonlyArray<string> = [
   'playground-backend-gateway',
-  'playground-backend-rag-chat-api',
+  'playground-backend-identity-api',
   'playground-backend-docs-api',
+  'playground-backend-rag-ingestion-api',
+  'playground-backend-rag-chat-api',
+  'playground-backend-metrics-api',
 ];
 
 export interface HttpRateRowProps {
@@ -124,7 +127,7 @@ export function HttpRateRow({ http, range, pollKey }: HttpRateRowProps) {
     : new Map();
 
   return (
-    <div className="grid grid-cols-1 gap-[12px] md:grid-cols-3">
+    <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-4">
       {HTTP_ORDER.map((slug) => (
         <HttpRateChart
           key={slug}

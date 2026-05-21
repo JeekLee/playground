@@ -169,7 +169,7 @@ export function JvmHeapRow({ jvm, range, pollKey }: JvmHeapRowProps) {
       <h2 id="metrics-jvm" className="text-eyebrow text-text-muted">
         JVM heap per BC
       </h2>
-      <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-[12px] md:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => (
           <JvmHeapChart
             key={item.slug}
