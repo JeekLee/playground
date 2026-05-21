@@ -144,11 +144,10 @@ function BottomMixedRow({
       <h2 id="metrics-traffic" className="text-eyebrow text-text-muted">
         HTTP request rate · spark-inference-gateway
       </h2>
-      {/* Per design context §2.1 — mixed-width row anchored to the
-          bottom of the viewport. 3 HTTP rate cards (narrow) + Spark
-          latency wide card + Spark models small card. We approximate
-          with a CSS grid: 3 portrait cards + the panel on a 2/1 split. */}
-      <div className="grid grid-cols-1 gap-[12px] xl:grid-cols-[repeat(3,175px)_minmax(0,1fr)]">
+      {/* Per design context §2.1 — bottom row. 3 HTTP rate cards (narrow)
+          + Spark models small card. Spark latency 카드는 보류 (http_client_*
+          메트릭 미emit; 별도 PR에서 복원 예정). */}
+      <div className="grid grid-cols-1 gap-[12px] xl:grid-cols-[repeat(4,175px)_minmax(0,1fr)]">
         <HttpRateCells
           http={data?.httpRate ?? null}
           range={range}
@@ -157,8 +156,6 @@ function BottomMixedRow({
         <SparkGatewayPanel
           spark={data?.sparkGateway ?? null}
           uptimeSec={sparkUptime}
-          range={range}
-          pollKey={pollKey}
         />
       </div>
     </section>
