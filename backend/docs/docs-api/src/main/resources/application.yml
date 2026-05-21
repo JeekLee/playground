@@ -91,6 +91,21 @@ spring:
           # available without a docs-api rebuild.
           model: ${SPRING_AI_VISION_MODEL:qwen3-vl-30b-a3b}
           temperature: 0.1
+          # ADR-16 §amendment 2026-05-21 — bench against the real KFI brief
+          # PDF (55 pages, 3 OCR pages) showed Vision-LLM hallucinates
+          # repeating text ("같은 도로명 무한 반복") on image-heavy pages
+          # (maps, diagrams) and consumes max-tokens. Two safeguards:
+          #   - max-tokens cap (1200) — a normal page markdown is ~800-1100
+          #     tokens; 1200 leaves slack for dense pages but caps blowups.
+          #   - frequency-penalty (0.5) — depresses repeated-token logits so
+          #     the "도로명 도로명 도로명…" pattern doesn't escape. 0.5 is the
+          #     conservative middle of OpenAI's [-2.0, 2.0] range; doesn't
+          #     measurably affect normal-page markdown quality.
+          # The 30-s per-page timeout (ADR-16) still acts as the final
+          # safety net — these knobs just push the bad path off the worst
+          # cliff. ADR-16 amendment captures the empirical rationale.
+          max-tokens: 1200
+          frequency-penalty: 0.5
 
 management:
   endpoints:
