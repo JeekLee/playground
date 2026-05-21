@@ -549,7 +549,7 @@ networks:
   # service has a `networks:` block, compose stops auto-attaching the default.
   default:
   # The Spark inference stack (`spark-inference-gateway` + per-model backends
-  # like `spark-inference-qwen3-30b-a3b`, `spark-inference-bge-m3`) lives in a
+  # like `spark-inference-qwen3-vl-30b-a3b`, `spark-inference-bge-m3`) lives in a
   # SEPARATE compose project on a bridge named `spark-inference-net`. Three
   # playground services (`rag-ingestion-api`, `rag-chat-api`, `metrics-api`)
   # join this bridge so the gateway's container DNS resolves directly. See
