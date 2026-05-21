@@ -1442,11 +1442,15 @@ new vision-model property.
 - **Vision model property** — `SPRING_AI_VISION_MODEL` env var
   (defaulting to `qwen3-vl-30b-a3b`) selects the vision endpoint
   on `spark-inference-gateway`. The existing text-chat property
-  `SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL` continues to select the
-  text endpoint (currently `qwen3-30b-a3b` per the 2026-05-21
-  config rev). Both models may be served by a single vLLM instance
-  with model-name aliasing, or by parallel vLLM instances behind
-  the same gateway — the BC code is identical either way.
+  `SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL` (and the lower-level
+  `SPRING_AI_CHAT_MODEL` env that drives it) is now defaulted to
+  the same `qwen3-vl-30b-a3b` ID — as of the 2026-05-21 swap the
+  single VL-MoE vLLM instance serves both text and vision via the
+  one OpenAI-compatible endpoint, so the BC code is identical and
+  the gateway routes one model name to one backend. (Two parallel
+  vLLM instances behind the gateway with distinct model names
+  remains a supported topology if the operator ever wants to split
+  the workload.)
 - **Model availability sequencing** — at the time of this
   amendment, `qwen3-vl-30b-a3b` is downloading on the operator's
   spark-inference-gateway. Backend tests use WireMock until the
