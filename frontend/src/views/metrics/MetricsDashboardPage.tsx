@@ -7,7 +7,7 @@ import { cn } from '@/shared/lib/cn';
 import {
   ContainerResourceTable,
   HostStatusRow,
-  HttpRateCells,
+  HttpRateRow,
   JvmHeapRow,
   RangePresetPills,
   ServiceHealthGrid,
@@ -137,28 +137,39 @@ function BottomMixedRow({
 }) {
   const sparkUptime = data?.services.find((s) => s.name === 'spark-inference-gateway')?.uptimeSec ?? null;
   return (
-    <section
-      aria-labelledby="metrics-traffic"
-      className="flex flex-col gap-sm"
-    >
-      <h2 id="metrics-traffic" className="text-eyebrow text-text-muted">
-        HTTP request rate · spark-inference-gateway
-      </h2>
-      {/* Per design context §2.1 — bottom row. 3 HTTP rate cards (narrow)
-          + Spark models small card. Spark latency 카드는 보류 (http_client_*
-          메트릭 미emit; 별도 PR에서 복원 예정). */}
-      <div className="grid grid-cols-1 gap-[12px] xl:grid-cols-[repeat(4,175px)_minmax(0,1fr)]">
-        <HttpRateCells
+    <>
+      <section
+        aria-labelledby="metrics-http-rate"
+        className="flex flex-col gap-sm"
+      >
+        <h2 id="metrics-http-rate" className="text-eyebrow text-text-muted">
+          HTTP request rate
+        </h2>
+        {/* 6 BC cards on a 4-col grid (4+2 rows). 2026-05-21 amendment —
+            spec §5.2의 3-card 버전에서 전 BC 가시화. */}
+        <HttpRateRow
           http={data?.httpRate ?? null}
           range={range}
           pollKey={pollKey}
         />
-        <SparkGatewayPanel
-          spark={data?.sparkGateway ?? null}
-          uptimeSec={sparkUptime}
-        />
-      </div>
-    </section>
+      </section>
+      <section
+        aria-labelledby="metrics-inference"
+        className="flex flex-col gap-sm"
+      >
+        <h2 id="metrics-inference" className="text-eyebrow text-text-muted">
+          Inference
+        </h2>
+        {/* Inference (spark-inference-gateway): Models loaded card. Latency
+            P95 카드는 보류 (http_client_* 메트릭 미emit; 별도 PR). */}
+        <div className="grid grid-cols-1 gap-[12px] md:grid-cols-[175px_minmax(0,1fr)]">
+          <SparkGatewayPanel
+            spark={data?.sparkGateway ?? null}
+            uptimeSec={sparkUptime}
+          />
+        </div>
+      </section>
+    </>
   );
 }
 
