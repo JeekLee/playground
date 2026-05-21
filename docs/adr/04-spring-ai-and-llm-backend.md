@@ -176,3 +176,46 @@ port.)
 
 ADR-04's other consequences (no fallback model, OpenAI-compatible
 endpoint shape, model-name verification responsibility) are unchanged.
+
+## Amendment (2026-05-21, ADR-16) — Vision modality introduction
+
+ADR-16 introduces the **first use of Spring AI's multimodal (vision)
+API** in this codebase. Every pin in this ADR — Spring AI 1.0 GA
+coordinate, `spark-inference-gateway` base URL, OpenAI-compatible
+endpoint shape, "no fallback model" consequence — is **unchanged**.
+The amendment is informational, recording the new modality and the
+new vision-model env var.
+
+- **Vision modality** — docs-api's `VisionOcrAdapter` (ADR-16 §2)
+  invokes `ChatClient.prompt().messages(UserMessage.builder().media(pngMedia).build()).options(ChatOptions.builder().model(...).build()).call().content()`
+  with a PNG attached as `Media`. This is Spring AI 1.0 GA's
+  multimodal API per the OpenAI image-input contract. The base URL
+  (`http://spark-inference-gateway:8000` via the `spark-inference-net`
+  external bridge per the 2026-05-20 amendment, with
+  `host.docker.internal:10080` as the fallback) is unchanged.
+- **Vision model env var** — `SPRING_AI_VISION_MODEL` (default
+  `qwen3-vl-30b-a3b` per ADR-16 §2) selects the vision endpoint on
+  `spark-inference-gateway`. The existing
+  `SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL` env var continues to select
+  the text endpoint (currently `qwen3-30b-a3b` per the 2026-05-21
+  swap from `Qwen3-32B`). Both models may share a single vLLM
+  instance with model-name aliasing, or run as parallel instances
+  behind the same gateway — the BC code is identical either way.
+- **Which services use Vision** — only `docs-api` (via
+  `docs-infra`'s `VisionOcrAdapter`) starting at M6. `rag-chat-api`
+  and `rag-ingestion-api` continue to use text-only Spring AI
+  calls; the text vs. vision split is per-call, not per-BC.
+- **No fallback model** — the original consequence holds. If
+  `spark-inference-gateway` is unreachable during a PDF upload's
+  OCR fallback, the affected pages contribute empty Markdown per
+  ADR-16 §3 (graceful per-page degradation), not a full upload
+  failure. The per-page softer surface is bounded by — and
+  consistent with — ADR-04's "no fallback model" invariant.
+- **Model availability note** — at the time of this amendment,
+  `qwen3-vl-30b-a3b` is downloading on the operator's
+  spark-inference-gateway. Backend integration tests use WireMock
+  until the model lands (per ADR-16 §14 + §16); a manual E2E gates
+  the full M6 acceptance.
+
+See `docs/adr/16-m6-docs-pdf.md` §2 + §6 + §7 + §16 for the full
+M6-Vision specification.
