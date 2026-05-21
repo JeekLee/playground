@@ -252,3 +252,154 @@ docs-api) will require an amendment to this ADR when it lands; it is
 See `docs/adr/13-m3-rag-ingestion.md` §2 (retry policies), §5 (race
 resolution via shared lock), §8 (DLQ topology), and amendment block §G.3
 for the full M3 specification.
+
+## Amendment 2026-05-22 (ADR-12 amendment, M6.1) — BC consolidation, exception retirement, topic reclassification
+
+The M6.1 master amendment in **ADR-12 (2026-05-22)** dissolves the
+rag-ingestion BC into docs. That collapse rewrites several rows of
+ADR-08's allowed-channels table and retires one sanctioned exception
+entirely. This block enumerates the changes; the original "Allowed
+channels" + "Forbidden channels" defaults remain in force for every BC
+pair this amendment does not touch.
+
+### A08.1. Exception 1 (rag-ingestion → docs-api `/internal/**`) — retired
+
+**Status flip:** Exception 1 (the `rag-ingestion` → `docs-api`
+`/internal/docs/public/{id}/body` + `/internal/docs/public/{id}` HTTP
+sanctioned route, originally introduced by ADR-12 §2 + ADR-13 §2) is
+**retired** as of M6.1. With the rag-ingestion BC dissolved into docs,
+the body fetch is an in-process JPA SELECT on `docs.documents` — no
+cross-BC HTTP, no `/internal/**` round trip, no WebClient.
+
+The `/internal/docs/public/{id}/body` and `/internal/docs/public/{id}`
+routes on `docs-api` are **kept defensively** (in case a future BC needs
+to revive a cross-BC body-fetch under a new ADR-08 exception), but
+their only M6 caller — `rag-ingestion-infra`'s WebClient — no longer
+exists. The controller file (`InternalDocumentController` in docs-api)
+stays in the codebase; the route stays compose-internal (gateway does
+not forward `/internal/**`); no caller exercises it in M6.1.
+
+If a future M6.x or M7+ BC wants to call these routes, that milestone's
+ADR adds a fresh ADR-08 exception row — the same discipline ADR-12
+established. The route's existence today is **not** an implicit standing
+authorization.
+
+### A08.2. Exception 2 (Redis lock) — survives, namespace renamed
+
+**Status:** Exception 2 (Redisson `RLock` for ingestion idempotency,
+originally `rag-ingestion:lock:document:{id}`) **survives semantically**
+— the chunking + embedding pipeline still races on duplicate Kafka
+event delivery and still needs a distributed lock. The lock key
+namespace renames:
+
+- Before M6.1: `rag-ingestion:lock:document:{id}`
+- After M6.1: `docs:lock:document:{id}`
+
+The TTL cap (5 minutes), the abstraction (`DistributedLockPort` in
+`docs-app` — moved from `rag-ingestion-app`; `RedissonDistributedLockAdapter`
+in `docs-infra` — moved from `rag-ingestion-infra`), and the Redisson
+starter coordinate are all preserved verbatim. Only the namespace name
+changes.
+
+The Redis container (`redis-playground`) is shared with Spring Session
+(gateway) and the M2 view-counter dedup (`view:*` namespace, owned by
+docs-api per ADR-12 amendment 2026-05-17). The new `docs:lock:*`
+namespace and the existing `view:*` namespace are both owned by the
+same docs-api JVM; no cross-namespace reads, same as before.
+
+### A08.3. New direction — `docs-api` → `minio-playground` (S3 protocol)
+
+**Sanctioned use:** the docs BC writes uploaded blobs to MinIO and
+streams them back to the user on `GET /api/docs/{id}/source` + to the
+extraction worker on the in-BC `docs.document.extraction-requested`
+listener (ADR-12 amendment A12.4 + A12.5).
+
+| Direction | Channel | Notes |
+|---|---|---|
+| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol via MinIO Java SDK 8.5.x | **Sanctioned (this amendment)** — single-bucket access (`playground-docs-originals`); object key = `{document_id}.{ext}`; auth via shared `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` env vars; cascade-delete in the same transaction as the row delete (orphan cleanup via nightly `@Scheduled` job). |
+
+**Why MinIO and not Postgres BYTEA or `text` body alone:** ADR-12
+amendment A12.4 covers the full rationale. Summary: the multipart
+upload bytes need to survive the request-response cycle so the async
+worker can read them after the controller returns, and the user-visible
+"download original" affordance needs streamable access. Postgres BYTEA
+in `docs.documents` would push the 1 GiB-per-row TOAST ceiling into
+view at corpus scale; a sidecar object store is the standard answer.
+
+**No other BC may access this MinIO instance.** The same single-tenant
+invariant as the Redis namespace rule (A08.2) applies — future BCs
+needing object storage either (a) declare a new MinIO bucket they own
+exclusively, or (b) provision a separate object-store sidecar. The
+M6.1 amendment claims `playground-docs-originals` for docs and no
+other.
+
+### A08.4. Allowed-channels table (post-A08.1, A08.2, A08.3)
+
+| Direction | Channel | Notes |
+|---|---|---|
+| client (browser) -> gateway | HTTPS (HTTP in dev) | Cookie session |
+| gateway -> any BC `-api` | HTTP (compose-internal) | Per ADR-07 routing |
+| BC -> Kafka -> BC | Kafka events | Per ADR-03 envelope |
+| ~~`rag-ingestion` -> `docs-api` `/internal/**`~~ | ~~HTTP (compose-internal)~~ | **Retired by A08.1** — BC consolidated into docs |
+| BC -> external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
+| BC -> Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
+| BC -> OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment; per-BC index ownership |
+| gateway -> Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` -> Redis (`redis-playground`) — `view:*` namespace | Redis protocol | Sanctioned (ADR-12 amendment 2026-05-17) — view-counter dedup |
+| `docs-api` -> Redis (`redis-playground`) — `docs:lock:*` namespace | Redis protocol | **Sanctioned (this amendment §A08.2)** — distributed lock for ingestion idempotency (renamed from `rag-ingestion:lock:*`) |
+| `docs-api` -> `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) — boot-time owner resolution |
+| `docs-api` -> `minio-playground:9000` (S3) | HTTP / S3 protocol | **Sanctioned (this amendment §A08.3)** — single bucket `playground-docs-originals` |
+| `rag-chat-api` -> cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment) — narrowed in M6.1 (search_path drops `rag`); see A08.5 below |
+
+### A08.5. Cross-schema SELECT exception (ADR-14) — narrowed scope
+
+ADR-14's cross-schema SELECT exception (Exception 2 in informal
+notation — the rag-chat per-turn retrieval reads `rag.document_chunks` +
+`docs.documents` + `identity.users` via JDBC) **narrows** as part of M6.1:
+
+- `rag.document_chunks` → `docs.document_chunks` (per ADR-05 amendment
+  2026-05-22 — the `rag` schema is dropped).
+- rag-chat's Hikari `connection-init-sql` changes from
+  `SET search_path TO chat,docs,rag,identity,public` → `SET search_path
+  TO chat,docs,identity,public`.
+- The three cross-schema predicates in ADR-14's table reduce to **two
+  schemas** (`docs.*` + `identity.*`) instead of three (`rag.*` +
+  `docs.*` + `identity.*`). The retrieval predicate now hits
+  `docs.document_chunks` instead of `rag.document_chunks` — the JOIN
+  with `docs.documents` becomes intra-schema.
+
+This is a tightening, not a relaxation: the exception's surface drops
+from three schemas to two. No new exception is created; the
+chunks-table move is a SQL detail that flows through ADR-14's
+existing sanction.
+
+### A08.6. Kafka topic registry — informational cross-reference
+
+The `docs.document.uploaded`, `docs.document.visibility-changed`, and
+`docs.document.deleted` topics shift from **cross-BC** (docs →
+rag-ingestion in M3) to **in-BC** (docs producer, docs consumer) in
+M6.1. They continue to use Spring Modulith externalization → Kafka
+(operability + DLQ + cross-thread-pool decoupling), but they no longer
+participate in any cross-BC contract.
+
+A new in-BC topic `docs.document.extraction-requested` is added per
+ADR-12 amendment A12.8.
+
+The `rag.document.ingested` topic (ADR-13 §3) is **retired** —
+no consumer (M4 reads chunks via cross-schema SELECT, not via this event).
+
+ADR-03's topic registry receives these updates as part of the M6.1 PR
+set (the ADR-03 amendment block is added separately if material; the
+shape changes are descriptive and don't supersede ADR-03's naming +
+envelope invariants).
+
+### A08.7. Future-exception discipline (unchanged)
+
+Every future BC-to-BC HTTP path still requires a fresh ADR amendment
+row. M6.1's net effect on the cross-BC HTTP exception count is **-1**
+(Exception 1 retired; no new HTTP exception added). The MinIO direction
+(A08.3) is a new sanctioned external-service direction, not a BC-to-BC
+HTTP path; it does not affect the BC-to-BC HTTP exception count.
+
+See `docs/adr/12-m2-docs.md` amendment 2026-05-22 §A12.1 + §A12.4 +
+§A12.8 for the full M6.1 specification.

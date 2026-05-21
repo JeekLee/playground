@@ -1,9 +1,39 @@
 # ADR-13: M3 RAG-Ingestion — Implementation Decisions
 
 ## Status
-Accepted
+**Superseded by ADR-12 amendment 2026-05-22 (M6.1 BC consolidation).**
 
-## Context
+The `rag-ingestion` bounded context defined here is **dissolved into the
+`docs` BC** as of M6.1 (2026-05-22). The chunking algorithm, embedding
+adapter, pgvector schema, DLQ topology, and the `rag.document.ingested`
+event are all preserved in shape — they move from the `rag-ingestion-*`
+quadruplet into the `docs-*` quadruplet (chunker into `docs-domain`,
+ingestion orchestrator into `docs-app`, BGE-M3 + pgvector + DLQ adapters
+into `docs-infra`). The `rag` schema is dropped and its tables move into
+the `docs` schema (per ADR-05 amendment 2026-05-22). The `rag-ingestion-api`
+deployment is retired — extraction + chunking + embedding now run inside
+`docs-api` as an async Kafka-listener path on a dedicated `ExecutorService`.
+
+**What survives:** every concrete pin in this ADR (800-token windows + 120
+overlap, BGE-M3 dimension 1024, HNSW (m=16, ef_construction=64), DLQ topic
+suffix `.dlq` with 14-day retention, Redisson lock namespace
+`rag-ingestion:lock:document:{id}` — renamed to `docs:lock:document:{id}`,
+`body_checksum` per chunk, MarkdownAwareChunker default + token-window
+fallback). The pgvector index, the retry curve, and the chunking parameters
+are inherited verbatim by the docs BC.
+
+**What changes:** the BC boundary, the module quadruplet name, the port
+number (18083 retired), the schema name (`rag` → `docs`), the
+`docs.document.uploaded` event semantics (was cross-BC; now in-BC), and
+the addition of the new in-BC `docs.document.extraction-requested` topic
+(M6.1 — async PDF/MD extraction path).
+
+**Read this ADR for historical context only.** The current source of truth
+for ingestion behavior is `docs/adr/12-m2-docs.md` (amendment 2026-05-22).
+
+---
+
+## Context (original — preserved for history)
 
 The M3 PRD (`docs/prd/M3-rag-ingestion.md`) pins the bounded context, the three
 consumed Kafka topics (`docs.document.uploaded`, `docs.document.visibility-changed`,

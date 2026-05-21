@@ -8,6 +8,54 @@
 
 > **Amendment 2026-05-21 (M6 PRD cycle)** — M6 PRD (`docs/prd/M6-docs-pdf.md`) closed the spec §4 "binary storage / page-count" open question: the documents schema gains `mime_type` only — **`pdf_page_count` is NOT introduced**. PDFs are converted to markdown (via PDFBox text extraction + Vision LLM OCR fallback per page) and the page count concept does not survive that conversion. Consequently the doc-detail meta row in §2.6 drops the `(12 pages)` parenthetical — the tail is `· source: .pdf` only. §6.2 has no `(N pages)` cells to amend (the upload-error matrix never carried the page-count substring). This amendment touches §2.6 only (three occurrences inline in the prose); all other M6/M7/M8 surfaces are unchanged.
 
+> **Amendment 2026-05-22 (M6.1 — async extraction + MinIO + SSE).** M6.1 retrofits async extraction onto every PDF/MD upload (ADR-12 amendment 2026-05-22 §A12.2 + §A12.5). The M6 PRD's synchronous-request-thread shape is retired; the user's POST returns within milliseconds, the extraction runs on a dedicated `ExecutorService(n=5)` inside docs-api, and the doc detail page subscribes to a Server-Sent Events stream. This amendment threads three UX shifts through the existing M6 frames; **no new frames are created**, no token vocabulary changes.
+>
+> **Frame impact:** the M6 dropdown overlay (`78:1531`), the M6 doc detail with `(PDF)` badge (`78:1552`), and the M2 frames `30:859` / `30:860` / `31:66` / `36:191` / `36:246` that this design doc inherits from `docs/design/M2-docs.md` all receive textual + small-component amendments per the M2-docs amendment 2026-05-22 (which is the canonical home for the upload-UX details — that doc owns the upload flow, this doc owns the chat/tool-result flow). Frames `78:1329`, `78:1347`, `78:1392`, `78:1437` (the chat-side M7 + M8 frames) are **unchanged by M6.1** — the chat surface doesn't see the extraction pipeline directly; it sees the materialized body via the existing `[doc:{id}] {title}` context-injection pattern.
+>
+> **Shift A — §2.1 dropdown row 2 behavior post-upload.** The M6 dropdown's row 2 (`↑ Import .md or .pdf…`) previously navigated to `/docs/{id}` showing the populated doc immediately (since extraction was synchronous on the request thread). Post-M6.1, the click still navigates to `/docs/{id}` but the first paint shows the **Analyzing…** skeleton state (defined in `docs/design/M2-docs.md` amendment 2026-05-22 — slim `surface.soft` + `accent` border pill in the topbar-adjacent strip with copy `⏳ Analyzing… <N> pages` for PDFs). On SSE `completed` event the page reloads the body; on `failed` it shows a `danger`-bordered error card with the failure reason + a `Retry extraction` ghost button + the always-visible download-original affordance.
+>
+> **Shift B — §2.6 doc detail (PDF badge) gains the "Download original" affordance.** The `(PDF)` badge inline next to the title is preserved verbatim from §2.6. **New M6.1 addition:** to the right of the existing URL pill on the same row as the author block, a new `↓ Original .pdf` button — `surface` bg + `border` 1px + `radius.pill` 999, padding `8px 16px`, label in 11/500/`text.muted`. Renders only when the `documents` row was uploaded as a file (signal: `mime_type !== 'text/markdown'` OR the DTO carries an explicit `hasOriginal` boolean — implementer's call). Clicking it calls `GET /api/docs/{id}/source` which streams from the new MinIO sidecar (`minio-playground` per ADR-12 §A12.4) with the doc's visibility check applied (public → anyone via PLAYGROUND_ANON; private → owner only). Filename comes from the server's `Content-Disposition` header (`{title-slugified}.pdf`), so the saved file uses the doc title, not the UUID object key.
+>
+> **Shift C — §2.6 Analyzing… state coexists with the (PDF) badge.** While `extraction_status='processing'` (i.e., right after the upload, before the worker completes), the doc detail page renders:
+>
+> - **Title slot:** the filename stem (e.g., `KFI-청사-확충`) in the title typography — the title is populated synchronously at upload time, the body is not.
+> - **`(PDF)` badge inline with the title:** rendered immediately (the `mime_type` column is set at upload-INSERT time).
+> - **Author block:** rendered (author identity is known at upload time).
+> - **URL pill + Original .pdf button:** rendered (both work pre-extraction).
+> - **Analyzing… status pill** (NEW per Shift A): between the topbar and the article block, on a 4px-padded strip on `bg`, label `⏳ Analyzing… 23 pages` (the `23` is the PDFBox-derived page count, surfaced as a transient field via the DTO).
+> - **Body region:** the standard "Loading" skeleton (6 paragraph skeletons matching the article block geometry) per the M2 `/docs/{id}` loading state. **NOT a hard `Loading…` placeholder** — the visual continuity is "this doc exists, we're filling in the body".
+>
+> On SSE `completed`:
+> - The Analyzing pill closes (200ms fade or instant — implementer's call).
+> - The body region's skeleton swaps for the populated Markdown render.
+> - A 2s `success.soft` chip toast `✓ Analysis complete` appears in the topbar (implementer's standard toast slot).
+> - The `(PDF)` badge stays.
+>
+> On SSE `failed`:
+> - The Analyzing pill swaps to a `danger`-soft pill with copy `⚠ Analysis failed` (same `radius.pill`, swap `accent` → `danger`).
+> - The body region's skeleton swaps for a `danger`-bordered error card centered in the article column: title `Could not extract this PDF` in `font.h3` 16/600/`text`; body `<failure reason from server>` in `font.body` 15/400/`text.muted`; below that, a row with `Retry extraction` ghost button + `Open original` link button (the latter just routes to `GET /api/docs/{id}/source`).
+> - The `(PDF)` badge stays.
+> - **The user retains access to the original bytes** — the MinIO blob is intact, the download-original affordance works, the doc is recoverable. (This is the user-visible payoff of ADR-16 amendment §A16.4 — partial reversal of §13's "discard original bytes" policy.)
+>
+> **Reused / unchanged:**
+>
+> - **§2.2 — Generic `tool_result` card primitive (frame `78:1329`):** unchanged. The card pattern's slot anatomy is independent of the extraction pipeline.
+> - **§2.3 — M8 happy-path chat with `tool_result` (frame `78:1347`):** unchanged. The chat invokes `generate_massing` on an already-extracted doc; M6.1's async extraction is upstream of `/chat`.
+> - **§2.4 — Expanded program-details accordion (frame `78:1392`):** unchanged.
+> - **§2.5 — `tool_error` card (frame `78:1437`):** unchanged. M6.1 does add a new error class on the docs side (`EXTRACTION_FAILED` surfacing in the doc detail per Shift C), but the chat-side `BRIEF_EXTRACTION_FAILED` (M8) is a different error class — it fires when the user asks M8 to generate massing from a doc whose extraction completed but yielded no room program. The two error surfaces are independent; the doc detail's "Analysis failed" state is a precondition the chat doesn't need to handle (a user can only chat against `completed` docs anyway — the chat composer's `[doc:{id}]` context-injection rejects `processing` / `failed` docs upstream).
+>
+> **Token usage:** every M6.1 addition reads from the existing token vocabulary already cataloged in §5 ("Tokens used — only existing; zero new"). Specifically:
+>
+> - Analyzing… status pill: `surface.soft` + `accent` (border + label) + `radius.pill` + `font.small`.
+> - "Analysis failed" status pill: same except `accent` → `danger`.
+> - Download-original button: `surface` + `border` + `radius.pill` + `font.small`/500/`text.muted`.
+> - "✓ Analysis complete" success toast: `success.soft` bg + `success` border + `radius.md` + `font.small`/500/`success` fg (standard M1 toast vocabulary).
+> - Error card replacing the body: `danger`-bordered card per the standard `danger` color treatment from the design system spec §6.3.
+>
+> Zero new tokens, zero new layout primitives, zero new components beyond the inline pill + button additions.
+>
+> **Operator-side rename hint:** the existing `78:1531` (M6 dropdown) and `78:1552` (M6 doc detail) frames don't need rename. Their state annotations could be updated via `set_text_content` to mention "Analyzing… skeleton on first paint", but this is optional — the M2-docs amendment owns the canonical upload-UX prose.
+
 Stage 2 output for the **brief-to-massing vertical** (M6 + M7 + M8 unified). **6 desktop frames at 1440 × 900**, built strictly against the playground design system tokens. The vertical's visual story:
 
 > architect uploads a brief PDF (M6) → opens `/chat` → asks `이 brief 보고 매싱 만들어줘` → LLM invokes `generate_massing` tool (M7 infra) → result card appears (M8 visual) → architect clicks **Download .3dm** → opens in Rhino.

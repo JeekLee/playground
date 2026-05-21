@@ -302,3 +302,130 @@ needs another ADR-05 amendment row. The exception is bounded to the three
 predicates above; the discipline does not relax beyond what is enumerated.
 
 See `docs/adr/14-m4-rag-chat.md` §3 + §F for the full specification.
+
+## Amendment (2026-05-22, ADR-12 amendment M6.1) — `rag` schema retired + MinIO sidecar
+
+The M6.1 master amendment in **ADR-12 (2026-05-22)** collapses the
+`rag-ingestion` BC into `docs`. The data-store implications:
+
+### A05.1. `rag` schema — retired
+
+**Decision:** the `rag` schema is dropped. Its only table —
+`rag.document_chunks` (introduced by ADR-13 §F and amended into ADR-05
+via the 2026-05-18 amendment) — moves into the `docs` schema:
+
+- **Before M6.1:** `rag.document_chunks` (HNSW index, body_checksum
+  column, three secondary B-tree indexes per ADR-05 amendment 2026-05-18).
+- **After M6.1:** `docs.document_chunks` (every column, every index,
+  every constraint preserved verbatim — only the schema prefix changes).
+
+**Migration mechanic** (operational, not architectural — full
+procedure in ADR-12 amendment A12.13):
+
+```sql
+ALTER TABLE rag.document_chunks SET SCHEMA docs;
+```
+
+The HNSW index, the secondary indexes, the `body_checksum` column, and
+the runtime hint (`SET LOCAL hnsw.ef_search = 40` per query — owned by
+rag-chat) are all preserved. No DDL change beyond the schema move.
+
+The `rag.event_publication` table (Spring Modulith outbox) merges with
+the existing `docs.event_publication` — single outbox per BC per ADR-10
+§8. The merge procedure (copy unfinished rows, drop `rag.event_publication`)
+lives in ADR-12 amendment A12.13.
+
+After the schema drop, the **schema-per-BC** invariant (the load-bearing
+rule of this ADR) is **strengthened**: M6.1 has one fewer schema, and
+the cross-schema SELECT exception (ADR-14 amendment 2026-05-18) reduces
+its surface from three schemas (`rag,docs,identity`) to two
+(`docs,identity`). The schema list at the top of this ADR becomes:
+
+| Schema | Owned by | Notes |
+|---|---|---|
+| `identity` | `identity` service | Users, OAuth links |
+| `docs` | `docs` service | Document metadata; raw MD body as TEXT; chunks + pgvector embeddings; outbox table |
+| ~~`rag`~~ | ~~`rag-ingestion` + `rag-chat`~~ | **Retired by this amendment** — table moved to `docs` schema |
+| `chat` | `rag-chat` service | Chat sessions, messages, citations |
+| `metrics` | `metrics` service | Snapshot history (stateless in M5 per ADR-15 — no `metrics` schema is provisioned in P0; the slot is reserved) |
+| `flyway_<schema>` | per-service Flyway | Each service's migration history table |
+
+The total schema count drops from 4 to 3 (excluding the
+`flyway_<schema>` per-service histories).
+
+### A05.2. MinIO sidecar — original-blob storage for the docs BC
+
+**Decision:** a new compose-internal MinIO instance
+(`minio-playground`) is provisioned as a sidecar for the docs BC.
+**This is the activation of the "object storage — reserved slot" that
+ADR-05's 2026-05-17 amendment penciled in for M2.1**, materialized one
+milestone early because M6.1's async extraction shape requires the
+original PDF/MD bytes to survive the upload request-response cycle.
+
+| Concern | Pin |
+|---|---|
+| Compose service name | `minio-playground` (replaces the reserved `objectstore-playground` slot from the 2026-05-17 amendment — the slot was unpinned; M6.1 pins it) |
+| Image | `minio/minio:RELEASE.2025-04-08T15-41-24Z` (latest stable as of the M6.1 PR; infra-implementer may bump to current latest) |
+| Compose-internal port | `9000` (S3 API), `9001` (console) |
+| Host-exposed port | `10294` (S3 API), `10295` (console) — both in the `102xx` block, after `opensearch-playground:10292/10293-reserved` |
+| Volume | `minio-playground-data` (named volume) |
+| Bucket | `playground-docs-originals` (only one bucket in M6.1; reserved naming pattern `<bc>-<purpose>` per ADR-05's 2026-05-17 amendment is honored — `<bc>=docs`, `<purpose>=originals`) |
+| Auth | Single root user, `MINIO_ROOT_USER` + `MINIO_ROOT_PASSWORD` from `.env`; compose-internal network only; security plugin sufficient for personal scale (no per-service role split in M6.1) |
+| Bucket ownership | `docs-api` only. Future BCs adding object-store usage either declare their own bucket on `minio-playground` (and add a per-milestone ADR row enumerating the bucket name) or provision a separate sidecar. Cross-bucket access is forbidden by the same principle as cross-schema DB access. |
+| Java client | `io.minio:minio:8.5.x` on docs-infra's classpath. `BlobStoragePort` interface in `docs-app`; `MinioBlobStorageAdapter` in `docs-infra` (per ADR-02 layering). |
+| Multipart-upload streaming | `MinioClient.putObject(InputStream, size, ...)` — never materializes the full blob into a `byte[]`. Spring Multipart's `file-size-threshold` stays at 1 MB (ADR-16 §8); larger uploads spill to a temp file and the file-backed `getInputStream()` re-streams to MinIO. |
+| Download streaming | `MinioClient.getObject(...)` → response output stream; never buffers full blob. |
+| Cascade-delete | On `DELETE /api/docs/{id}`, the `MinioBlobStorageAdapter.delete(documentId)` call runs inside the same Spring transaction boundary as the row delete and the Kafka outbox publish. If MinIO is unreachable, the SQL delete + event publish still commit; orphan cleanup runs nightly (`@Scheduled` — same pattern as ADR-12 §11 counter resync). |
+| Health check | `curl -sf http://localhost:9000/minio/health/live` (built into the MinIO image) |
+
+The full compose service block, the bucket-key convention
+(`{document_id}.{ext}`), and the download endpoint (`GET /api/docs/{id}/source`,
+visibility-aware auth) live in ADR-12 amendment A12.4. ADR-05 carries
+only the data-store-level pins.
+
+### A05.3. Updated reservation table
+
+The 2026-05-17 amendment's "object storage — reserved slot (M2.1+,
+vendor unpinned)" section is **superseded by A05.2 above** — vendor is
+pinned (MinIO), port is pinned (10294/10295), bucket naming is honored.
+The "MD body storage stays in Postgres for M2" guidance also continues
+to hold for M6.1 — MD body in `docs.documents.body` (TEXT, 10 MB cap
+per ADR-16 §11) is unaffected. **Only the original uploaded blob (the
+PDF or the source MD file) lives in MinIO; the extracted Markdown lives
+in Postgres as before.**
+
+A 6th reservation slot opens for any future BC's object store needs:
+
+- **Compose service name (reserved):** (TBD by next-milestone ADR)
+- **Host-exposed port (reserved):** `10296` (next in the `102xx` block)
+
+### A05.4. Updated schema-per-service connection settings
+
+The `docs-api` Hikari connection-init-sql is unchanged by M6.1:
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      connection-init-sql: "SET search_path TO docs, public"
+  jpa:
+    properties:
+      hibernate:
+        default_schema: docs
+```
+
+The `rag-chat-api` Hikari connection-init-sql changes:
+
+```yaml
+# Before M6.1:
+# connection-init-sql: "SET search_path TO chat,docs,rag,identity,public"
+
+# After M6.1:
+connection-init-sql: "SET search_path TO chat,docs,identity,public"
+```
+
+`default_schema: chat` is preserved (Hibernate writes still land only in
+`chat`); only the read path's search_path narrows.
+
+See `docs/adr/12-m2-docs.md` amendment 2026-05-22 §A12.1 + §A12.4 +
+§A12.13 for the full M6.1 specification.

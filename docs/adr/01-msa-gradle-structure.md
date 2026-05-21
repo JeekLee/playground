@@ -206,3 +206,76 @@ Each layer module owns its own tests:
 - Negative: cross-module refactors (e.g., moving a class from `-app` to
   `-domain`) now touch two `build.gradle.kts` files plus the move. Acceptable
   cost for the layering guarantee.
+
+## Amendment 2026-05-22 (ADR-12 amendment M6.1) — BC count -1, module count -4, port 18083 freed
+
+The M6.1 master amendment in **ADR-12 (2026-05-22)** dissolves the
+`rag-ingestion` BC into `docs` (see ADR-12 §A12.1 for the rationale).
+The Gradle module map shrinks accordingly:
+
+### A01.1. Module list — `rag-ingestion-*` quadruplet removed
+
+The `rag-ingestion` BC's four-module quadruplet is **deleted**:
+
+- ~~`rag-ingestion-api`~~ — retired runnable Spring Boot app; the deployment is removed from compose.
+- ~~`rag-ingestion-app`~~ — retired Java library; `IngestionService`, `EmbeddingPort`, `ChunkRepositoryPort`, `DistributedLockPort`, `BodyFetchPort` move to `docs-app`.
+- ~~`rag-ingestion-domain`~~ — retired Java library; `MarkdownAwareChunker`, `Chunk` VO, `ChunkingPolicy` constants move to `docs-domain`.
+- ~~`rag-ingestion-infra`~~ — retired Java library; `BgeM3EmbeddingAdapter`, `PgvectorChunkRepositoryAdapter`, `RedissonDistributedLockAdapter`, Kafka listener containers, DLQ recoverer move to `docs-infra`.
+
+The directories `backend/rag-ingestion/rag-ingestion-{domain,app,infra,api}/`
+are `git rm`'d. Root `backend/settings.gradle.kts` removes the four
+`include(":rag-ingestion:rag-ingestion-*")` lines.
+
+Java package root: `dev.jeeklee.playground.ragingestion.*` is **deleted**
+in M6.1; the moved classes get their package roots rewritten to
+`dev.jeeklee.playground.docs.*` (matching the corresponding layer
+subpackage per ADR-02 — `domain.chunking.MarkdownAwareChunker`,
+`application.ingestion.IngestionService`, etc.).
+
+### A01.2. Updated module count + ADR-00 graph
+
+Five BCs (identity, docs, rag-chat, metrics) × four modules each + gateway +
+shared-kernel = **18 production modules** (down from 22 at the pre-M6.1
+post-ADR-15 count of 26 with metrics, or 22 at the pre-ADR-15 count).
+Counting the post-ADR-15 baseline of 26: **26 - 4 = 22 production modules
++ `buildSrc`** after M6.1.
+
+ADR-00's ASCII module dependency graph is redrawn in lockstep — the
+`rag-ingestion-api` lane is removed; the `docs.document.uploaded` arrow
+that used to point at `rag-ingestion-api` is rerouted as an in-BC
+loop on `docs-api`.
+
+### A01.3. Port table — 18083 freed
+
+Port 18083 returns to the **reservation pool**. The updated table:
+
+| Module | Port | Host-exposed? |
+|---|---|---|
+| `gateway` | **18080** | yes (single ingress) |
+| `identity-api` | **18081** | no (compose-internal) |
+| `docs-api` | **18082** | no |
+| ~~`rag-ingestion-api`~~ | ~~**18083**~~ | **Retired by this amendment** — port returned to reservation pool |
+| `rag-chat-api` | **18084** | no |
+| (reserved) | 18083 | freed by M6.1; reserved for next BC |
+| (reserved) | 18085 | reserved for next BC (per ADR-01 v2's original reservation) |
+| `metrics-api` | **18086** | no |
+
+The next BC slot to claim either 18083 or 18085 picks whichever fits its
+naming intent; both are equivalent for any new runnable.
+
+### A01.4. Convention plugins — no change
+
+The six convention plugins (`playground.{java-conventions,spring-boot-app,bc-{domain,app,api,infra}}`)
+are unchanged by M6.1. The dissolved rag-ingestion modules used the
+same plugins as the surviving docs modules; the layering rules carry
+over verbatim through the package-and-build-file `git mv`.
+
+### A01.5. Consequences (M6.1-specific)
+
+- **Positive:** four fewer modules in the project tree; IDE indexing cost drops; Gradle configuration time drops; the "where does X live" mental model simplifies.
+- **Positive:** the BC count drops from 6 to 5; the BC list aligns more cleanly with the user-facing surface (identity, docs, rag-chat, metrics — chat is built on top of docs's chunks read model, not a sibling BC).
+- **Negative:** the `docs` BC's surface area grows substantially — every responsibility the rag-ingestion BC held now sits inside docs-api's JVM, behind a single port and a single Tomcat thread pool. Operational reasoning ("if docs-api OOMs, what breaks") expands.
+- **Negative:** the four-module-per-BC pattern that ADR-01 v2 framed as "consistent across every BC" is broken in **size**: docs now ships heavier modules than identity / rag-chat / metrics. The *shape* (four modules per BC, layering enforced by classpath) is preserved.
+
+See `docs/adr/12-m2-docs.md` amendment 2026-05-22 §A12.1 + §A12.5 for
+the full M6.1 specification.

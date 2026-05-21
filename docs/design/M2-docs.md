@@ -447,6 +447,51 @@ Items the M2 spec v5 defers to M2.1, plus the P2 list:
 
 > **Post-S3 width override (2026-05-18).** The spec'd 720px prose column on `/docs/new`, `/docs/{id}` editor, and the `/docs/{id}` public reader was widened to **1100px** per user UX preference ("Notion wide mode" feel). Trade-off: line length grows to ~95–100 characters, slightly past the textbook 50–75 prose-readability range, in exchange for less wasted lateral whitespace on 1080p+ viewports. Affects `DocNewPage`, `DocEditor`, `DocReader`, `EditorSkeleton`. The 720px figure in §"Document (/docs/{id})" item §"Article" and §"New document editor" / §"Edit document" item §"Editor surface" should be read as 1100px for the live UI.
 
+> **Amendment 2026-05-22 (M6.1 BC consolidation + async extraction + MinIO + SSE).** This amendment threads three UX shifts through the existing M2 frames; **no new frames are created**, no token vocabulary changes, no layout shifts. The shifts touch upload UX (`/docs/new` + `+ New document` dropdown + drag-drop overlay), doc detail (`/docs/{id}` public + author views), and the editor's save-state pill.
+>
+> **(1) Upload now returns immediately with `extraction_status='processing'`.** Every upload — `.md` or `.pdf` — goes through the same async path post-M6.1 (ADR-12 amendment §A12.5). The user's POST returns `201 Created` within milliseconds; extraction (Markdown decode for `.md`, page-by-page Vision OCR for `.pdf`) runs on a dedicated `ExecutorService` inside docs-api. The doc detail page subscribes to a Server-Sent Events stream and pushes state transitions to the UI.
+>
+> Affects three existing surfaces:
+>
+> - **`+ New document → Import .md or .pdf…` dropdown overlay** (frame `30:859`): upload completion behavior changes. On file select, the dropdown closes immediately and the page navigates to `/docs/{newId}` showing the **Analyzing… skeleton state** (see (2) below). The existing "Uploading… `<filename>`…" transient on the dropdown card is preserved but its duration shrinks to a few hundred ms (the multipart-to-MinIO stream + DB insert; no extraction blocking).
+> - **Drag-drop import overlay** (frame `30:860`): same — drop completes, navigate to `/docs/{newId}` with the Analyzing… skeleton on first paint.
+> - **`/docs/new` editor's Publish-changes flow** (frame `36:191` + `36:246`): **unchanged** by M6.1 (those flows mutate existing rows whose bodies are already extracted; no extraction work fires).
+>
+> **(2) New "Analyzing…" skeleton state on `/docs/{id}` and `/docs/public/{id}` (reader surface)** while `extraction_status='processing'`:
+>
+> - **Layout:** identical to the existing "Loading" state (frame `31:66` "Empty / error / loading states" — title skeleton 70% width, author-block skeleton, URL-pill skeleton, meta-row skeleton, 6 paragraph skeletons). **New:** above the body skeletons, render a slim status pill in the topbar-adjacent strip (between topbar and the article block): `surface.soft` bg + `accent` 1px border + `radius.pill`, padding `8px 16px`, label `⏳ Analyzing… <N> pages` in `font.small` 13/500/`accent` for PDFs; `⏳ Analyzing…` (no page count) for `.md` (which completes in <1s and rarely sees this state). The page count comes from the `documents.mime_type` row reading `application/pdf` (page count is a transient field derived from PDFBox at upload time and surfaced via `GET /api/docs/{id}` — implementer's call whether to persist; the architect recommends transient since `pdf_page_count` is explicitly not a schema column per ADR-16 §9 + M6.1 amendment).
+> - **SSE subscription:** the page mounts an `EventSource` against `GET /api/docs/{id}/extraction-stream` on first paint (only when `extraction_status === 'processing'` on the initial SSR fetch). The hook lives in `frontend/src/features/docs-extraction-stream/`; it dispatches state to a `useExtractionStream(docId)` React hook that returns `{ status, reason, pageProgress? }`.
+> - **Lifecycle:**
+>   - On `completed` event → close `EventSource`, refetch `GET /api/docs/{id}` (returns the populated `body`), re-render the article block. Brief "✓ Analysis complete" `success`-soft chip toast for 2s in the topbar.
+>   - On `failed` event → close `EventSource`, render a `danger`-bordered error card in place of the body region: title `Could not extract this PDF`, body `<reason string from the server>` (e.g., `PDF_TOO_MANY_PAGES: 145 > 100. Try splitting the file into smaller PDFs.` or `Vision OCR service unavailable; retry shortly.`), and a `Retry extraction` ghost button. The retry button POSTs `/api/docs/{id}/re-extract` (a new endpoint implicit in M6.1 — implementer surfaces if needed; not blocking the design doc). The original PDF stays in MinIO and the user retains the source-download affordance even on extraction failure.
+>   - On 30s idle without any event → `EventSource`'s built-in reconnect kicks in; the skeleton state continues. The 30s keepalive ping (ADR-12 §A12.5) prevents this happening in normal operation.
+> - **Author-view skeleton on `/docs/new`'s editor:** the editor's first paint after a `.md` upload (where the user lands on the editor surface mid-extraction) hides the editor toolbar's `Publish` button and replaces the editor surface with the same Analyzing… skeleton + SSE wiring. On `completed` the editor surface flips to the populated editor; on `failed` it shows the error card with the original-download affordance + a Try a different file link.
+>
+> **(3) New "Download original" affordance on doc detail (`/docs/{id}` public + author views)** — a small button next to the existing copy-link URL pill, replacing or augmenting nothing else on the existing layout:
+>
+> - **Placement:** to the right of the URL pill on the same row as the author block. (For very long titles where the URL pill already wraps, the download button stacks below the URL pill — implementer's responsive call within the existing token set.)
+> - **Visual:** `surface` bg + `border` 1px stroke + `radius.pill` 999, padding `8px 16px`, label `↓ Original .pdf` (for PDFs) or `↓ Original .md` (for MDs), 11/500/`text.muted`. Rendered only when the `documents` row has been uploaded as a file (vs. authored in BlockNote); the implementer's signal is `mime_type` (present and either `application/pdf` or `text/markdown` with a separate `has_original` field on the DTO — alternatively, every row gets an original after M6.1 since the multipart upload streams to MinIO, in which case the affordance is unconditional; the architect leaves the conditional rendering to the implementer based on whichever signal the DTO carries).
+> - **Auth:** the button is rendered regardless of viewer auth state; clicking it navigates to `GET /api/docs/{id}/source` which streams from MinIO with the doc's visibility check applied (per ADR-12 §A12.4 — public docs anyone, private docs owner only; 404 indistinguishable on access denial).
+> - **Filename:** the browser receives `Content-Disposition: attachment; filename="{title-slugified}.{ext}"` so the saved file has the doc's title, not the UUID-keyed MinIO object name.
+>
+> **(4) Drag-drop import overlay copy update (frame `30:860`):**
+>
+> - **Label:** the centered drop-card title `Drop a .md or .pdf to import` (was `Drop .md to add to your documents` pre-M6 / pre-M6.1; updated for M6 to mention .pdf; this amendment keeps the M6 copy verbatim).
+> - **Subtitle:** unchanged — "Drag a file from your computer".
+> - **Error variant** (non-.md/non-.pdf dropped): the danger toast copy updates to `Only .md and .pdf files are accepted.`
+>
+> **(5) `+ New document` dropdown row 2 label** (frame `30:859`): `↑ Import .md or .pdf…` (per the M6 + M6.1 amendment). No additional change in M6.1.
+>
+> **Tokens:** zero new tokens. The Analyzing… status pill uses the existing `surface.soft` + `accent` + `radius.pill` + `font.small` token stack; the download original button uses the same `surface` + `border` + `radius.pill` token stack as the existing URL pill (and matches the M6 `(PDF)` badge's `radius.pill` rendering).
+>
+> **Frame impact:** no new frames created. The Analyzing… skeleton is a state of existing frames `31:66` (public detail) + `36:246` (author edit). The download-original button is added inline next to the existing URL pill on `31:66` + (post-M6) frame `78:1552` (M6 doc detail with PDF badge). The drag-drop overlay copy lives on `30:860`. All edits via `set_text_content` calls + small new rectangle/text components for the status pill and download button — well within Talk to Figma plugin capabilities.
+>
+> **Implementer notes:**
+>
+> - The SSE hook should be **reconnection-tolerant** — if the connection drops, `EventSource` reconnects automatically; the hook should re-subscribe after `GET /api/docs/{id}` returns a still-`processing` status. If the doc has already transitioned by the time reconnect lands, the SSE endpoint replays the current state immediately on connect (ADR-12 §A12.5).
+> - The "page count" surfaced in the Analyzing… pill is **informational only** — it's derived from PDFBox at upload time and passed through the `DocumentDetailResponse` DTO as a transient field. The implementer may also skip showing it (just `⏳ Analyzing…` without a number) if the DTO doesn't carry it — both are within the design doc's tolerance.
+> - On `failed` state, the **original-download button stays visible** — even though extraction failed, the original PDF bytes are intact in MinIO. This is the difference vs. M6 P0 where the original was discarded; M6.1's MinIO retention means the user always has the source.
+
 The following open questions carry into the per-milestone ADR / M3+ cycles:
 
 - **OpenGraph image generation.** Spec §7.4 includes `og:image` as an optional field. Three implementer options: (a) skip in M2 P0 (Twitter/Slack will fall back to the document title + description, which is already specified); (b) wire a Next.js OG image route (`app/docs/[id]/opengraph-image.tsx`) that renders a 1200×630 PNG server-side using the playground tokens; (c) defer to M2.1 with a static fallback image. Working default: (a) for M2 P0, with (b) tracked as an M2.1 task. Flagging for the implementer to confirm during Stage 3.
