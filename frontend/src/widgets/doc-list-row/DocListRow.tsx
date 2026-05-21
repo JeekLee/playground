@@ -1,7 +1,12 @@
 import { Eye, Heart, MoreHorizontal } from 'lucide-react';
 import { Chip } from '@/shared/ui/chip';
+import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { cn } from '@/shared/lib/cn';
-import { formatRelative, type MyDocumentListItem } from '@/entities/document';
+import {
+  formatRelative,
+  isPdfSourced,
+  type MyDocumentListItem,
+} from '@/entities/document';
 
 /**
  * DocListRow — single-row representation of one of the caller's docs on
@@ -33,6 +38,7 @@ export function DocListRow({ doc, className }: DocListRowProps) {
       <div className="flex min-w-0 flex-1 flex-col gap-xs">
         <div className="flex items-center gap-sm">
           <h3 className="truncate text-h3 text-text">{doc.title}</h3>
+          {isPdfSourced(doc) && <PdfBadge />}
           {isPublished ? (
             <Chip variant="accent">Published</Chip>
           ) : (

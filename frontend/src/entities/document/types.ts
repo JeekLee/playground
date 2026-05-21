@@ -19,6 +19,7 @@ import type {
   CreateDocRequestDto,
   DocDetailDto,
   DocListItemDto,
+  DocMimeType,
   DocVisibility,
   FolderListItemDto,
   MyDocListItemDto,
@@ -29,6 +30,7 @@ import type {
 } from '@/shared/api/docs';
 
 export type Visibility = DocVisibility;
+export type MimeType = DocMimeType;
 export type Author = AuthorDto;
 export type Document = DocDetailDto;
 export type DocumentListItem = DocListItemDto;

@@ -1,9 +1,15 @@
 import Link from 'next/link';
 import { Avatar } from '@/shared/ui/avatar';
 import { Chip } from '@/shared/ui/chip';
+import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { cn } from '@/shared/lib/cn';
 import { parseSnippet } from '@/shared/lib/snippet';
-import { authorInitials, formatRelative, type SearchHit } from '@/entities/document';
+import {
+  authorInitials,
+  formatRelative,
+  isPdfSourced,
+  type SearchHit,
+} from '@/entities/document';
 
 /**
  * SearchHitCard — single hit on `/docs/search`.
@@ -42,7 +48,12 @@ export function SearchHitCard({ hit, className }: SearchHitCardProps) {
         className,
       )}
     >
-      <h3 className="text-h3 text-text group-hover:text-accent">{hit.title}</h3>
+      <div className="flex flex-wrap items-center gap-sm">
+        <h3 className="min-w-0 flex-1 text-h3 text-text group-hover:text-accent">
+          {hit.title}
+        </h3>
+        {isPdfSourced(hit) && <PdfBadge />}
+      </div>
       {segments.length > 0 && (
         <p className="line-clamp-2 text-body text-text-muted">
           {segments.map((seg, i) =>

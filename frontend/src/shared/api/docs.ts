@@ -20,6 +20,18 @@
 
 export type DocVisibility = 'private' | 'public';
 
+/**
+ * Source-file MIME type for a document — M6 adds `application/pdf` alongside
+ * the M2 default `text/markdown`. The field is optional on the wire so the
+ * frontend keeps rendering pre-M6 backends (where the column hasn't been
+ * added yet) without crashing — `undefined` is treated as markdown via
+ * {@link isPdfSourced}. Once the backend ships `mimeType` on every row the
+ * field still stays optional in the type (forward-compat with future
+ * source types — `application/json`, `text/html`, …) but every real row
+ * will carry one of the two strings below.
+ */
+export type DocMimeType = 'text/markdown' | 'application/pdf';
+
 export interface AuthorDto {
   id: string;
   displayName: string;
@@ -37,6 +49,8 @@ export interface DocListItemDto {
   viewCount: number;
   likeCount: number;
   likedByMe?: boolean;
+  /** M6 — present once the backend ships PDF support; absent means markdown. */
+  mimeType?: DocMimeType;
 }
 
 export interface DocDetailDto {
@@ -59,6 +73,8 @@ export interface DocDetailDto {
   publishedAt?: string;
   createdAt: string;
   updatedAt: string;
+  /** M6 — present once the backend ships PDF support; absent means markdown. */
+  mimeType?: DocMimeType;
 }
 
 export interface MyDocListItemDto {
@@ -71,6 +87,8 @@ export interface MyDocListItemDto {
   publishedAt?: string;
   viewCount: number;
   likeCount: number;
+  /** M6 — present once the backend ships PDF support; absent means markdown. */
+  mimeType?: DocMimeType;
 }
 
 export interface CreateDocRequestDto {
@@ -105,6 +123,8 @@ export interface SearchHitDto {
   snippet: string;
   publishedAt?: string;
   updatedAt: string;
+  /** M6 — present once the backend ships PDF support; absent means markdown. */
+  mimeType?: DocMimeType;
 }
 
 export interface SearchResponseDto {
@@ -137,19 +157,38 @@ export interface FolderListResponse {
 
 // -------------------- Result type -----------------------------------------
 
+/**
+ * M6 — backend-issued upload error codes for `.md` / `.pdf` imports.
+ *
+ * Wire shape: the docs-api returns these as JSON bodies on 400/413:
+ *   { code: 'PDF_TOO_MANY_PAGES', message: 'PDF exceeds 200-page limit' }
+ *
+ * The frontend keys off `code` (stable contract) rather than the wire
+ * `message` (operator-friendly, may change) so the user-facing toast copy
+ * stays under design control. See {@link UPLOAD_ERROR_COPY} below for the
+ * one-to-one mapping used by `NewDocButton` and `DragDropImportOverlay`.
+ */
+export type DocUploadErrorCode =
+  | 'INVALID_FILE_TYPE'
+  | 'PDF_CORRUPTED'
+  | 'PDF_ENCRYPTED'
+  | 'PDF_TOO_MANY_PAGES'
+  | 'PDF_TOO_MANY_OCR_PAGES'
+  | 'FILE_TOO_LARGE';
+
 export type DocsResult<T> =
   | { kind: 'ok'; value: T }
   | { kind: 'unauthorized' }
   | { kind: 'not-found' }
-  | { kind: 'too-large' }
+  | { kind: 'too-large'; code?: DocUploadErrorCode }
   | { kind: 'service-unavailable' }
   | { kind: 'rate-limited' }
+  | { kind: 'upload-rejected'; code: DocUploadErrorCode; message?: string }
   | { kind: 'error'; status: number; message?: string };
 
 export async function parseResult<T>(res: Response): Promise<DocsResult<T>> {
   if (res.status === 401) return { kind: 'unauthorized' };
   if (res.status === 404) return { kind: 'not-found' };
-  if (res.status === 413) return { kind: 'too-large' };
   if (res.status === 429) return { kind: 'rate-limited' };
   if (res.status === 503) return { kind: 'service-unavailable' };
   if (res.ok) {
@@ -157,15 +196,52 @@ export async function parseResult<T>(res: Response): Promise<DocsResult<T>> {
     const value = (await res.json()) as T;
     return { kind: 'ok', value };
   }
-  let message: string | undefined;
+  // 400/413 may carry an M6 upload error code; surface it structurally so
+  // the caller can pick the right toast copy without parsing message text.
+  let body: { code?: string; message?: string } | undefined;
   try {
-    const body = (await res.json()) as { message?: string };
-    message = body.message;
+    body = (await res.json()) as { code?: string; message?: string };
   } catch {
-    // ignore
+    // No JSON body — fall through to the generic shapes below.
   }
-  return { kind: 'error', status: res.status, message };
+  const code = body?.code as DocUploadErrorCode | undefined;
+  if (res.status === 413) {
+    return { kind: 'too-large', code };
+  }
+  if (res.status === 400 && isUploadErrorCode(code)) {
+    return { kind: 'upload-rejected', code, message: body?.message };
+  }
+  return { kind: 'error', status: res.status, message: body?.message };
 }
+
+function isUploadErrorCode(code: string | undefined): code is DocUploadErrorCode {
+  return (
+    code === 'INVALID_FILE_TYPE' ||
+    code === 'PDF_CORRUPTED' ||
+    code === 'PDF_ENCRYPTED' ||
+    code === 'PDF_TOO_MANY_PAGES' ||
+    code === 'PDF_TOO_MANY_OCR_PAGES' ||
+    code === 'FILE_TOO_LARGE'
+  );
+}
+
+/**
+ * M6 — user-facing copy for each upload error code. Pinned by the
+ * Stage 3 dispatch (M6 design doc §6.2) so toast strings stay
+ * design-controlled. The 413 (`FILE_TOO_LARGE`) entry doubles as the
+ * fallback when the gateway/CDN truncates a too-large request without a
+ * body (no `code` field), so the user never sees a generic "Upload
+ * failed" line for the size cap.
+ */
+export const UPLOAD_ERROR_COPY: Record<DocUploadErrorCode, string> = {
+  INVALID_FILE_TYPE: 'Could not read this file — only .md or .pdf are supported.',
+  PDF_CORRUPTED: 'Could not read this PDF — try a different file.',
+  PDF_ENCRYPTED:
+    'This PDF is password-protected. Please remove the password and try again.',
+  PDF_TOO_MANY_PAGES: 'PDF too long (max 200 pages).',
+  PDF_TOO_MANY_OCR_PAGES: 'Scanned PDF too long (max 30 pages for OCR).',
+  FILE_TOO_LARGE: 'File too large (max 25 MB).',
+};
 
 // -------------------- Client-side helpers ---------------------------------
 
@@ -202,8 +278,19 @@ export async function createDocument(
 }
 
 /**
- * Multipart .md file upload variant of `POST /api/docs`. Per spec §6.2 the
- * server accepts a `.md` file part + optional `title` + optional `path`.
+ * Multipart file upload variant of `POST /api/docs`. Per spec §6.2 the
+ * server accepts a file part + optional `title` + optional `path`.
+ *
+ * M6 widens the accepted MIME branches from `.md` only to `{.md, .pdf}` —
+ * the backend (docs-api) detects the type via PDF magic bytes + falls
+ * through to markdown for `.md` per ADR-16. Wire shape on success is
+ * identical (`DocDetailDto`); the new `mimeType` field on the response
+ * tells the caller which branch the server took.
+ *
+ * The function name keeps the M2 alias (`importMarkdownDocument`) so older
+ * call sites don't churn; the actual semantics are "import a markdown or
+ * PDF source file." A future refactor can rename it to `importSourceFile`
+ * once every caller is touched.
  */
 export async function importMarkdownDocument(
   file: File,
@@ -402,10 +489,30 @@ export async function fetchOwner(): Promise<DocsResult<OwnerInfoDto>> {
 /** Per ADR-12 §4 — 1 MB raw Markdown body cap, enforced client + server. */
 export const MAX_BODY_BYTES = 1_048_576;
 
+/**
+ * M6 — multipart upload size cap. PDFs in particular are large; the
+ * backend (ADR-16) enforces 25 MB for the source file. The .md path stays
+ * subject to {@link MAX_BODY_BYTES} once extracted, but on the wire the
+ * upload itself is gated by this byte budget. Client-side check keeps an
+ * over-cap file from leaving the browser.
+ */
+export const MAX_UPLOAD_BYTES = 25 * 1_048_576; // 25 MB
+
 export function bodyByteSize(body: string): number {
   if (typeof TextEncoder !== 'undefined') {
     return new TextEncoder().encode(body).length;
   }
   // Fallback (older runtimes) — approximate; client always has TextEncoder.
   return Buffer.byteLength(body, 'utf8');
+}
+
+/**
+ * M6 — narrow predicate for "this document was uploaded as a PDF."
+ * Treats any unknown / absent `mimeType` as markdown so the frontend stays
+ * stable against pre-M6 backend responses (the field rolls out under a
+ * forward-compatible schema change — the column exists by the time M6 PR
+ * lands, but a re-deployed older snapshot still serves rows without it).
+ */
+export function isPdfSourced(doc: { mimeType?: DocMimeType }): boolean {
+  return doc.mimeType === 'application/pdf';
 }
