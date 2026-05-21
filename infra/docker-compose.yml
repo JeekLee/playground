@@ -250,12 +250,14 @@ services:
       # M6 ADR-16 — docs-api now does PDF page rendering for OCR fallback
       # (PDFBox `PDFRenderer.renderImageWithDPI(150)` produces an RGB
       # BufferedImage that's ~13 MB per A4 page, plus PNG + base64 + Spring
-      # AI request buffer per page). The original 512 MB cap (sufficient
-      # for M2's Markdown-only workload) OOM'd on the first real-world
-      # 55-page PDF. 1024 MB suits the page-by-page-sequential M6 P0
-      # workload with comfortable slack; operators tune via JAVA_TOOL_OPTIONS
-      # env override without rebuilding.
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx1024m}
+      # AI request body buffer per page). The MultipartFile.getBytes() path
+      # also pins the full uploaded PDF (≤25 MB cap) in memory while
+      # extraction is in progress. The original 512 MB cap OOM'd on the
+      # first real 55-page PDF; 1 GB also proved tight under concurrent
+      # Spring AI buffering, so M6 lands at 2 GB which suits a single-PDF
+      # page-by-page workload with comfortable slack. Operators tune via
+      # JAVA_TOOL_OPTIONS env override without rebuilding.
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx2048m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -269,6 +271,16 @@ services:
       OPENSEARCH_BASE_URL: ${OPENSEARCH_BASE_URL:-http://opensearch-playground:9200}
       IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://identity-api:18081}
       PLAYGROUND_OWNER_GOOGLE_SUB: ${PLAYGROUND_OWNER_GOOGLE_SUB:-}
+      # M6 ADR-16 — Spring AI Vision OCR. docs-api joins the
+      # spark-inference-net bridge (declared above) AND needs the same
+      # SPRING_AI_OPENAI_* envs the other consumer BCs (rag-chat-api /
+      # rag-ingestion-api / metrics-api) carry. Without these the OpenAI-
+      # compatible client falls through to application.yml defaults
+      # (base-url = host.docker.internal:10080, api-key = dummy-not-used),
+      # giving HTTP 401 'invalid master key' from spark-inference-gateway.
+      SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://spark-inference-gateway:8000}
+      SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
+      SPRING_AI_VISION_MODEL: ${SPRING_AI_VISION_MODEL:-qwen3-vl-30b-a3b}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18082/actuator/health || exit 1"]
       interval: 15s
