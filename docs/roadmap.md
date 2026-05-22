@@ -10,7 +10,7 @@
 | M5 | Metrics | Spark REST polling + Docker container status dashboard | planned |
 | M6 | Docs (PDF support) | M2 docs BC accepts PDF; Apache PDFBox text extraction feeds M3 unchanged | planned |
 | M7 | RAG-Chat (tool-calling) | rag-chat invokes external tool BCs via Spring AI 1.0 function-calling; generic infra | PRD + ADR-17 landed (2026-05-22); implementation pending |
-| M8 | massing-gen | New BC: brief PDF → room program → basic massing → .3dm via rhino3dm sidecar | planned |
+| M8 | massing-gen | New BC: brief PDF → room program → basic massing → .3dm via rhino3dm sidecar | PRD + ADR-18 landed (2026-05-22); implementation pending |
 
 ---
 
@@ -167,18 +167,34 @@ Per-user token bucket (60/hour, 200/day), `max_tokens=4000`, K=6 retrieved chunk
 
 **Goal:** Ship the first domain-specific tool BC — given a brief PDF document ID, extract the room program via LLM, run a basic massing algorithm, and return a Rhino `.3dm` file URL.
 
-**Acceptance:**
-- [ ] New BC `massing-gen-{api,app,domain,infra}` quadruplet (port 18086 candidate, ADR-18 confirms)
+**Acceptance (refined 2026-05-22 by ADR-18):**
+- [ ] New BC `massing-gen-{api,app,domain,infra}` quadruplet on **port 18083** (reclaimed from M6.1 retirement; spec §6's `18086` was stale — owned by `metrics-api` per ADR-01 §A01.3 — ADR-18 §2 pins 18083)
 - [ ] `POST /internal/tools/generate-massing` accepts `{ briefDocId, siteWidth?, siteDepth?, floorHeight? }` and returns `{ fileUrl, programJson, totalAreaM2, floorCount, summary }`
-- [ ] Brief reading via M2's existing `/internal/docs/{id}/body` (ADR-08 Exception 1 widened — see ADR-18)
-- [ ] LLM call (Qwen3-32B via spark-inference-gateway) extracts structured room program JSON from brief text
-- [ ] `MassingAlgorithm` in `-domain` (Spring-free) implements rectangular first-fit + area balance
-- [ ] `rhino3dm-bridge` Node sidecar container serializes box list → `.3dm` binary
-- [ ] New Postgres schema `arch` + table `arch.outputs` stores file_bytes (BYTEA), program_json (JSONB), brief_doc_id, user_id, total_area_m2, floor_count, created_at
-- [ ] `GET /api/arch/outputs/{id}` authenticated owner-only download endpoint
-- [ ] Tool descriptor registered in `rag-chat-domain.ToolCatalog`
-- [ ] Generated `.3dm` opens in Rhino without errors; total box area ≥ sum of required room areas
+- [ ] Brief reading via M2's existing `/internal/docs/public/{id}/body` (M6.1 defensively-preserved route revived under **fresh ADR-08 Exception 5** — NOT a revival of M6.1-retired Exception 1; ADR-18 §5 + §A08.12)
+- [ ] LLM call (Qwen3-32B via spark-inference-gateway) extracts structured room program JSON from brief text via Spring AI 1.0.0 GA `ChatClient` (M4/M7 uniformity)
+- [ ] `MassingAlgorithm` in `-domain` (Spring-free) implements rectangular first-fit + area balance; default `maxFloors=10` → throws `MASSING_ALGORITHM_FAILED` on over-area (ADR-18 §8)
+- [ ] `rhino3dm-bridge` Node 18-alpine sidecar (`rhino3dm@8.4.0`) serializes box list → `.3dm` binary; per-sidecar Resilience4j breaker `rhino3dm-bridge` (ADR-18 §11 + §17)
+- [ ] New Postgres schema `arch` + table `arch.outputs` stores file_bytes (BYTEA per ADR-18 §12), program_json (JSONB), brief_doc_id, user_id, total_area_m2, floor_count, summary (Korean-fixed), created_at
+- [ ] `GET /api/arch/outputs/{id}` authenticated owner-only download endpoint; owner mismatch → 404 (tenant-isolation invariant)
+- [ ] `MassingTool.DESCRIPTOR` registered in `rag-chat-domain.ToolCatalog` (single-line addition; the only rag-chat file M8 PR touches)
+- [ ] Generated `.3dm` opens in Rhino 7+ without errors; total box area ≥ sum of required room areas
 
-**Dependencies:** M0, M1, M2 (extended by M6), M3, M4, M7.
+**Dependencies:** M0, M1, M2 (extended by M6 + M6.1), M3 (consolidated into docs by M6.1), M4, M7.
 
-**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §6. Per-milestone ADR-18 closes open questions (`.3dm` library pin, Korean brief extraction prompt, output JSON Schema, over-area handling, file storage BYTEA vs object storage, orphan cleanup, BC name finalize, per-user rate limit).
+**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §6. PRD at `docs/prd/M8-massing-gen.md` (landed 2026-05-22). Per-milestone **ADR-18** (`docs/adr/18-m8-massing-gen.md`, landed 2026-05-22) closes the 14 open questions:
+- (Q-A) port: **18083** (spec §6's 18086 was stale — metrics-api owns it).
+- (Q-B) `summary` i18n: **Korean fixed** `"%d실 · %d층 · 총 %.0f m²"`.
+- (Q-C) LLM call form: **Spring AI 1.0.0 GA `ChatClient`** (uniformity with M4/M6/M7; reuses shared `spark-gateway` breaker).
+- (Q-D) M8-specific error code in frontend: **`<CODE>: <message>`** prefix grammar inside the existing `tool_error.message` (no M7 schema extension).
+- (Q-E) brief body fetch: **fresh ADR-08 Exception 5** (HTTP with identity propagation) — NOT a revival of M6.1-retired Exception 1; cross-schema SELECT was considered and rejected for BC isolation.
+- (Spec §6 #1) `.3dm` library: **`rhino3dm@8.4.0`** Node sidecar (`node:18-alpine`).
+- (Spec §6 #2) Korean brief prompt: pinned envelope (system + user template + 3-shot fixture); exact text owned by Stage-3 implementer.
+- (Spec §6 #3) `programJson` JSON Schema: pinned draft 2020-12 schema with `rooms` required, site dims optional; validator = **`com.networknt:json-schema-validator:1.5.3`**.
+- (Spec §6 #4) Over-area: **throw `MASSING_ALGORITHM_FAILED`**; default `maxFloors=10` (env-overridable).
+- (Spec §6 #5) File storage: **BYTEA inline** in `arch.outputs.file_bytes` (MinIO migration documented but deferred).
+- (Spec §6 #6) Orphan cleanup: **untouched** (dangling app-level FK; matches M4 citation pattern).
+- (Spec §6 #7) BC name: **`massing-gen`** (functional-prefix; confirmed).
+- (Spec §6 #8) Parameter granularity: **minimal 4 properties** (`briefDocId` + 3 optional site/floor params); richer params deferred to M8.1.
+- (Spec §6 #9) Per-user rate limit: **none** in P0 (chat-level token bucket covers).
+
+Amends ADR-01 (§A01.6–§A01.10 — module count 22 → 26 + port 18083 reclaimed), ADR-05 (§A05.5–§A05.8 — `arch` schema + `arch.outputs` DDL), ADR-08 (§A08.11–§A08.15 — Exception 4 first sub-row + Exception 5 introduced). M8 is the first **end-to-end domain vertical** and the first concrete `ToolCatalog` consumer; M7's generic infra proves out against a real domain tool.

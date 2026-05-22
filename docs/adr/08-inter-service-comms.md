@@ -501,3 +501,178 @@ folded into the docs-owned Redis namespace surface.
 
 See `docs/adr/17-m7-rag-chat-tool-calling.md` §9 and §A08.x for the
 full Exception 4 wire-shape specification.
+
+## Amendment 2026-05-22 (ADR-18, M8) — Exception 4 first sub-row + Exception 5 introduced
+
+The M8 PR set (ADR-18 — `docs/adr/18-m8-massing-gen.md`) introduces
+the `massing-gen` BC, the first concrete `ToolCatalog` consumer. Two
+distinct amendments to this ADR land in the M8 PR set:
+
+1. **Exception 4** gains its **first sub-row** —
+   `rag-chat-api` → `massing-gen-api` `POST /internal/tools/generate-massing`.
+   The template ADR-17 §A08.8 established is now materialized.
+2. **Exception 5** is **introduced** — `massing-gen-api` → `docs-api`
+   for brief body read. ADR-18 §5 rejected (a) reviving the retired
+   Exception 1, (b) cross-schema SELECT (M4 ADR-14 §3 pattern) — in
+   favor of (c) a fresh exception with identity-propagation enabled.
+
+The existing M7 amendment block (§A08.8–§A08.10) remains in force;
+this block layers two changes on top.
+
+### §A08.11. Exception 4 — first sub-row added
+
+The M7 amendment §A08.8 introduced Exception 4 as a template with 0
+sub-rows ("Sub-rows at M7 ship: none. M8 adds the first sub-row").
+M8 adds that first sub-row:
+
+| Method | Path | Caller | Callee | Purpose |
+|---|---|---|---|---|
+| `POST` | `/internal/tools/generate-massing` | `rag-chat-api` | `massing-gen-api` | Brief PDF → `.3dm` massing (M8). |
+
+The Exception 4 template constraints (§A08.8) apply verbatim:
+
+- One direction only (`rag-chat-api` → tool BC; never the reverse).
+- Internal `/internal/**` route prefix; gateway does not forward.
+- `X-User-Id` + `X-User-Sub` headers forwarded (the originating chat
+  user's identity, sourced from the SSE request).
+- WebClient timeout = descriptor's `timeout` (60 s for
+  `generate_massing` per ADR-18 §20).
+- Per-tool Resilience4j breaker `tool-generate_massing` auto-registered
+  by the M7 dispatcher (ADR-17 §5).
+- No WebClient-level retries — the breaker handles burst isolation,
+  the LLM handles retry-with-correction via the depth-bounded
+  multi-turn loop.
+
+### §A08.12. Exception 5 — `massing-gen-api` → `docs-api` (brief body read)
+
+**Sanctioned route:** `massing-gen-infra`'s `HttpBriefBodyAdapter`
+WebClient may call **two routes** on the docs BC:
+
+| Method | Path | Returns | Purpose |
+|---|---|---|---|
+| `GET` | `/internal/docs/public/{id}` | `200 application/json` document metadata (`id`, `title`, `extraction_status`, `visibility`, `owner_user_id`) | Pre-check that the brief is `extraction_status='completed'` and visible to the caller; surface the brief title for the `Content-Disposition` slug. |
+| `GET` | `/internal/docs/public/{id}/body` | `200 application/json {"markdown":"..."}` | Fetch the brief body (Markdown — PDF-extracted via M6.1's Vision OCR pipeline, written by docs-api's async extraction worker per ADR-12 §A12.5). |
+
+**Justification (matching ADR-18 §5):**
+
+- M8's brief-body fetch needs the PDF-extracted Markdown body, which
+  is authoritatively held by the docs BC (`docs.documents.body`).
+- Cross-schema SELECT was considered (M4 ADR-14 §3 pattern reused)
+  and **rejected**: the M8 body-fetch runs once per tool call (not
+  per token), so the ~5 ms HTTP hop is invisible against the LLM
+  extraction call (10–30 s). HTTP preserves BC isolation —
+  `massing-gen-api` never learns the `docs.documents` column layout.
+- M6.1 retired Exception 1 (the rag-ingestion → docs body-fetch
+  exception) but **defensively preserved** the `/internal/docs/public/{id}`
+  + `/internal/docs/public/{id}/body` routes in `docs-api` "in
+  expectation of a future BC reviving cross-BC body-fetch under a new
+  ADR-08 exception" (verbatim from §A08.1). Exception 5 is that
+  future revival; zero docs-api code change is required.
+
+**Why this is NOT a revival of Exception 1:**
+
+- **Exception 1 explicitly forbade user-identity propagation**
+  ("No user identity propagation" — §82). Its semantic was
+  service-to-service ingestion bookkeeping. Exception 5 **requires**
+  user-identity propagation (Exception 4 forwards `X-User-Id` /
+  `X-User-Sub` from the originating chat user; massing-gen
+  forwards those same headers to docs-api for ownership/visibility
+  checks).
+- **Exception 1's caller (rag-ingestion-api) was retired** in M6.1.
+  Reviving an exception slot whose original caller no longer exists
+  would muddy the amendment history; a fresh Exception 5 keeps the
+  audit trail clean.
+- **The two exceptions sit at different layers** of the call chain.
+  Exception 1 was a Kafka-consumer-driven background path; Exception
+  5 is a synchronous tool-dispatch-driven user-facing path. Bundling
+  them under one exception number would conflate distinct trust
+  postures.
+
+**Constraints on Exception 5:**
+
+- **Read-only.** `massing-gen` MUST NOT mutate any docs state via
+  these routes.
+- **Internal route prefix (`/internal/**`).** Not forwarded by the
+  gateway (ADR-07's route table excludes the prefix).
+- **User identity propagation IS performed.** `X-User-Id` and
+  `X-User-Sub` are forwarded; the docs-api body controller does not
+  consult them today (M6.1's visibility check lives on the public
+  list/read endpoints, not on the internal route — by ADR-12 §2's
+  framing, the internal route returns the body regardless of
+  visibility, because the original Exception 1 caller needed both
+  public and private bodies for ingestion). The authoritative
+  tenant-isolation lives in the **caller** (`massing-gen-app`'s
+  metadata-then-body two-call sequence): if the metadata response
+  shows `visibility='private' AND owner_user_id != X-User-Id`, the
+  caller rejects the brief with `BRIEF_NOT_ACCESSIBLE` and never
+  invokes the body call.
+- **Reliability discipline.** WebClient timeout **5 s**, up to **3
+  retries** with exponential backoff (200/400/800 ms base, jitter
+  0.5) — mirrors Exception 1's ADR-12 §2 + ADR-13 §2 discipline.
+  Permanent failure → ADR-18 §7's `BRIEF_FETCH_FAILED` (HTTP 502).
+- **No dedicated circuit breaker for docs-api.** docs-api is a
+  healthy compose-network BC. If availability becomes a concern,
+  M8.1 may add a `docs-api` breaker.
+- **Sub-row growth.** Unlike Exception 4's per-tool-BC template
+  grammar, Exception 5 is a per-caller-BC exception. Future BCs
+  needing docs-api body access would either reuse this exception
+  (adding a row to the caller table below) **or** open Exception 6
+  with a different access shape — depending on whether
+  identity-propagation semantics match. M8 ships with one caller
+  (`massing-gen-api`); the table is single-row.
+
+| Caller | Callee | Endpoint(s) | Purpose |
+|---|---|---|---|
+| `massing-gen-api` | `docs-api` | `GET /internal/docs/public/{id}` + `GET /internal/docs/public/{id}/body` | Brief body read for `generate_massing` (ADR-18). |
+
+### §A08.13. Allowed-channels table (post-A08.11 + A08.12)
+
+| Direction | Channel | Notes |
+|---|---|---|
+| client (browser) → gateway | HTTPS (HTTP in dev) | Cookie session |
+| gateway → any BC `-api` | HTTP (compose-internal) | Per ADR-07 routing |
+| BC → Kafka → BC | Kafka events | Per ADR-03 envelope |
+| BC → external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
+| BC → Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
+| BC → OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment |
+| gateway → Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` → Redis (`redis-playground`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
+| `docs-api` → `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) — Exception 3 |
+| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
+| `rag-chat-api` → cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment; M6.1-narrowed to 2 schemas — A08.5) |
+| `rag-chat-api` → tool BC `-api` `/internal/tools/<name>` | HTTP (compose-internal) | Sanctioned (M7 amendment §A08.8) — Exception 4. Sub-row table — `generate_massing` added by this amendment §A08.11. |
+| **`massing-gen-api`** → `docs-api` `/internal/docs/public/{id}` + `/internal/docs/public/{id}/body` | **HTTP (compose-internal)** | **Sanctioned (this amendment §A08.12) — Exception 5.** Brief body read; identity-propagation enabled (distinct from retired Exception 1). |
+| **`massing-gen-api`** → `rhino3dm-bridge:4000` | **HTTP (compose-internal)** | **Sanctioned (this amendment §A08.14, informational) — external-sidecar direction, not BC-to-BC.** Resilience4j `rhino3dm-bridge` breaker per ADR-18 §17. |
+
+### §A08.14. New external-sidecar direction (informational)
+
+The `rhino3dm-bridge` sidecar is a compose-internal external service
+(like `spark-inference-gateway` and `minio-playground`), not a sibling
+BC. The `massing-gen-api → rhino3dm-bridge` HTTP direction is
+classified the same way the M6.1 `docs-api → minio-playground`
+direction was — a sanctioned external-service direction, not a
+BC-to-BC HTTP exception. It does not count against the BC-to-BC
+exception count.
+
+### §A08.15. Future-exception discipline + cumulative count
+
+Every future BC-to-BC HTTP path still requires a fresh ADR amendment
+row. The cumulative BC-to-BC exception count after M8:
+
+- ~~Exception 1~~ — **retired in M6.1.**
+- ~~Exception 2~~ — **retired in M6.1** (folded into docs-owned
+  Redis namespace).
+- Exception 3 (docs-api → identity-api): **active**, 1 sub-row.
+- Exception 4 (rag-chat-api → tool BCs): **active**, **1 sub-row**
+  (`generate_massing` — added by §A08.11).
+- Exception 5 (massing-gen-api → docs-api): **active**, NEW by
+  §A08.12, 1 sub-row.
+
+Net M8 effect: **+1** new BC-to-BC exception type (Exception 5),
+**+1** sub-row under Exception 4. M9+ tool BCs add their own
+Exception 4 sub-rows; any future BC needing docs-api body access
+adds a row to Exception 5's caller table (or opens Exception 6 if
+the semantics differ).
+
+See `docs/adr/18-m8-massing-gen.md` §3 + §5 + §17 for the full M8
+inter-service specification.

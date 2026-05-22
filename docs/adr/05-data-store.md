@@ -429,3 +429,99 @@ connection-init-sql: "SET search_path TO chat,docs,identity,public"
 
 See `docs/adr/12-m2-docs.md` amendment 2026-05-22 §A12.1 + §A12.4 +
 §A12.13 for the full M6.1 specification.
+
+## Amendment 2026-05-22 (ADR-18, M8) — `arch` schema introduced
+
+The M8 PR set (ADR-18 — `docs/adr/18-m8-massing-gen.md`) introduces
+the `massing-gen` BC, whose persistent storage is a new
+`arch.outputs` table inside a new `arch` schema. The data-store
+implications:
+
+### A05.5. New schema — `arch` (owned by `massing-gen` BC)
+
+The `arch` schema is **added** to the schema-per-BC list:
+
+| Schema | Owned by | Notes |
+|---|---|---|
+| `identity` | `identity` service | Users, OAuth links |
+| `docs` | `docs` service | Document metadata; raw MD body as TEXT; chunks + pgvector embeddings; outbox table |
+| `chat` | `rag-chat` service | Chat sessions, messages, citations |
+| **`arch`** | **`massing-gen` service** | **Generated `.3dm` outputs (`arch.outputs`). Owner-tagged; `.3dm` bytes inline as BYTEA per ADR-18 §12.** |
+| `metrics` | `metrics` service | Snapshot history (stateless in M5 per ADR-15 — no `metrics` schema is provisioned in P0; the slot remains reserved) |
+| `flyway_<schema>` | per-service Flyway | Each service's migration history table lives in its own schema |
+
+Total schema count rises from 3 (post-M6.1) to **4**. The
+schema-per-BC invariant (the load-bearing rule of this ADR) is
+preserved — `arch` is owned exclusively by `massing-gen`.
+
+### A05.6. `arch.outputs` table — DDL pinned
+
+The full DDL lives in ADR-18 §18 (the Flyway migration
+`V202605230001__arch_outputs.sql`, owned by `massing-gen-infra`). For
+ADR-05's schema-overview audit, the table shape is:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS arch;
+
+CREATE TABLE arch.outputs (
+    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    brief_doc_id    UUID         NOT NULL,                  -- docs.documents.id (app-level FK)
+    user_id         UUID         NOT NULL,                  -- identity.users.id (app-level FK)
+    file_bytes      BYTEA        NOT NULL,                  -- .3dm binary (ADR-18 §12)
+    program_json    JSONB        NOT NULL,                  -- extracted room program
+    total_area_m2   REAL         NOT NULL,
+    floor_count     INT          NOT NULL,
+    summary         TEXT         NOT NULL,                  -- Korean-fixed (ADR-18 §5)
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_arch_outputs_user  ON arch.outputs (user_id, created_at DESC);
+CREATE INDEX idx_arch_outputs_brief ON arch.outputs (brief_doc_id);
+```
+
+| Concern | Pin |
+|---|---|
+| Schema | `arch` (NEW) |
+| Tables in M8 P0 | one — `arch.outputs` |
+| pgvector usage in `arch` | **None.** The `arch` schema does NOT create the `vector` extension or any embedding columns. M8 has no retrieval surface; vector search stays in `docs.document_chunks` (M3-derived, M6.1-relocated). |
+| File storage media | **BYTEA inline** (per ADR-18 §12) — chosen over MinIO for M8 P0 storage simplicity at the expected file size (5–50 KiB per row). Migration to MinIO documented but deferred (M8.1 trigger = >10 K rows in `arch.outputs`). |
+| Cross-schema FK to `docs.documents` | **App-level only** (no DB FK; cross-schema FK forbidden by ADR-05 invariant). Dangling-FK semantic documented in ADR-18 §13 — `arch.outputs` rows persist even when the source brief doc is deleted (untouched cleanup policy). |
+| Cross-schema FK to `identity.users` | **App-level only**, mirroring the M4 `chat.sessions.user_id` pattern (ADR-14 §3). |
+| Hikari `search_path` (`massing-gen-api`) | **`SET search_path TO arch, public`** (no cross-schema reads — M8 reads docs metadata over HTTP via ADR-08 Exception 5, not via SQL). |
+| Hibernate `default_schema` (`massing-gen-api`) | `arch` |
+| Connection pool | `maximum-pool-size: 5` (ADR-05 default; M8 is a low-frequency BC). |
+
+### A05.7. No new cross-schema SELECT exception
+
+M8's brief-body fetch goes over HTTP (per ADR-18 §5 + ADR-08 §A08.12 —
+fresh Exception 5). The M4 cross-schema SELECT exception (introduced
+in the 2026-05-18 amendment, narrowed in M6.1 §A05.4 to
+`chat,docs,identity`) is **not** extended by M8. The cross-schema
+SELECT surface stays at 2 schemas (`docs.*`, `identity.*`).
+
+This is intentional — ADR-18 §5 evaluated (a) revive Exception 1
+(rejected — M6.1 retirement), (b) cross-schema SELECT (rejected —
+latency budget allows HTTP and HTTP preserves BC isolation), (c) fresh
+ADR-08 Exception 5 (chosen). The schema-per-BC invariant strengthens
+here: the `arch` schema is fully isolated from sibling schemas; the
+only cross-schema interaction is at the app-level FK UUID columns,
+which carry no SQL-level coupling.
+
+### A05.8. Object storage — slot 6 still reserved
+
+The 6th object-storage reservation slot opened by M6.1 amendment
+§A05.3 (host port 10296, compose service name TBD) remains
+**reserved**. M8 does **not** claim it (per ADR-18 §12 — `.3dm` files
+stay in BYTEA, not MinIO). The slot remains open for M9+ or for a
+future migration of `arch.outputs.file_bytes` → MinIO if corpus
+growth makes it necessary.
+
+The existing `minio-playground` sidecar (introduced by M6.1
+§A05.2 for docs-originals) is **not shared** with M8 — its bucket
+(`playground-docs-originals`) is owned exclusively by docs-api per
+the single-tenant invariant. Any future MinIO-backed M8 storage
+would either declare a new bucket on `minio-playground`
+(`playground-arch-outputs`, with an updated bucket-ownership
+amendment) or provision a separate sidecar at slot 6.
+
+See `docs/adr/18-m8-massing-gen.md` §12 + §18 for the full M8
+storage specification.
