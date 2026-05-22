@@ -1,7 +1,0 @@
-# v1 — Korean brief extraction user template per ADR-18 §10.
-# Single template variable {briefBody} is substituted at adapter runtime.
-다음 brief에서 실 프로그램과 대지/층고 정보를 위의 JSON Schema에 맞게 추출해주세요.
-
-<BRIEF>
-{briefBody}
-</BRIEF>

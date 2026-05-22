@@ -10,7 +10,7 @@
 | M5 | Metrics | Spark REST polling + Docker container status dashboard | planned |
 | M6 | Docs (PDF support) | M2 docs BC accepts PDF; Apache PDFBox text extraction feeds M3 unchanged | planned |
 | M7 | RAG-Chat (tool-calling) | rag-chat invokes external tool BCs via Spring AI 1.0 function-calling; generic infra | PRD + ADR-17 landed (2026-05-22); implementation pending |
-| M8 | massing-gen | New BC: brief PDF → room program → basic massing → .3dm via rhino3dm sidecar | PRD + ADR-18 landed (2026-05-22); implementation pending |
+| M8 | massing-gen | New BC: brief PDF → room program → basic massing → .3dm via rhino3dm sidecar | PRD + ADR-18 landed (2026-05-22); Python/FastAPI flip per ADR-18 §A18.1 (rhino3dm.py in-process; sidecar retired); implementation pending |
 
 ---
 

@@ -1,0 +1,34 @@
+[project]
+name = "massing-gen"
+version = "0.1.0"
+description = "M8 massing-gen BC — brief-to-massing tool (Python/FastAPI)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi==0.115.5",
+    "uvicorn[standard]==0.32.1",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.7.0",
+    "sqlalchemy==2.0.36",
+    "psycopg[binary]==3.2.3",
+    "httpx==0.28.1",
+    "rhino3dm==8.17.0",
+    "structlog==24.4.0",
+    "prometheus-fastapi-instrumentator==7.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.24.0",
+    "respx==0.21.1",
+    "pytest-cov==6.0.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

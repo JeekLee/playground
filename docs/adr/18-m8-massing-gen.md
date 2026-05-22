@@ -1569,3 +1569,288 @@ Exception 4's template grammar, which is BC-driven by definition).
 
 See `docs/adr/18-m8-massing-gen.md` §5 + §17 for the full M8
 inter-service specification.
+
+---
+
+## Amendment 2026-05-22 (Python flip)
+
+> This amendment is appended to ADR-18 as a new amendment block after
+> the embedded §A01 / §A05 / §A08 amendment blocks above. The body of
+> ADR-18 (§1–§23 + Consequences + §A01.6–§A01.10 + §A05.5–§A05.8 +
+> §A08.11–§A08.15) was written under the assumption that
+> `massing-gen` is a Java Spring Boot quadruplet. The decision now
+> flips the BC's implementation language to Python/FastAPI. This
+> amendment is **forward-only** — the body above is preserved
+> verbatim for audit; sections superseded here are listed in §A18.5.
+> The HTTP contract, the schema, the port pin, and the cross-BC
+> integration points (Exception 4 sub-row, Exception 5) are
+> **language-neutral and unchanged**.
+
+### §A18.1. Decision flip — Python/FastAPI replaces Java Spring Boot quadruplet
+
+**Decision: M8's `massing-gen` BC is implemented as a single
+Python/FastAPI service, not a Java Spring Boot four-module
+quadruplet. The new top-level directory is `services/massing-gen/`
+(the existing `backend/` directory remains Java-only). The HTTP
+contract, the `arch` schema DDL, the port pin (18083), and the
+compose service name (`massing-gen-api`) are preserved verbatim.**
+
+**Rationale:**
+
+- **User familiarity.** The owner has primary fluency in Python; a
+  Python codebase is faster to evolve for the architect-domain BC
+  whose prompts, JSON schema, and rhino3dm interop will need
+  frequent iteration during the M8 P0 polish loop.
+- **`rhino3dm.py` is first-class.** McNeel ships `rhino3dm` as a
+  Python wheel (`pip install rhino3dm`) with no transitive C
+  toolchain visible to the user. In contrast, the Java side would
+  always require an external sidecar (the now-retired
+  `rhino3dm-bridge` Node container) because the JVM has no first-class
+  rhino3dm binding. Python eliminates the sidecar entirely.
+- **Sidecar retirement is a strict win.** One fewer container in
+  compose, one fewer process to health-check, one fewer Resilience4j
+  breaker, one fewer Dockerfile to maintain. The
+  `rhino3dm-bridge` sidecar's `/serialize` HTTP hop becomes an
+  in-process Python function call.
+- **The BC's external surface is already small.** `massing-gen` has
+  one inbound HTTP endpoint (`POST /internal/tools/generate-massing`),
+  one inbound user-facing endpoint (`GET /api/arch/outputs/{id}`),
+  one outbound HTTP path (Exception 5 to docs-api), and one outbound
+  LLM call (spark-inference-gateway). Polyglot risk is bounded.
+
+### §A18.2. Library — rhino3dm.js sidecar retired, rhino3dm.py imported in-process
+
+**Decision: the `rhino3dm-bridge` Node 18-alpine sidecar is retired.
+The `.3dm` serialization path is replaced by a direct `import rhino3dm`
+in the FastAPI service.**
+
+| Concern | Pre-flip (Java + Node sidecar) | Post-flip (Python in-process) |
+|---|---|---|
+| `.3dm` library | `rhino3dm@8.4.0` (npm) in `rhino3dm-bridge` sidecar | `rhino3dm` (PyPI; pin latest stable at implementer-time, currently `8.x` line) imported directly into FastAPI process |
+| Container | `node:18-alpine` + `rhino3dm-bridge` compose service on port 4000 | **Retired.** No sidecar. |
+| HTTP hop | `massing-gen-api` → `rhino3dm-bridge:4000/serialize` (compose-internal) | None — in-process function call |
+| Resilience4j `rhino3dm-bridge` breaker (ADR-18 §17) | Per-sidecar circuit breaker named `rhino3dm-bridge` | **Retired** (no remote call to wrap). In-process exceptions are caught by the use-case's normal try/except + mapped to `SIDECAR_FAILED` (kept for tool-error vocabulary stability, but the error class now means "rhino3dm library raised" rather than "sidecar HTTP 5xx") |
+| `PLAYGROUND_RHINO3DM_BRIDGE_URL` env var | `http://rhino3dm-bridge:4000` | **Retired** |
+| `PLAYGROUND_RHINO3DM_BRIDGE_TIMEOUT_MS` env var | `30000` | **Retired** (no remote call to time out) |
+| Compose service block for `rhino3dm-bridge` | required | **Removed** from `infra/docker-compose.yml` |
+| `infra/sidecars/rhino3dm-bridge/` directory | Dockerfile + `package.json` + `index.js` | **Deleted** |
+
+### §A18.3. Implementation stack pin
+
+**Decision: the `services/massing-gen/` FastAPI service uses the
+following stack pins. Exact versions are advisory (latest stable at
+implementer time); the implementer chooses pin freshness within the
+Python 3.12 family.**
+
+| Layer | Pin (advisory) | Replaces |
+|---|---|---|
+| Language | **Python 3.12** | JDK 21 LTS (Java) |
+| Web framework | **FastAPI** (latest stable, currently 0.115.x) | Spring Boot 3.3.x (Spring Web MVC + Springdoc OpenAPI) |
+| ASGI server | **uvicorn** (with `[standard]` extras for `httptools` + `uvloop`) | Embedded Tomcat |
+| Schema / domain models | **Pydantic v2** (latest stable, currently 2.9.x) | networknt JSON Schema validator (§9) + Java records |
+| DB ORM / driver | **SQLAlchemy 2.x** (async session, `psycopg[binary]` 3.x driver) — or hand-rolled `psycopg` if the implementer prefers thin SQL | Spring Data JPA + Hibernate (`PostgreSQLDialect`) |
+| HTTP client (outbound) | **httpx** (latest stable, currently 0.27.x) | Spring `WebClient` (reactive Netty) |
+| `.3dm` serialization | **rhino3dm** (PyPI; latest stable; in-process import) | rhino3dm.js npm package in Node sidecar (§11 above) |
+| Logging | **structlog** (latest stable) — JSON-structured logs | Spring Boot Logback + JSON encoder |
+| Metrics exposition | **prometheus-fastapi-instrumentator** (latest stable) | Micrometer (Spring Boot Actuator) |
+| Testing | **pytest** (latest stable) + `pytest-asyncio` + `respx` (httpx WireMock equivalent) | JUnit 5 + WireMock + Testcontainers |
+| Migration tool | **Alembic** (preferred) OR hand-rolled SQL (acceptable for P0; see §A18.7) | Flyway |
+| Package manager | **uv** or **pip** (implementer choice; `pyproject.toml` is the source of truth) | Gradle 8.10.x + version catalog |
+| Container base | **`python:3.12-slim`** | implicit JRE 21 base in Java fat-jar image |
+
+The fat-jar invariant of `*-api` modules in ADR-01 is replaced by a
+single `python:3.12-slim`-based Docker image that runs
+`uvicorn app.main:app --host 0.0.0.0 --port 18083`.
+
+### §A18.4. File layout — `services/massing-gen/`
+
+**Decision: M8 lives at the new top-level `services/` directory. The
+`backend/` directory remains Java-only.**
+
+```
+services/
+└── massing-gen/
+    ├── pyproject.toml            # uv or pip; declares deps (fastapi, uvicorn, pydantic, sqlalchemy, httpx, rhino3dm, alembic, ...)
+    ├── Dockerfile                # FROM python:3.12-slim; copies app/, installs deps, runs uvicorn on 18083
+    ├── README.md                 # implementer-owned local-dev notes (optional)
+    ├── app/                      # the FastAPI application package
+    │   ├── __init__.py
+    │   ├── main.py               # FastAPI() instance + router includes + uvicorn entrypoint
+    │   ├── domain/               # Pydantic models + pure-Python algorithm (Spring-free invariant reborn as "no FastAPI/SQLAlchemy imports here")
+    │   │   ├── program.py        # Program, Room, SiteFootprint, RoomBox (Pydantic models or @dataclass; implementer choice)
+    │   │   ├── errors.py         # MassingErrorCode enum + MassingError exception class
+    │   │   ├── algorithm.py      # RectangularFirstFitMassingAlgorithm (the §8 logic, ported verbatim)
+    │   │   └── summary.py        # Korean-fixed summary format (§5 — "%d실 · %d층 · 총 %.0f m²")
+    │   ├── application/          # use-case orchestrators; may import domain + httpx clients
+    │   │   ├── generate_massing.py    # GenerateMassingUseCase (the §1 orchestrator)
+    │   │   └── brief_extractor.py     # BriefProgramExtractor (the §4 LLM call wrapper)
+    │   ├── infrastructure/       # adapters: HTTP clients, DB repositories, rhino3dm serializer
+    │   │   ├── docs_client.py    # HttpBriefBodyAdapter equivalent (Exception 5 caller — calls docs-api via httpx)
+    │   │   ├── llm_client.py     # SparkInferenceGateway client (httpx → /v1/chat/completions; replaces Spring AI ChatClient)
+    │   │   ├── rhino_serializer.py    # in-process rhino3dm.File3dm builder (replaces Rhino3dmAdapter + sidecar HTTP)
+    │   │   └── arch_outputs_repo.py   # SQLAlchemy session + arch.outputs CRUD
+    │   ├── api/                  # FastAPI routers (HTTP edge)
+    │   │   ├── tools.py          # POST /internal/tools/generate-massing
+    │   │   └── outputs.py        # GET /api/arch/outputs/{id}
+    │   └── config.py             # Pydantic Settings — env-var loading (mirrors §19's env-var table, minus rhino3dm-bridge)
+    ├── alembic/                  # OPTIONAL — only present if implementer chooses Alembic over hand-rolled SQL
+    │   ├── env.py
+    │   └── versions/
+    │       └── 202605230001_arch_outputs.py    # equivalent of V202605230001__arch_outputs.sql
+    ├── schema.sql                # OPTIONAL alternative — hand-rolled idempotent DDL (CREATE SCHEMA IF NOT EXISTS arch; CREATE TABLE IF NOT EXISTS arch.outputs ...); see §A18.7
+    ├── prompts/                  # the §10 Korean extraction prompt files (system/user/fewshot)
+    │   ├── brief_extraction_system.txt
+    │   ├── brief_extraction_user.txt
+    │   └── brief_extraction_fewshot.json
+    ├── schemas/                  # the §9 JSON Schema (still loaded at runtime, even though Pydantic does the heavy lifting)
+    │   └── program.schema.json
+    └── tests/                    # pytest test root
+        ├── conftest.py
+        ├── test_algorithm.py     # ports MassingAlgorithmTest
+        ├── test_summary.py       # ports MassingSummaryTest
+        ├── test_brief_extractor.py    # ports SpringAiBriefExtractorAdapterTest (uses respx to mock spark-gateway)
+        ├── test_docs_client.py   # ports HttpBriefBodyAdapterTest (uses respx to mock docs-api)
+        ├── test_rhino_serializer.py   # in-process rhino3dm.File3dm assertion (parses output via rhino3dm.File3dm.Read)
+        ├── test_generate_massing_usecase.py    # ports GenerateMassingUseCaseTest
+        ├── test_tools_router.py  # ports GenerateMassingControllerTest (uses FastAPI TestClient)
+        └── test_outputs_router.py     # ports ArchOutputDownloadControllerTest
+```
+
+The DDD layering invariant from ADR-02 carries over as a **directory
+convention**, not a build-graph rule. Python has no `*-domain`-module
+classpath that excludes FastAPI; the implementer enforces "domain
+modules don't import fastapi/sqlalchemy/httpx" via lint rules
+(`import-linter` or `ruff` `TID252`-style rules) or by code review.
+ArchUnit's Java-classpath enforcement is not replicable in Python; the
+discipline downgrades to "review-enforced", matching ADR-02's original
+"ArchUnit recommended, not mandated" posture.
+
+### §A18.5. Original ADR-18 sections — supersession map
+
+| Section | Status under Python flip | Replacement |
+|---|---|---|
+| §1 (Module placement — Java quadruplet) | **Retired** | Replaced by §A18.3 + §A18.4 (single FastAPI service at `services/massing-gen/`) |
+| §2 (Port 18083) | **Preserved** | `massing-gen-api` container still binds 18083 |
+| §3 (Q-E — body fetch over Exception 5) | **Preserved** | HTTP contract language-neutral; httpx replaces WebClient (§A18.3) |
+| §4 (Q-C — Spring AI ChatClient) | **Retired** | Replaced by §A18.3 — httpx call to spark-inference-gateway's OpenAI-compatible `/v1/chat/completions` endpoint. Same model (Qwen3-32B), same base URL, same temperature/max-tokens config; Spring AI's wrapper is not used because there is no Spring AI. |
+| §5 (Q-B — Korean summary format) | **Preserved** | Format string `"%d실 · %d층 · 총 %.0f m²"` carried over to `app/domain/summary.py` |
+| §6 (Q-D — `<CODE>: <message>` prefix grammar) | **Preserved** | Wire-level; produced by Python the same way Java would |
+| §7 (MassingErrorCode enum + HTTP mapping) | **Preserved (port to Python)** | `app/domain/errors.py` enum + a FastAPI exception handler that maps to the same HTTP statuses (404 / 403 / 422 / 502 / 504 / 500). The `BRIEF_FETCH_FAILED` code is added (§A08.12's reliability discipline maps permanent docs-api failure to that code). |
+| §8 (MassingAlgorithm — over-area + maxFloors=10) | **Preserved (port to Python)** | Same algorithm, same defaults, same throw-on-over-area policy. Lives in `app/domain/algorithm.py`. |
+| §9 (JSON Schema + networknt validator) | **Retired** | Replaced by **Pydantic v2** as the primary validator. The `programJson.schema.json` file is preserved (kept at `services/massing-gen/schemas/program.schema.json` for audit + as a system-prompt inlining source per §10), but the LLM output validation in code uses Pydantic's `TypeAdapter.validate_json(...)` against the equivalent Pydantic model. The two are kept in sync at PR-review time. Schema-validation failure → same `BRIEF_EXTRACTION_FAILED` enum value. |
+| §10 (Korean prompt template) | **Preserved** | Prompt files move to `services/massing-gen/prompts/`. The system prompt still inlines `program.schema.json` verbatim — the LLM is instructed by the JSON Schema regardless of whether Python or Java validates the output. |
+| §11 (rhino3dm-bridge Node sidecar) | **Retired** | Replaced by §A18.2 — in-process `import rhino3dm`. Box-coordinate convention (the table in §11 — x/y/z/width/depth/height/roomName/floor) is preserved verbatim as the layout the Python `rhino_serializer` builds. |
+| §12 (BYTEA storage in arch.outputs.file_bytes) | **Preserved** | SQLAlchemy `LargeBinary` column maps to BYTEA the same way JPA `@Lob` did. |
+| §13 (Orphan cleanup — untouched) | **Preserved** | Policy is language-neutral. |
+| §14 (BC name — `massing-gen`) | **Preserved** | Hostname `massing-gen-api`, repo dir name `massing-gen`. |
+| §15 (4 descriptor params) | **Preserved** | ToolCatalog descriptor lives in Java (rag-chat-domain) and is unchanged; M8 (Python) receives those params on the HTTP body. |
+| §16 (No per-tool rate limit) | **Preserved** | M4 chat-level token bucket still covers. |
+| §17 (rhino3dm-bridge breaker) | **Retired** | No remote sidecar to wrap. See §A18.6 for the broader breaker policy. |
+| §18 (`arch.outputs` DDL) | **Preserved (port to Alembic / SQL)** | DDL bytes identical; the migration mechanic is Alembic or hand-rolled SQL (§A18.7). |
+| §19 (env-var knobs) | **Mostly preserved** | The two `PLAYGROUND_RHINO3DM_BRIDGE_*` vars are retired (§A18.2). All other env vars — `SERVER_PORT`, `PLAYGROUND_MASSING_LLM_MODEL`, `PLAYGROUND_MASSING_MAX_FLOORS`, `PLAYGROUND_DOCS_API_URL`, `PLAYGROUND_DOCS_BODY_FETCH_TIMEOUT_MS`, `SPRING_AI_OPENAI_BASE_URL`, `SPRING_AI_OPENAI_API_KEY` — keep their names and values. The two Spring-AI-prefixed keys (`SPRING_AI_OPENAI_*`) keep their names for cross-BC env-var uniformity even though there is no Spring AI in M8 (the keys are re-read by Python's `app/config.py` and passed to httpx). |
+| §20 (MassingTool descriptor) | **Preserved** | Lives in Java (rag-chat-domain). Endpoint URL `http://massing-gen-api:18083/internal/tools/generate-massing` unchanged. |
+| §21 (Wire-shape contracts) | **Preserved** | HTTP request / response / `Content-Disposition` shapes are language-neutral. |
+| §22 (Test surface) | **Preserved conceptually; retired in Java form** | The 13 Java test classes are not created. The intent of each — visibility check, `BRIEF_NOT_READY`, over-area, summary format, error-prefix wire shape, owner-only download — is reimplemented in pytest under `services/massing-gen/tests/` per §A18.9. |
+| §23 (Rollout commit topology) | **Retired** | The Java-specific commit suggestion (module scaffolding, Flyway migration, etc.) is replaced by an implementer-determined Python topology. The PR ships off the same `worktree-m8-massing-gen` branch. |
+
+### §A18.6. Circuit breakers retired in P0
+
+**Decision: M8 P0 ships with no circuit breakers. Both outbound HTTP
+calls (to docs-api via Exception 5 and to spark-inference-gateway for
+extraction) rely solely on httpx timeouts + try/except blocks.**
+
+**Rationale:**
+
+- **Resilience4j is JVM-only.** Python equivalents exist
+  (`pybreaker`, `purgatory`), but none are mature in the same way.
+- **The breaker pattern's value at M8 P0 scale is low.** A burst of
+  failing massing-gen calls is rate-limited by M4's per-user
+  chat-level token bucket (60/hour). The breaker's primary value
+  in Java land was guarding shared upstream resources from
+  amplification (M4's `spark-gateway` breaker is shared across
+  ChatTurnService + BriefExtractor); with M8 in Python and rag-chat
+  in Java, the two cannot share a breaker process anyway.
+- **httpx timeouts are sufficient first-line protection.**
+  - docs-api call: `httpx.AsyncClient(timeout=5.0)` per
+    Exception 5's reliability discipline. Permanent failure
+    (e.g., 3 timeouts in a row) → `BRIEF_FETCH_FAILED` (HTTP 502).
+  - spark-inference-gateway call: `httpx.AsyncClient(timeout=60.0)`
+    matching the descriptor's 60s budget. Permanent failure → maps
+    to `SIDECAR_FAILED` (the error vocabulary kept for stability —
+    see §A18.2).
+
+**Future hook:** if operator-observed spark-gateway saturation
+appears in M5 dashboards, M8.1 introduces `pybreaker` (or any mature
+Python breaker library) around the LLM client. The threshold
+defaults would mirror ADR-14 §4's `spark-gateway` Java breaker
+(50% / 60 s sliding window / 30 s OPEN). M8 P0 does not implement
+this.
+
+### §A18.7. Migration tool — Alembic (preferred) or hand-rolled SQL
+
+**Decision: the implementer chooses between Alembic and hand-rolled
+idempotent SQL for the `arch.outputs` migration. Alembic is the
+recommended path for forward compatibility; hand-rolled SQL is
+acceptable for M8 P0 because the BC ships with exactly one migration.**
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Alembic** (recommended) | Versioned migration history (`alembic_version` table mirrors Flyway's `flyway_<schema>` pattern); future schema changes get a free upgrade path; aligns with the Java BCs' Flyway discipline | One extra dependency + one extra directory + one extra config file to maintain for a single P0 migration |
+| **Hand-rolled SQL** (acceptable) | Zero extra dependency; one `schema.sql` file containing `CREATE SCHEMA IF NOT EXISTS arch; CREATE TABLE IF NOT EXISTS arch.outputs (...)`; runs at container startup via a one-liner shell or via psycopg in `app/main.py`'s startup event | No migration history table; second migration would require introducing Alembic anyway (the M8.1 hook below) |
+
+**Forward hook:** if M8.1 adds any schema change (a column on
+`arch.outputs`, a new table), the implementer migrates to Alembic
+at that point. The transition is non-destructive — the existing
+`arch.outputs` table is bound to Alembic by stamping
+`alembic_version` to the initial revision.
+
+The DDL bytes are identical in both options — the `arch.outputs`
+columns + indexes from §18 (and ratified in A05.6) carry over
+unchanged.
+
+### §A18.8. Observability — prometheus-fastapi-instrumentator + structlog
+
+**Decision: M8 wires `prometheus-fastapi-instrumentator` for the
+HTTP-metrics surface and `structlog` for structured JSON logging.
+M5's Prometheus scrape config picks up `massing-gen-api:18083/metrics`
+the same way it picks up Java BCs' Spring Boot Actuator `/actuator/prometheus`.**
+
+| Concern | Pin |
+|---|---|
+| Metrics endpoint | `GET /metrics` (default for `prometheus-fastapi-instrumentator`) |
+| Scrape config | Prometheus `static_configs:` entry already covers `massing-gen-api:18083`; the path differs from Spring Boot Actuator's `/actuator/prometheus`, so M5's `infra/prometheus/prometheus.yml` gains a per-job override `metrics_path: /metrics` for the `massing-gen-api` job |
+| Default metric series | HTTP request count / duration / size histograms by route + status; resource metrics (memory, CPU) via Prometheus's standard process collectors auto-registered by the instrumentator |
+| Logging | `structlog` configured to emit JSON to stdout; Loki (M5's log aggregator per ADR-15) ingests via docker-compose's stdout pipe + Alloy |
+| M5 dashboard impact | The "BC health" table on the M5 dashboard gains a row for `massing-gen-api`. The metric ids differ slightly (e.g., `http_requests_total` from FastAPI vs `http_server_requests_seconds_count` from Spring Boot), so M5's PromQL whitelist (ADR-15 §"metric-id whitelist") adds the FastAPI equivalents. The dashboard renders the same shape; the underlying query strings are BC-language-aware. M5 implementer addresses this in the next M5 maintenance pass — no M5 ADR amendment yet. |
+
+### §A18.9. Testing — pytest
+
+**Decision: the Java test surface from §22 is reimplemented in pytest
+under `services/massing-gen/tests/`. Test intents (algorithm
+correctness, error-code mapping, owner-only download semantics,
+Korean summary format, JSON-schema validation, brief visibility
+enforcement) carry over 1:1; class names and assertion grammars
+change.**
+
+| Test file | Java predecessor (§22) | Notes |
+|---|---|---|
+| `test_algorithm.py` | `MassingAlgorithmTest` | Six assertions: (a) total box area ≥ sum room area, (b) floor-count formula = `ceil(totalArea/siteArea)`, (c) box inside site footprint, (d) no per-floor overlap, (e) over-area input raises `MassingError(MASSING_ALGORITHM_FAILED)`, (f) edge cases. |
+| `test_summary.py` | `MassingSummaryTest` | Korean format `"12실 · 3층 · 총 480 m²"`; locale-independent (use Python `format(..., locale=None)` equivalent or `f"{x:.0f}"` with explicit grouping disabled). |
+| `test_brief_extractor.py` | `SpringAiBriefExtractorAdapterTest` | `respx` mocks spark-inference-gateway's `/v1/chat/completions`. Happy / empty-rooms / non-JSON / extra-fields / 5xx burst cases. Note: "5xx burst → circuit-open" assertion is **retired** because M8 P0 has no breaker (§A18.6). The remaining case is "5xx → returns `SIDECAR_FAILED`-class error after retries exhausted". |
+| `test_docs_client.py` | `HttpBriefBodyAdapterTest` | `respx` mocks docs-api's `/internal/docs/public/{id}` + `/internal/docs/public/{id}/body`. Happy / `BRIEF_NOT_READY` / `BRIEF_NOT_ACCESSIBLE` / `BRIEF_NOT_FOUND` / header-forwarding cases. |
+| `test_rhino_serializer.py` | `Rhino3dmAdapterTest` | No HTTP mock — the serializer is in-process. Test calls `rhino_serializer.serialize([RoomBox(...), ...])` → asserts (a) bytes non-empty, (b) `rhino3dm.File3dm.Read(bytes)` round-trips, (c) layer names match `roomName`, (d) `floor` user-text present, (e) box geometry within site bounds. The Java side's "breaker OPEN" test is retired. |
+| `test_generate_massing_usecase.py` | `GenerateMassingUseCaseTest` | Mocks all three ports (docs-client, llm-client, rhino-serializer). Asserts orchestrator wires error propagation correctly and persists `arch.outputs` row. |
+| `test_tools_router.py` | `GenerateMassingControllerTest` | FastAPI `TestClient`; missing `briefDocId` → 400; happy-path response shape; `<CODE>: <message>` prefix in error body. |
+| `test_outputs_router.py` | `ArchOutputDownloadControllerTest` | Owner sees 200 + bytes; non-owner sees 404; `Content-Disposition` filename pattern. |
+
+The Java-side `MassingGenE2ETest` (which spun up the real
+`rhino3dm-bridge` sidecar via Testcontainers) is **retired** —
+there is no sidecar to spin up. The equivalent "actually opens in
+Rhino" gate becomes a manual implementer-side check during PR
+review, plus the `test_rhino_serializer.py` round-trip assertion.
+
+The Java-side `MassingToolDescriptorTest` + `ToolCatalogIntegrationTest`
+(in `rag-chat-domain`) are **preserved unchanged** — those tests live
+on the Java side and verify the descriptor that points at
+`massing-gen-api:18083/internal/tools/generate-massing`. The descriptor
+URL is language-neutral.

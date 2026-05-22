@@ -102,14 +102,17 @@ class ChatTurnServiceToolCallingTest {
                 toolDispatcherPort,
                 new ObjectMapper(),
                 RagChatProperties.defaults(),
-                Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
+                // M8 added a descriptor to the production catalog; tests in
+                // this file simulate the catalog explicitly per scenario.
+                java.util.List::of);
 
         when(autoTitleService.generate(any(), any())).thenReturn(Mono.empty());
     }
 
     @Test
     void emptyCatalog_M4InvariantHolds_noToolEventsEmitted_andStreamMethodUsed() {
-        // ToolCatalog.descriptors() returns List.of() at M7 ship.
+        // Synthetic empty catalog (test-only constructor injection above).
         when(tokenBucketPort.tryAcquire(caller)).thenReturn(TokenBucketPort.Decision.allow());
         Instant now = Instant.parse("2026-05-22T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
