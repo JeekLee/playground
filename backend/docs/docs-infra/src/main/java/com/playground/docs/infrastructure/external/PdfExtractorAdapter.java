@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -106,6 +107,14 @@ public class PdfExtractorAdapter implements PdfExtractorPort {
             }
 
             PDFRenderer renderer = new PDFRenderer(doc);
+            // Downsample embedded high-DPI images during render. Architectural
+            // / scan-heavy PDFs commonly embed 300-600 DPI JPEGs; PDFBox's
+            // DCTFilter decodes them to a `ByteInterleavedRaster` at native
+            // resolution, which can OOM the 1 GB docs-api heap even on a
+            // single page. Subsampling lets the renderer decode at the
+            // target output resolution (150 DPI here), trading negligible
+            // OCR quality for a 10-100× memory reduction per page.
+            renderer.setSubsamplingAllowed(true);
 
             // Render pages SERIALLY on the calling thread, then dispatch
             // OCR in parallel. PDFBox's PDDocument + PDFRenderer are NOT
@@ -114,17 +123,27 @@ public class PdfExtractorAdapter implements PdfExtractorPort {
             // silently produces blank or garbled PNGs. The Vision LLM,
             // given a near-blank image, hallucinates generic training
             // content (Docker tutorials, weather diary entries) — the
-            // failure mode that triggered the 2026-05-22 incident. Render
-            // is ~150 ms / page (cheap relative to the ~15 s Vision call);
-            // serializing it costs ≈ N × 150 ms of wall time but the OCR
-            // network calls still overlap on `extractionExecutor`, so end-
-            // to-end latency stays dominated by the (parallelizable) LLM.
+            // failure mode that triggered the 2026-05-22 incident.
+            //
+            // Memory bound: the in-flight semaphore caps the queue at
+            // `parallelism` page-byte[] arrays at any moment (~3 MB / page
+            // at 150 DPI for A4). Render thread blocks before each new
+            // submit until an in-flight OCR completes, so peak memory
+            // stays bounded at ≈ 5 × PNG size regardless of pageCount.
+            Semaphore inFlight = new Semaphore(Math.max(1, extractionExecutor.getMaximumPoolSize()));
             List<Future<String>> futures = new ArrayList<>(pageCount);
             for (int i = 0; i < pageCount; i++) {
+                inFlight.acquire();
                 byte[] pngBytes = renderPage(renderer, i);
                 final int pageIndex = i;
                 final byte[] page = pngBytes;
-                Callable<String> task = () -> page == null ? "" : ocrWithRetry(page, pageIndex);
+                Callable<String> task = () -> {
+                    try {
+                        return page == null ? "" : ocrWithRetry(page, pageIndex);
+                    } finally {
+                        inFlight.release();
+                    }
+                };
                 futures.add(extractionExecutor.submit(task));
             }
 
@@ -167,6 +186,13 @@ public class PdfExtractorAdapter implements PdfExtractorPort {
             return null; // unreachable
         } catch (IOException e) {
             log.warn("PDFBox parse failed: {}", e.toString());
+            ExceptionCreator.of(DocsErrorCode.PDF_CORRUPTED).throwIt();
+            return null; // unreachable
+        } catch (InterruptedException e) {
+            // Dispatcher loop was interrupted while waiting on the in-flight
+            // semaphore. Propagate the interrupt and abort the extraction.
+            Thread.currentThread().interrupt();
+            log.warn("PDF extraction interrupted while waiting for OCR slot");
             ExceptionCreator.of(DocsErrorCode.PDF_CORRUPTED).throwIt();
             return null; // unreachable
         }
