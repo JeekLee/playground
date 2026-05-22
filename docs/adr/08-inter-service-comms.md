@@ -403,3 +403,101 @@ HTTP path; it does not affect the BC-to-BC HTTP exception count.
 
 See `docs/adr/12-m2-docs.md` amendment 2026-05-22 §A12.1 + §A12.4 +
 §A12.8 for the full M6.1 specification.
+
+## Amendment 2026-05-22 (ADR-17, M7) — Exception 4 introduced for LLM function-calling
+
+The M7 PR set (ADR-17 — `docs/adr/17-m7-rag-chat-tool-calling.md`)
+introduces a new sanctioned BC-to-BC HTTP exception — **Exception 4**
+— for the rag-chat tool-calling infrastructure. The existing M6.1
+amendments above (§A08.1–§A08.7) remain in force; this block layers
+Exception 4 on top.
+
+### A08.8. Exception 4 — `rag-chat-api` → tool-implementer BCs (HTTP)
+
+**Sanctioned route:** `rag-chat-infra`'s `WebClientToolDispatcher` may
+call any `POST /internal/tools/<tool-name>` endpoint on any
+tool-implementer BC registered in `rag-chat-domain.ToolCatalog`.
+
+**Justification:** synchronous, user-facing chat requires the tool
+result to be folded back into the next LLM turn within the same SSE
+connection; Kafka's async semantics break the LLM context flow. Tool
+dispatch IS the chat synchronous critical path — it cannot be moved
+off-thread without breaking the chat surface's M4 invariants.
+
+**Allowed methods and paths (per-tool-BC sub-row table):**
+
+| Method | Path | Caller | Callee | Purpose |
+|---|---|---|---|---|
+| `POST` | `/internal/tools/<tool-name>` | `rag-chat-api` | tool BC (`-api`) | LLM-driven tool invocation; one sub-row per registered tool BC. |
+
+**Sub-rows at M7 ship:** none (`ToolCatalog.descriptors()` returns
+empty list). M8 adds the first sub-row:
+
+| Method | Path | Caller | Callee | Purpose |
+|---|---|---|---|---|
+| `POST` | `/internal/tools/generate-massing` | `rag-chat-api` | `massing-gen-api` | Brief PDF → `.3dm` massing (M8). |
+
+Subsequent tool BCs add their own sub-rows when their per-milestone
+ADR lands (e.g., ADR-19 for the second tool BC, etc.). The pattern
+mirrors how Exception 3 lists its docs→identity row as a single
+named endpoint — Exception 4 is a template that grows by one sub-row
+per tool BC.
+
+**Constraints on Exception 4:**
+
+- **One direction only.** `rag-chat-api` → tool BC. Tool BCs MUST NOT
+  call back into `rag-chat-api` over HTTP. (They may publish Kafka
+  events on their own topics if needed; that's outside Exception 4's
+  scope.)
+- **Internal route prefix (`/internal/**`).** Tool BC routes prefixed
+  `/internal/` are explicitly **not** exposed through the gateway
+  (gateway's route table per ADR-07 does not forward `/internal/**`,
+  matching Exception 3's shape).
+- **User identity propagation IS performed.** `X-User-Id` and
+  `X-User-Sub` headers are forwarded (the originating chat user's
+  identity, sourced from the SSE request). This is **different from
+  Exception 1's "no user identity propagation" rule** (Exception 1
+  was ingestion bookkeeping; Exception 4 is user-facing tool
+  invocation — the tool BC needs the user identity to do
+  tenant-scoped reads, e.g., reading the brief doc).
+- **Reliability discipline.** WebClient timeout = the descriptor's
+  `timeout` value (per-descriptor, not a single global value);
+  Resilience4j circuit breaker per descriptor (thresholds verbatim
+  mirror ADR-14 §4's `spark-gateway` breaker — 50% / 60s window /
+  30s OPEN / 1 half-open probe). No WebClient-level retries — the
+  per-tool breaker handles burst isolation, and the LLM handles
+  retry-with-correction via the depth-bounded multi-turn loop (max
+  depth 5, env-overridable per ADR-17 §6).
+- **Each new tool BC requires a sub-row.** Exception 4 is a template,
+  not a wildcard. Adding a new tool BC requires the new BC's
+  per-milestone ADR to add its specific sub-row to the table above.
+
+### A08.9. Allowed-channels table (post-A08.8)
+
+| Direction | Channel | Notes |
+|---|---|---|
+| client (browser) → gateway | HTTPS (HTTP in dev) | Cookie session |
+| gateway → any BC `-api` | HTTP (compose-internal) | Per ADR-07 routing |
+| BC → Kafka → BC | Kafka events | Per ADR-03 envelope |
+| BC → external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
+| BC → Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
+| BC → OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment |
+| gateway → Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` → Redis (`redis-playground`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
+| `docs-api` → `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) — Exception 3 |
+| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
+| `rag-chat-api` → cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment; M6.1-narrowed to 2 schemas — A08.5) |
+| **`rag-chat-api` → tool BC `-api` `/internal/tools/<name>`** | **HTTP (compose-internal)** | **Sanctioned (this amendment §A08.8) — Exception 4.** Per-tool-BC sub-row required when the tool BC ships. |
+
+### A08.10. Future-exception discipline (unchanged)
+
+Every future BC-to-BC HTTP path still requires a fresh ADR amendment
+row. M7's net effect on the cross-BC HTTP exception count is **+1**
+(Exception 4 introduced as a template; 0 sub-rows at M7 ship; 1
+sub-row added by M8). The exception **type** count is now 2
+(Exception 3 surviving; Exception 4 introduced). Exception 1 was
+retired in M6.1; Exception 2 (Redis lock) was retired in M6.1 and
+folded into the docs-owned Redis namespace surface.
+
+See `docs/adr/17-m7-rag-chat-tool-calling.md` §9 and §A08.x for the
+full Exception 4 wire-shape specification.

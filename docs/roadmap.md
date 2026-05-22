@@ -9,7 +9,7 @@
 | M4 | RAG-Chat | Chatbot UI + retrieval + generation (Qwen3-32B via spark-inference-gateway), conversation history | planned |
 | M5 | Metrics | Spark REST polling + Docker container status dashboard | planned |
 | M6 | Docs (PDF support) | M2 docs BC accepts PDF; Apache PDFBox text extraction feeds M3 unchanged | planned |
-| M7 | RAG-Chat (tool-calling) | rag-chat invokes external tool BCs via Spring AI 1.0 function-calling; generic infra | planned |
+| M7 | RAG-Chat (tool-calling) | rag-chat invokes external tool BCs via Spring AI 1.0 function-calling; generic infra | PRD + ADR-17 landed (2026-05-22); implementation pending |
 | M8 | massing-gen | New BC: brief PDF → room program → basic massing → .3dm via rhino3dm sidecar | planned |
 
 ---
@@ -159,7 +159,7 @@ Per-user token bucket (60/hour, 200/day), `max_tokens=4000`, K=6 retrieved chunk
 
 **Dependencies:** M0, M1, M2, M3, M4.
 
-**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §5. Per-milestone ADR-17 closes open questions (Spring AI 1.0 API stability, tool error retry policy, max-depth default, tool result max size, SSE event ordering during multi-turn). M7 itself adds no user-visible feature — it enables M8.
+**Notes:** Spec at `docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §5. PRD at `docs/prd/M7-rag-chat-tool-calling.md` (landed 2026-05-22). Per-milestone **ADR-17** (`docs/adr/17-m7-rag-chat-tool-calling.md`, landed 2026-05-22) closes the 8 open questions: Spring AI 1.0.0 GA `ChatClient.prompt().tools(...).stream()` call shape pinned; per-tool Resilience4j breaker thresholds verbatim mirror ADR-14 §4's `spark-gateway`; depth cap default 5 via env `PLAYGROUND_RAG_CHAT_TOOL_MAX_DEPTH`; tool-result max size 16 KiB with truncate-and-warn; SSE wire shape pinned as standalone `event:` names with `tool_call.id` correlation IDs; chat-level token bucket counts tool-inflated turns (no per-tool quota in P0). Amends ADR-08 (§A08.8 — Exception 4: rag-chat → tool BCs HTTP) and ADR-14 (§A14 — SSE grammar reconciliation, placeholder `phase.step` values retired). M7 itself adds no user-visible feature — it enables M8.
 
 ---
 
