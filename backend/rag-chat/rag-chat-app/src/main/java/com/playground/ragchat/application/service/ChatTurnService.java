@@ -86,6 +86,7 @@ public class ChatTurnService {
     /** Source of registered tool descriptors. Defaults to {@code ToolCatalog::descriptors}. */
     private final java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ChatTurnService(
             SessionRepository sessionRepository,
             MessageRepository messageRepository,
