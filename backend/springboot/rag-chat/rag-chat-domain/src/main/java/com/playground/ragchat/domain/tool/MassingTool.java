@@ -39,11 +39,27 @@ public final class MassingTool {
                     + "}}";
 
     private static final String DESCRIPTION =
-            "Given a brief document ID, extract the room program "
-                    + "(rooms with areas in m²) from the brief, compute a stacked "
-                    + "rectangular massing model, and return a downloadable Rhino "
-                    + ".3dm file URL plus a one-line Korean summary. Use this when "
-                    + "the user asks for a massing / 매싱 from a brief PDF.";
+            "Build a stacked rectangular massing model (.3dm Rhino file) from "
+                    + "a competition brief's room program.\n\n"
+                    + "STRICT TRIGGER CRITERIA — invoke this tool ONLY when the "
+                    + "user's most recent message explicitly requests a massing "
+                    + "/ 매싱 / 매스 / mass / 매스모델 / .3dm be CREATED, "
+                    + "GENERATED, or BUILT.\n\n"
+                    + "DO NOT invoke this tool for any of the following, even if "
+                    + "the conversation mentions a brief or document:\n"
+                    + "- Questions about the brief content (\"what does it say\", "
+                    + "  \"실별 크기 적혀있나\", \"요구사항이 뭐야\")\n"
+                    + "- Summarization or extraction requests that do NOT mention "
+                    + "  massing (\"실 프로그램 추출해줘\", \"요약해줘\")\n"
+                    + "- Casual conversation, meta-questions, follow-ups, "
+                    + "  acknowledgements (\"야\", \"응\", \"맞아\")\n"
+                    + "- General questions about Korean architecture briefs that "
+                    + "  don't request a massing artifact\n\n"
+                    + "When the user does explicitly request a massing, the tool "
+                    + "extracts the room program (rooms with areas in m²) from the "
+                    + "brief, computes a stacked rectangular massing, and returns "
+                    + "a downloadable .3dm URL plus a one-line Korean summary "
+                    + "(e.g., \"12실 · 3층 · 총 480 m²\").";
 
     /** Default endpoint hostname — overridden by env var when set. */
     private static final URI DEFAULT_ENDPOINT =

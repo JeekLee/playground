@@ -104,13 +104,16 @@ async def massing_error_handler(request: Request, exc: MassingError) -> JSONResp
     on the rag-chat side will pack this into tool_error.message as
     `<CODE>: <message>` per ADR-18 §A18.5 §7.
     """
+    # NOTE: Python's logging module reserves `message` as a LogRecord
+    # attribute — passing it via `extra={"message": ...}` raises KeyError
+    # ("Attempt to overwrite 'message' in LogRecord") and crashes the
+    # exception handler, returning a generic 500 instead of the intended
+    # {code, message} body. Rename the key to `error_message` here.
     logger.warning(
-        "MassingError handled",
-        extra={
-            "code": exc.code.value,
-            "message": exc.message,
-            "path": request.url.path,
-        },
+        "MassingError handled code=%s error_message=%s path=%s",
+        exc.code.value,
+        exc.message,
+        request.url.path,
     )
     return JSONResponse(
         status_code=int(exc.code.http_status),
