@@ -8,6 +8,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -86,14 +87,24 @@ public class SparkInferenceChatAdapter implements ChatGenerationPort {
                 .doOnError(err -> log.warn("chat stream error (tools): {}", err.toString()));
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private ToolCallback toCallback(ToolBinding binding) {
-        FunctionToolCallback.Builder<String, String> builder = FunctionToolCallback
-                .builder(binding.descriptor().name(), (String argsJson) -> {
+        // Spring AI calls FunctionToolCallback with the LLM-serialized args.
+        // vLLM (spark-inference-gateway) ships args as a JSON object, so we
+        // accept `Map` here — Spring AI deserializes the JSON object into a
+        // LinkedHashMap<String, Object> for us. (Earlier the inputType was
+        // `String.class` per the M7 implementer dispatch — that path errored
+        // with `Conversion from JSON to java.lang.String failed` on every
+        // tool-emitting LLM turn because vLLM emits objects, not strings,
+        // for function-call args. The 2026-05-22 incident in production
+        // surfaced this within minutes of M8 going live.)
+        FunctionToolCallback.Builder<Map, String> builder = FunctionToolCallback
+                .builder(binding.descriptor().name(), (Map argsMap) -> {
                     JsonNode args;
                     try {
-                        args = (argsJson == null || argsJson.isBlank())
+                        args = argsMap == null
                                 ? objectMapper.createObjectNode()
-                                : objectMapper.readTree(argsJson);
+                                : objectMapper.valueToTree(argsMap);
                     } catch (Exception e) {
                         log.warn("tool_args_parse_error tool={} reason={}",
                                 binding.descriptor().name(), e.toString());
@@ -112,7 +123,7 @@ public class SparkInferenceChatAdapter implements ChatGenerationPort {
                     }
                 })
                 .description(binding.descriptor().description())
-                .inputType(String.class);
+                .inputType(Map.class);
         String schema = binding.descriptor().parameterSchema();
         if (schema != null && !schema.isBlank()) {
             builder = builder.inputSchema(schema);
