@@ -2,6 +2,8 @@ package com.playground.docs.api.controller;
 
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -13,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.playground.docs.application.dto.DocumentDetailDto;
-import com.playground.docs.application.port.PdfExtractorPort;
+import com.playground.docs.application.port.BlobStoragePort;
 import com.playground.docs.application.service.DocumentAppService;
 import com.playground.docs.application.service.DocumentFeedService;
 import com.playground.docs.domain.exception.DocsErrorCode;
@@ -28,19 +30,19 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * M6 ADR-16 — controller-layer tests for the PDF upload path. Mirrors
- * {@link DocumentMultipartUploadTest} for the Markdown path. Uses standalone
- * MockMvc + a mocked {@link PdfExtractorPort} so the test runs without
- * PDFBox / Spring AI on the classpath (the real extractor lives in
- * docs-infra).
+ * M6.1 ADR-12 §A12.5 — controller-layer tests for the multipart PDF upload
+ * path. PDFs stream straight to MinIO; the controller returns 201 with
+ * {@code extraction_status='pending_extraction'} and the async worker
+ * materializes the body via Kafka. The PdfExtractorPort is NOT called on
+ * the request thread anymore.
  */
 class DocumentPdfUploadTest {
 
     private final DocumentAppService docService = mock(DocumentAppService.class);
     private final DocumentFeedService feedService = mock(DocumentFeedService.class);
-    private final PdfExtractorPort pdfExtractor = mock(PdfExtractorPort.class);
+    private final BlobStoragePort blobStorage = mock(BlobStoragePort.class);
     private final DocumentController controller =
-            new DocumentController(docService, feedService, pdfExtractor);
+            new DocumentController(docService, feedService, blobStorage);
     private final SharedExceptionHandler exceptionHandler = new SharedExceptionHandler();
 
     private MockMvc mockMvc;
@@ -59,38 +61,32 @@ class DocumentPdfUploadTest {
     }
 
     @Test
-    void pdf_upload_creates_document_with_extracted_markdown() throws Exception {
+    void pdf_upload_streams_to_minio_and_returns_pending_extraction() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "report.pdf", "application/pdf", PDF_MAGIC);
-        String extracted = "# Report\n\nExtracted body";
-        when(pdfExtractor.extractToMarkdown(any(byte[].class))).thenReturn(extracted);
-        when(docService.create(any())).thenReturn(stubDetail("report", extracted, "application/pdf"));
+        when(docService.createWithId(any(UUID.class), any()))
+                .thenReturn(stubDetail("report", "", "application/pdf", "pending_extraction"));
 
         mockMvc.perform(multipart("/").file(file).header("X-User-Id", author.toString()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.title", is("report")))
-                .andExpect(jsonPath("$.body", is(extracted)))
-                .andExpect(jsonPath("$.mimeType", is("application/pdf")));
+                .andExpect(jsonPath("$.mimeType", is("application/pdf")))
+                .andExpect(jsonPath("$.extractionStatus", is("pending_extraction")));
 
-        // The command must propagate the PDF mime type so the app service
-        // stamps documents.mime_type='application/pdf' on the new row.
-        verify(docService, times(1)).create(argThat(cmd ->
+        verify(blobStorage, times(1)).putObject(anyString(), any(), anyLong(), anyString());
+        verify(docService, times(1)).createWithId(any(UUID.class), argThat(cmd ->
                 cmd.authorId().equals(author)
                         && cmd.title().equals("report")
-                        && cmd.body().equals(extracted)
-                        && cmd.mimeType() != null
+                        && cmd.isAsyncExtraction()
                         && cmd.mimeType().wireValue().equals("application/pdf")));
     }
 
     @Test
     void pdf_upload_with_octet_stream_content_type_is_accepted() throws Exception {
-        // Browsers occasionally tag PDFs as application/octet-stream when no
-        // local handler is registered. The 3-step gate accepts it because
-        // the magic-byte check is the real authority.
         MockMultipartFile file = new MockMultipartFile(
                 "file", "scan.pdf", "application/octet-stream", PDF_MAGIC);
-        when(pdfExtractor.extractToMarkdown(any(byte[].class))).thenReturn("body");
-        when(docService.create(any())).thenReturn(stubDetail("scan", "body", "application/pdf"));
+        when(docService.createWithId(any(UUID.class), any()))
+                .thenReturn(stubDetail("scan", "", "application/pdf", "pending_extraction"));
 
         mockMvc.perform(multipart("/").file(file).header("X-User-Id", author.toString()))
                 .andExpect(status().isCreated());
@@ -98,7 +94,6 @@ class DocumentPdfUploadTest {
 
     @Test
     void pdf_with_wrong_content_type_is_rejected() throws Exception {
-        // image/png with a .pdf suffix — the step-2 gate fails.
         MockMultipartFile file = new MockMultipartFile(
                 "file", "fake.pdf", "image/png", PDF_MAGIC);
 
@@ -106,14 +101,13 @@ class DocumentPdfUploadTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode", is(DocsErrorCode.INVALID_FILE_TYPE.code())));
 
-        verify(pdfExtractor, never()).extractToMarkdown(any(byte[].class));
+        verify(blobStorage, never()).putObject(anyString(), any(), anyLong(), anyString());
         verify(docService, never()).create(any());
+        verify(docService, never()).createWithId(any(UUID.class), any());
     }
 
     @Test
     void pdf_without_magic_bytes_is_rejected() throws Exception {
-        // .pdf suffix + application/pdf content type but the body bytes
-        // are NOT a real PDF — step-3 magic byte check fails.
         byte[] fakeBytes = "this is not a pdf".getBytes(StandardCharsets.UTF_8);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "fake.pdf", "application/pdf", fakeBytes);
@@ -122,12 +116,12 @@ class DocumentPdfUploadTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode", is(DocsErrorCode.INVALID_FILE_TYPE.code())));
 
-        verify(pdfExtractor, never()).extractToMarkdown(any(byte[].class));
+        verify(blobStorage, never()).putObject(anyString(), any(), anyLong(), anyString());
+        verify(docService, never()).createWithId(any(UUID.class), any());
     }
 
     @Test
     void file_with_unsupported_extension_is_rejected() throws Exception {
-        // .docx — neither .md/.markdown nor .pdf. Step-1 suffix gate fails.
         byte[] bytes = "anything".getBytes(StandardCharsets.UTF_8);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "notes.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes);
@@ -139,35 +133,34 @@ class DocumentPdfUploadTest {
 
     @Test
     void uppercase_pdf_suffix_is_accepted() throws Exception {
-        // Suffix check is case-insensitive (ADR-16 verbatim).
         MockMultipartFile file = new MockMultipartFile(
                 "file", "REPORT.PDF", "application/pdf", PDF_MAGIC);
-        when(pdfExtractor.extractToMarkdown(any(byte[].class))).thenReturn("body");
-        when(docService.create(any())).thenReturn(stubDetail("REPORT", "body", "application/pdf"));
+        when(docService.createWithId(any(UUID.class), any()))
+                .thenReturn(stubDetail("REPORT", "", "application/pdf", "pending_extraction"));
 
         mockMvc.perform(multipart("/").file(file).header("X-User-Id", author.toString()))
                 .andExpect(status().isCreated());
     }
 
     @Test
-    void markdown_upload_still_works_after_pdf_branch_added() throws Exception {
-        // Sanity — the Markdown path stays unchanged.
+    void markdown_upload_streams_to_minio_too() throws Exception {
         String content = "# heading";
         MockMultipartFile file = new MockMultipartFile(
                 "file", "intro.md", "text/markdown", content.getBytes(StandardCharsets.UTF_8));
-        when(docService.create(any())).thenReturn(stubDetail("intro", content, "text/markdown"));
+        when(docService.createWithId(any(UUID.class), any()))
+                .thenReturn(stubDetail("intro", "", "text/markdown", "pending_extraction"));
 
         mockMvc.perform(multipart("/").file(file).header("X-User-Id", author.toString()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.mimeType", is("text/markdown")));
 
-        verify(pdfExtractor, never()).extractToMarkdown(any(byte[].class));
-        verify(docService).create(argThat(cmd ->
+        verify(blobStorage, times(1)).putObject(anyString(), any(), anyLong(), anyString());
+        verify(docService).createWithId(any(UUID.class), argThat(cmd ->
                 cmd.mimeType() != null && cmd.mimeType().wireValue().equals("text/markdown")));
     }
 
-    private DocumentDetailDto stubDetail(String title, String body, String mimeType) {
-        Instant now = Instant.parse("2026-05-21T00:00:00Z");
+    private DocumentDetailDto stubDetail(String title, String body, String mimeType, String extractionStatus) {
+        Instant now = Instant.parse("2026-05-22T00:00:00Z");
         return new DocumentDetailDto(
                 documentId.toString(),
                 author.toString(),
@@ -181,6 +174,8 @@ class DocumentPdfUploadTest {
                 0L,
                 null,
                 mimeType,
+                extractionStatus,
+                null,
                 null,
                 now,
                 now);

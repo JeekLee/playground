@@ -6,103 +6,154 @@ import com.playground.shared.error.ExceptionCreator;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.imageio.ImageIO;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Hybrid PDF → Markdown extractor per M6 ADR-16. PDFBox text-layer extraction
- * is attempted first; pages with no extractable text fall back to Vision OCR
- * via {@link VisionOcrAdapter}.
+ * M6.1 ADR-12 §A12.9 + §A12.10 — PDF → Markdown extractor. The M6 hybrid
+ * PDFBox-text + Vision-OCR algorithm is retired; every page goes to Vision
+ * OCR. Page render is CPU-bound, the Vision LLM call is network-bound; both
+ * happen on the same {@code extractionExecutor} (N=5 parallel by default —
+ * see {@link com.playground.docs.infrastructure.extraction.ExtractionExecutorConfig}).
  *
- * <p>Caps per ADR-16:
+ * <p>Caps:
  * <ul>
- *   <li>Total page count: 200 (throws {@link DocsErrorCode#PDF_TOO_MANY_PAGES}).</li>
- *   <li>OCR pages: 30 (throws {@link DocsErrorCode#PDF_TOO_MANY_OCR_PAGES}).</li>
- *   <li>Text-layer threshold: page text length ≥ 30 characters after
- *       form-feed normalization → treated as a text-layer hit.</li>
- *   <li>Render DPI: 150 — balances OCR accuracy with payload size for the
- *       Vision call.</li>
+ *   <li>Total page count: configurable (default 100). Over-cap throws
+ *       {@link DocsErrorCode#PDF_TOO_MANY_PAGES}.</li>
+ *   <li>Per-page timeout: configurable (default 60s). On per-page timeout
+ *       (or any Vision-side error) we record an empty page rather than
+ *       failing the whole extraction. The aggregate failure tally is
+ *       tracked by the workflow caller (degraded extraction tolerated up
+ *       to 20% by default).</li>
+ *   <li>Render DPI: 150 — preserved from M6 ADR-16.</li>
  * </ul>
  *
- * <p>Per-page Markdown is concatenated with {@code "\n\n"} so the result is
- * a valid GFM document M3 rag-ingestion can chunk verbatim.
+ * <p>Per-page Markdown is concatenated in original order with {@code "\n\n"}
+ * so the result is a valid GFM document.
  */
 @Component
 public class PdfExtractorAdapter implements PdfExtractorPort {
 
     private static final Logger log = LoggerFactory.getLogger(PdfExtractorAdapter.class);
 
-    /** Maximum PDF page count (ADR-16). */
-    static final int MAX_PAGES = 200;
-    /** Maximum pages that may fall back to Vision OCR (ADR-16). */
-    static final int MAX_OCR_PAGES = 30;
-    /** Minimum text-layer length (chars) below which a page is OCR'd (ADR-16). */
-    static final int TEXT_LAYER_MIN_CHARS = 30;
-    /** PDF render DPI for the Vision OCR fallback (ADR-16). */
+    /** PDF render DPI for the Vision OCR call (ADR-16, preserved). */
     static final float RENDER_DPI = 150f;
 
     private final VisionOcrAdapter visionOcr;
+    private final ThreadPoolExecutor extractionExecutor;
+    private final int maxPages;
+    private final long perPageTimeoutSeconds;
+    private final int maxRetryAttempts;
 
-    public PdfExtractorAdapter(VisionOcrAdapter visionOcr) {
+    public PdfExtractorAdapter(
+            VisionOcrAdapter visionOcr,
+            @Qualifier("extractionExecutor") ThreadPoolExecutor extractionExecutor,
+            @Value("${playground.docs.extraction.pdf.max-pages:100}") int maxPages,
+            @Value("${playground.docs.extraction.vision.per-page-timeout-seconds:60}") long perPageTimeoutSeconds,
+            @Value("${playground.docs.extraction.vision.retry.max-attempts:2}") int maxRetryAttempts) {
         this.visionOcr = visionOcr;
+        this.extractionExecutor = extractionExecutor;
+        this.maxPages = maxPages;
+        this.perPageTimeoutSeconds = perPageTimeoutSeconds;
+        this.maxRetryAttempts = maxRetryAttempts;
     }
 
+    /**
+     * Convenience overload mirroring the historical port — buffers the
+     * {@code byte[]} and delegates to {@link #extract(byte[])}.
+     */
     @Override
     public String extractToMarkdown(byte[] pdfBytes) {
         if (pdfBytes == null || pdfBytes.length == 0) {
             ExceptionCreator.of(DocsErrorCode.PDF_CORRUPTED).throwIt();
         }
-        // Try-with-resources — PDDocument holds native file handles.
+        Result result = extract(pdfBytes);
+        return result.markdown();
+    }
+
+    /**
+     * M6.1 entry point — drives the parallel per-page extraction. Returns
+     * the assembled markdown plus per-page failure stats so the workflow
+     * caller can decide between "extracted (degraded)" and "failed".
+     */
+    @Override
+    public Result extract(byte[] pdfBytes) {
+        if (pdfBytes == null || pdfBytes.length == 0) {
+            ExceptionCreator.of(DocsErrorCode.PDF_CORRUPTED).throwIt();
+        }
         try (PDDocument doc = Loader.loadPDF(pdfBytes)) {
             int pageCount = doc.getNumberOfPages();
-            if (pageCount > MAX_PAGES) {
+            if (pageCount > maxPages) {
                 ExceptionCreator.of(DocsErrorCode.PDF_TOO_MANY_PAGES).throwIt();
             }
 
-            List<String> pageMarkdowns = new ArrayList<>(pageCount);
-            int ocrPageCount = 0;
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
-            // Renderer is lazily constructed — when every page has text layer,
-            // we never instantiate it (avoids the heavyweight cost on pure
-            // text PDFs).
-            PDFRenderer renderer = null;
+            PDFRenderer renderer = new PDFRenderer(doc);
 
+            // Per-page tasks dispatched to the shared extraction executor.
+            // Order preserved by index — assembly walks 0..N-1.
+            List<Future<String>> futures = new ArrayList<>(pageCount);
             for (int i = 0; i < pageCount; i++) {
-                stripper.setStartPage(i + 1);
-                stripper.setEndPage(i + 1);
-                String pageText = stripper.getText(doc).replace("\f", "\n\n").trim();
-                if (pageText.length() >= TEXT_LAYER_MIN_CHARS) {
-                    pageMarkdowns.add(pageText);
-                } else {
-                    ocrPageCount++;
-                    if (ocrPageCount > MAX_OCR_PAGES) {
-                        ExceptionCreator.of(DocsErrorCode.PDF_TOO_MANY_OCR_PAGES).throwIt();
+                final int pageIndex = i;
+                Callable<String> task = () -> renderPageThenOcr(renderer, pageIndex);
+                futures.add(extractionExecutor.submit(task));
+            }
+
+            String[] pageMarkdowns = new String[pageCount];
+            int failedPages = 0;
+            for (int i = 0; i < pageCount; i++) {
+                try {
+                    String md = futures.get(i).get(perPageTimeoutSeconds, TimeUnit.SECONDS);
+                    pageMarkdowns[i] = md == null ? "" : md;
+                    if (pageMarkdowns[i].isEmpty()) {
+                        failedPages++;
                     }
-                    if (renderer == null) {
-                        renderer = new PDFRenderer(doc);
-                    }
-                    String ocrMd = renderPageThenOcr(renderer, i);
-                    pageMarkdowns.add(ocrMd);
+                } catch (TimeoutException te) {
+                    log.warn("PDF page {} OCR timed out after {}s", i, perPageTimeoutSeconds);
+                    futures.get(i).cancel(true);
+                    pageMarkdowns[i] = "";
+                    failedPages++;
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    futures.get(i).cancel(true);
+                    pageMarkdowns[i] = "";
+                    failedPages++;
+                } catch (ExecutionException ee) {
+                    log.warn("PDF page {} OCR errored: {}", i, ee.getCause() == null ? ee : ee.getCause().toString());
+                    pageMarkdowns[i] = "";
+                    failedPages++;
                 }
             }
 
-            return String.join("\n\n", pageMarkdowns);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < pageCount; i++) {
+                if (i > 0) {
+                    sb.append("\n\n");
+                }
+                sb.append(pageMarkdowns[i]);
+            }
+            return new Result(sb.toString(), pageCount, failedPages);
         } catch (InvalidPasswordException e) {
             ExceptionCreator.of(DocsErrorCode.PDF_ENCRYPTED).throwIt();
             return null; // unreachable
         } catch (IOException e) {
-            // PDFBox throws IOException on truncated / malformed input.
             log.warn("PDFBox parse failed: {}", e.toString());
             ExceptionCreator.of(DocsErrorCode.PDF_CORRUPTED).throwIt();
             return null; // unreachable
@@ -110,22 +161,60 @@ public class PdfExtractorAdapter implements PdfExtractorPort {
     }
 
     /**
-     * Render the i-th page to a PNG and hand it to the Vision adapter.
-     * Per ADR-16 a failure here returns an empty string for the page (the
-     * Vision adapter itself catches its own gateway errors); only an
-     * unrecoverable I/O error (out of memory rendering, etc.) escapes here
-     * — surfaced as PDF_CORRUPTED to avoid leaking implementation details
-     * to the API client.
+     * Render the i-th page to PNG, then call Vision with retry classification.
+     * Retryable: 5xx + IO errors. Non-retryable: 4xx. On exhaustion or page
+     * render failure: returns empty markdown for the page (graceful per-page
+     * degradation per ADR-16 + ADR-12 §A12.10).
      */
     private String renderPageThenOcr(PDFRenderer renderer, int pageIndex) {
+        byte[] pngBytes;
         try {
             BufferedImage img = renderer.renderImageWithDPI(pageIndex, RENDER_DPI, ImageType.RGB);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ImageIO.write(img, "PNG", out);
-            return visionOcr.toMarkdown(out.toByteArray());
+            pngBytes = out.toByteArray();
         } catch (IOException e) {
             log.warn("PDF page {} render failed, returning empty: {}", pageIndex, e.toString());
             return "";
+        }
+
+        // Up to (1 + maxRetryAttempts) calls — the Vision adapter swallows
+        // its own runtime errors and returns "" on transient failure, so the
+        // retry loop here exists to give one more chance when the adapter
+        // explicitly classifies a 5xx as retryable. The VisionOcrAdapter
+        // currently treats every failure as terminal-empty; treating an
+        // empty return as a retry attempt would re-call the LLM on every
+        // truly-blank page (e.g. a divider), which is wasteful. We retry
+        // only when the adapter throws an explicit retryable exception.
+        int attempts = 0;
+        while (true) {
+            attempts++;
+            try {
+                return visionOcr.toMarkdown(pngBytes);
+            } catch (VisionOcrAdapter.RetryableVisionException re) {
+                if (attempts > maxRetryAttempts) {
+                    log.warn("PDF page {} OCR exhausted {} retry attempts: {}", pageIndex, maxRetryAttempts, re.toString());
+                    return "";
+                }
+                long backoffMs = 200L * (1L << (attempts - 1));
+                try {
+                    Thread.sleep(Math.min(backoffMs, 2_000L));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return "";
+                }
+            } catch (RuntimeException re) {
+                // Non-retryable (4xx / programming error) — give up.
+                log.warn("PDF page {} OCR non-retryable error: {}", pageIndex, re.toString());
+                return "";
+            }
+        }
+    }
+
+    /** Streaming overload — preferred path from {@code ExtractionWorkflow}. */
+    public Result extract(InputStream pdfStream) throws IOException {
+        try (InputStream s = pdfStream) {
+            return extract(s.readAllBytes());
         }
     }
 }

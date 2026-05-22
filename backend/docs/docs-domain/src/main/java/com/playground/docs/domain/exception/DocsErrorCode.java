@@ -101,22 +101,13 @@ public enum DocsErrorCode implements ErrorCode {
             "Encrypted PDFs are not supported; remove the password and re-upload"),
 
     /**
-     * PDF page count exceeds the M6 cap (200 pages, ADR-16). Mapped to 400 to
-     * stay within ADR-11's six-exception hierarchy; HTTP 413 was considered
-     * but adding a seventh subclass would widen the shared contract.
+     * PDF page count exceeds the M6.1 cap (100 pages, ADR-12 §A12.9).
+     * Supersedes the M6 ADR-16 §8 200-page cap; the OCR-pages sub-cap is
+     * retired (every page is OCR'd in M6.1).
      */
     @MappedTo(BadRequestException.class)
     PDF_TOO_MANY_PAGES("DOCS-UPLOAD-004",
-            "PDF has too many pages (maximum 200)"),
-
-    /**
-     * The hybrid extraction algorithm fell back to Vision OCR for more pages
-     * than the M6 cap (30 OCR pages, ADR-16). Same 400 mapping rationale as
-     * {@link #PDF_TOO_MANY_PAGES}.
-     */
-    @MappedTo(BadRequestException.class)
-    PDF_TOO_MANY_OCR_PAGES("DOCS-UPLOAD-005",
-            "PDF requires Vision OCR for too many pages (maximum 30)"),
+            "PDF has too many pages (maximum 100)"),
 
     /**
      * Multipart upload exceeded {@code spring.servlet.multipart.max-file-size}
@@ -127,7 +118,25 @@ public enum DocsErrorCode implements ErrorCode {
      */
     @MappedTo(BadRequestException.class)
     FILE_TOO_LARGE("DOCS-UPLOAD-006",
-            "Uploaded file exceeds maximum size (25 MB)");
+            "Uploaded file exceeds maximum size (25 MB)"),
+
+    /**
+     * M6.1 ADR-12 §A12.4 — MinIO put/get/delete failed. Wraps both transient
+     * (gateway unreachable) and permanent (bucket missing, access denied)
+     * failures; surfaces as 503 so the client may retry.
+     */
+    @MappedTo(ServiceUnavailableException.class)
+    BLOB_STORAGE_UNAVAILABLE("DOCS-STORAGE-001",
+            "Document blob storage is temporarily unavailable"),
+
+    /**
+     * M6.1 — the requested source blob was not found in MinIO (the row may
+     * have lost its source_object_key, or the operator manually purged the
+     * bucket). 404 — surfaced via {@code NotFoundException}.
+     */
+    @MappedTo(NotFoundException.class)
+    SOURCE_BLOB_NOT_FOUND("DOCS-STORAGE-002",
+            "Original source blob is no longer available for document: {0}");
 
     private final String code;
     private final String defaultMessage;

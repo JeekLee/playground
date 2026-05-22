@@ -1,6 +1,7 @@
 package com.playground.docs.infrastructure.events;
 
 import com.playground.docs.domain.event.DocumentDeleted;
+import com.playground.docs.domain.event.DocumentExtractionRequested;
 import com.playground.docs.domain.event.DocumentUploaded;
 import com.playground.docs.domain.event.DocumentVisibilityChanged;
 import com.playground.shared.event.EventEnvelope;
@@ -17,21 +18,18 @@ import org.springframework.modulith.events.RoutingTarget;
  * shared-kernel {@link EventEnvelope} before publication so consumers see one
  * canonical shape across BCs.
  *
- * <p>Topic naming follows ADR-03 ({@code <bc>.<aggregate>.<verb-past>}) and
- * spec §5:
+ * <p>Topics:
  * <ul>
  *   <li>{@code docs.document.uploaded} — create or body change</li>
  *   <li>{@code docs.document.visibility-changed} — publish / unpublish</li>
  *   <li>{@code docs.document.deleted} — hard delete</li>
+ *   <li>{@code docs.document.extraction-requested} — M6.1 ADR-12 §A12.5
+ *       in-BC async-extraction dispatch</li>
  * </ul>
  *
  * <p>Each event is keyed by the document id so a single document's events land
- * on the same Kafka partition (consumers — in-service projector + M3
- * ingestion — order operations on the same key correctly).
- *
- * <p>Selection is by class (not by {@code @Externalized} annotation) so the
- * domain-event records in {@code docs-domain} stay free of any Modulith
- * import — Spring Modulith never reaches into {@code -domain}.
+ * on the same Kafka partition (consumers — in-service projector + ingestion —
+ * order operations on the same key correctly).
  */
 @Configuration(proxyBeanMethods = false)
 public class DocsEventExternalizationConfig {
@@ -41,16 +39,20 @@ public class DocsEventExternalizationConfig {
         return EventExternalizationConfiguration.externalizing()
                 .select(event -> event instanceof DocumentUploaded
                         || event instanceof DocumentVisibilityChanged
-                        || event instanceof DocumentDeleted)
+                        || event instanceof DocumentDeleted
+                        || event instanceof DocumentExtractionRequested)
                 .route(DocumentUploaded.class, e -> RoutingTarget.forTarget("docs.document.uploaded")
                         .andKey(e.documentId().value().toString()))
                 .route(DocumentVisibilityChanged.class, e -> RoutingTarget.forTarget("docs.document.visibility-changed")
                         .andKey(e.documentId().value().toString()))
                 .route(DocumentDeleted.class, e -> RoutingTarget.forTarget("docs.document.deleted")
                         .andKey(e.documentId().value().toString()))
+                .route(DocumentExtractionRequested.class, e -> RoutingTarget.forTarget("docs.document.extraction-requested")
+                        .andKey(e.documentId().value().toString()))
                 .mapping(DocumentUploaded.class, e -> wrap("docs.document.uploaded", uploadedPayload(e)))
                 .mapping(DocumentVisibilityChanged.class, e -> wrap("docs.document.visibility-changed", visibilityPayload(e)))
                 .mapping(DocumentDeleted.class, e -> wrap("docs.document.deleted", deletedPayload(e)))
+                .mapping(DocumentExtractionRequested.class, e -> wrap("docs.document.extraction-requested", extractionRequestedPayload(e)))
                 .build();
     }
 
@@ -79,6 +81,14 @@ public class DocsEventExternalizationConfig {
                 e.userId().value().toString());
     }
 
+    private static ExtractionRequestedPayload extractionRequestedPayload(DocumentExtractionRequested e) {
+        return new ExtractionRequestedPayload(
+                e.documentId().value().toString(),
+                e.userId().value().toString(),
+                e.sourceMimeType().wireValue(),
+                e.sourceObjectKey());
+    }
+
     private static <T> EventEnvelope<T> wrap(String eventType, T payload) {
         return new EventEnvelope<>(
                 UUID.randomUUID(),
@@ -89,10 +99,6 @@ public class DocsEventExternalizationConfig {
                 payload);
     }
 
-    /**
-     * Wire payload for {@code docs.document.uploaded} per M2 spec §5.
-     * Idempotency key: {@code documentId + bodyChecksum}.
-     */
     public record UploadedPayload(
             String documentId,
             String userId,
@@ -102,12 +108,6 @@ public class DocsEventExternalizationConfig {
             String bodyChecksum) {
     }
 
-    /**
-     * Wire payload for {@code docs.document.visibility-changed} per spec §5.
-     * Idempotency key: {@code documentId + newVisibility}.
-     * {@code publishedAt} is present when {@code newVisibility='public'} and
-     * the spec leaves consumers to read the historical value on unpublish.
-     */
     public record VisibilityPayload(
             String documentId,
             String userId,
@@ -116,7 +116,17 @@ public class DocsEventExternalizationConfig {
             Instant publishedAt) {
     }
 
-    /** Wire payload for {@code docs.document.deleted} per spec §5. Idempotency key: {@code documentId}. */
     public record DeletedPayload(String documentId, String userId) {
+    }
+
+    /**
+     * M6.1 — wire payload for {@code docs.document.extraction-requested}.
+     * Idempotency key: {@code documentId}.
+     */
+    public record ExtractionRequestedPayload(
+            String documentId,
+            String userId,
+            String sourceMimeType,
+            String sourceObjectKey) {
     }
 }

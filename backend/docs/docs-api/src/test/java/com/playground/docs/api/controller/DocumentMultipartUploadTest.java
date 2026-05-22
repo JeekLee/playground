@@ -216,7 +216,7 @@ class DocumentMultipartUploadTest {
         return new DocumentDetailDto(
                 documentId.toString(),
                 author.toString(),
-                null,            // author block (S2 resolved by app service via identity lookup)
+                null,            // author block
                 title,
                 body,
                 "",              // excerpt
@@ -226,7 +226,9 @@ class DocumentMultipartUploadTest {
                 0L,              // likeCount
                 null,            // likedByMe
                 "text/markdown", // M6 mimeType
-                null,
+                "extracted",     // M6.1 extractionStatus
+                null,            // M6.1 extractionReason
+                null,            // publishedAt
                 now,
                 now);
     }

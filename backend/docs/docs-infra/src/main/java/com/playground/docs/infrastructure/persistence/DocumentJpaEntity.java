@@ -11,9 +11,9 @@ import java.util.UUID;
  * JPA mirror of {@link com.playground.docs.domain.model.Document} per
  * ADR-02 v2. Mapping to/from the domain type lives in {@link DocumentMapper}.
  *
- * <p>Schema {@code docs.documents} columns mirror the M2 spec §4.1 DDL
- * (S1 subset — no {@code view_count} / {@code like_count}, no
- * {@code document_likes} FK; those land in M2 S2).
+ * <p>Schema {@code docs.documents} columns mirror the M2 spec §4.1 DDL +
+ * M6 ADR-16 mime_type + M6.1 ADR-12 §A12.3/§A12.4 async-extraction +
+ * MinIO source-blob columns.
  */
 @Entity
 @Table(name = "documents", schema = "docs")
@@ -45,14 +45,36 @@ public class DocumentJpaEntity {
     private long likeCount;
 
     /**
-     * M6 ADR-16 — source MIME type. Either {@code text/markdown} (M2 / M3 / M5
-     * uploads + every JSON {@code POST /api/docs} call) or
-     * {@code application/pdf} (M6 PDF upload, body holds the
-     * PDFBox-or-Vision-OCR-extracted Markdown). The DB CHECK constraint pins
-     * the same two literals.
+     * M6 ADR-16 — source MIME type. Either {@code text/markdown} or
+     * {@code application/pdf}. The DB CHECK constraint pins the same two
+     * literals.
      */
     @Column(name = "mime_type", nullable = false)
     private String mimeType;
+
+    /**
+     * M6.1 ADR-12 §A12.3 — async extraction lifecycle. One of
+     * {@code pending|pending_extraction|extracting|extracted|failed}; CHECK
+     * constraint pins the literals.
+     */
+    @Column(name = "extraction_status", nullable = false)
+    private String extractionStatus;
+
+    /** M6.1 — failure reason when {@code extraction_status='failed'}. */
+    @Column(name = "extraction_reason")
+    private String extractionReason;
+
+    /** M6.1 ADR-12 §A12.4 — MinIO object key for the original blob. */
+    @Column(name = "source_object_key")
+    private String sourceObjectKey;
+
+    /** M6.1 — original blob length in bytes. */
+    @Column(name = "source_size_bytes")
+    private Long sourceSizeBytes;
+
+    /** M6.1 — stored multipart media type for the source blob. */
+    @Column(name = "source_mime")
+    private String sourceMime;
 
     @Column(name = "published_at")
     private Instant publishedAt;
@@ -77,6 +99,11 @@ public class DocumentJpaEntity {
             long viewCount,
             long likeCount,
             String mimeType,
+            String extractionStatus,
+            String extractionReason,
+            String sourceObjectKey,
+            Long sourceSizeBytes,
+            String sourceMime,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
@@ -89,6 +116,11 @@ public class DocumentJpaEntity {
         this.viewCount = viewCount;
         this.likeCount = likeCount;
         this.mimeType = mimeType;
+        this.extractionStatus = extractionStatus;
+        this.extractionReason = extractionReason;
+        this.sourceObjectKey = sourceObjectKey;
+        this.sourceSizeBytes = sourceSizeBytes;
+        this.sourceMime = sourceMime;
         this.publishedAt = publishedAt;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -130,6 +162,26 @@ public class DocumentJpaEntity {
         return mimeType;
     }
 
+    public String getExtractionStatus() {
+        return extractionStatus;
+    }
+
+    public String getExtractionReason() {
+        return extractionReason;
+    }
+
+    public String getSourceObjectKey() {
+        return sourceObjectKey;
+    }
+
+    public Long getSourceSizeBytes() {
+        return sourceSizeBytes;
+    }
+
+    public String getSourceMime() {
+        return sourceMime;
+    }
+
     public Instant getPublishedAt() {
         return publishedAt;
     }
@@ -168,6 +220,26 @@ public class DocumentJpaEntity {
 
     public void setMimeType(String mimeType) {
         this.mimeType = mimeType;
+    }
+
+    public void setExtractionStatus(String extractionStatus) {
+        this.extractionStatus = extractionStatus;
+    }
+
+    public void setExtractionReason(String extractionReason) {
+        this.extractionReason = extractionReason;
+    }
+
+    public void setSourceObjectKey(String sourceObjectKey) {
+        this.sourceObjectKey = sourceObjectKey;
+    }
+
+    public void setSourceSizeBytes(Long sourceSizeBytes) {
+        this.sourceSizeBytes = sourceSizeBytes;
+    }
+
+    public void setSourceMime(String sourceMime) {
+        this.sourceMime = sourceMime;
     }
 
     public void setPublishedAt(Instant publishedAt) {

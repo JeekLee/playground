@@ -14,6 +14,10 @@ wiremock = "3.9.2"
 # M6 (ADR-16) — Apache PDFBox 3.x for the docs BC PDF text-layer extraction
 # fallback to Vision OCR. 3.0.4 is the latest Apache 2.0 release at M6 ship.
 pdfbox = "3.0.4"
+# M6.1 (ADR-12 §A12.4) — MinIO Java SDK 8.5.x for the docs source-blob store.
+# 8.5.17 is the latest patch on the 8.5 line; streaming PUT/GET only — no
+# in-heap buffering.
+minio = "8.5.17"
 
 [libraries]
 # Starters and runtime libraries — versions are managed by the BOMs imported in
@@ -91,6 +95,11 @@ wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref
 # artifact is intentionally not pulled in (CLI utilities only, not needed at
 # runtime).
 pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
+
+# M6.1 (ADR-12 §A12.4) — MinIO Java SDK for the source-blob store. Streams
+# multipart PUTs and download GETs without in-heap buffering. Pulled into
+# docs-infra only.
+minio = { module = "io.minio:minio", version.ref = "minio" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

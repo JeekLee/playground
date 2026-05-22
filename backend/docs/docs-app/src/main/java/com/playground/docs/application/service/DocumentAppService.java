@@ -6,12 +6,14 @@ import com.playground.docs.application.dto.DocumentBodyDto;
 import com.playground.docs.application.dto.DocumentDetailDto;
 import com.playground.docs.application.dto.MyDocumentListItemDto;
 import com.playground.docs.application.dto.PatchDocumentCommand;
+import com.playground.docs.application.port.BlobStoragePort;
 import com.playground.docs.application.port.IdentityLookupPort;
 import com.playground.docs.application.repository.DocumentLikeRepository;
 import com.playground.docs.application.repository.DocumentRepository;
 import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.event.DocumentDeleted;
+import com.playground.docs.domain.event.DocumentExtractionRequested;
 import com.playground.docs.domain.event.DocumentUploaded;
 import com.playground.docs.domain.event.DocumentVisibilityChanged;
 import com.playground.docs.domain.exception.DocsErrorCode;
@@ -68,6 +70,15 @@ public class DocumentAppService {
     /** M2 S3: optional like repository so getById can populate {@code likedByMe}. */
     private final DocumentLikeRepository likeRepository;
     private final Clock clock;
+    /**
+     * M6.1 ADR-12 §A12.4 — optional MinIO port. Wired by docs-infra's
+     * {@code MinioBlobStorageAdapter}; nullable so unit tests that
+     * construct the service via the legacy constructors keep working.
+     * When null and a delete arrives for a document with a non-null
+     * {@code sourceObjectKey} the row is dropped but the MinIO blob is
+     * orphaned — the nightly cleanup pass (future work) reconciles.
+     */
+    private final BlobStoragePort blobStorage;
 
     /**
      * Primary constructor (S3) — Spring picks this one in production wiring
@@ -86,12 +97,24 @@ public class DocumentAppService {
             ApplicationEventPublisher events,
             IdentityLookupPort identityLookup,
             DocumentLikeRepository likeRepository,
-            Clock clock) {
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) BlobStoragePort blobStorage) {
         this.repository = repository;
         this.events = events;
         this.identityLookup = identityLookup;
         this.likeRepository = likeRepository;
         this.clock = clock;
+        this.blobStorage = blobStorage;
+    }
+
+    /** Backwards-compat constructor without blobStorage. */
+    public DocumentAppService(
+            DocumentRepository repository,
+            ApplicationEventPublisher events,
+            IdentityLookupPort identityLookup,
+            DocumentLikeRepository likeRepository,
+            Clock clock) {
+        this(repository, events, identityLookup, likeRepository, clock, null);
     }
 
     /** S2-compat constructor for tests pre-dating the like repo. */
@@ -100,24 +123,55 @@ public class DocumentAppService {
             ApplicationEventPublisher events,
             IdentityLookupPort identityLookup,
             Clock clock) {
-        this(repository, events, identityLookup, null, clock);
+        this(repository, events, identityLookup, null, clock, null);
     }
 
     // --- CRUD ---
 
     @Transactional
     public DocumentDetailDto create(CreateDocumentCommand command) {
+        return createWithId(UUID.randomUUID(), command);
+    }
+
+    /**
+     * M6.1 — explicit-id create. The multipart controller assigns the
+     * document UUID up-front so the MinIO object key
+     * ({@code {documentId}/source.{ext}}) and the DB row share the same id
+     * (atomic naming, easier orphan cleanup).
+     */
+    @Transactional
+    public DocumentDetailDto createWithId(UUID documentUuid, CreateDocumentCommand command) {
         Instant now = Instant.now(clock);
         DocumentTitle title = parseTitle(command.title());
-        DocumentBody body = parseBody(command.body());
         DocumentPath path = parsePath(command.path());
         AuthorId authorId = AuthorId.of(command.authorId());
-        // M6 ADR-16 — MIME type defaults to MARKDOWN when the command was
-        // built via the M2 four-arg shorthand constructor.
         MimeType mimeType = command.mimeType() == null ? MimeType.MARKDOWN : command.mimeType();
+        DocumentId documentId = DocumentId.of(documentUuid);
 
+        if (command.isAsyncExtraction()) {
+            // M6.1 ADR-12 §A12.5 — async path. INSERT with empty body +
+            // pending_extraction; publish extraction-requested so the worker
+            // listener picks it up after the transaction commits.
+            Document doc = Document.createPendingExtraction(
+                    documentId,
+                    authorId,
+                    title,
+                    path,
+                    mimeType,
+                    command.sourceObjectKey(),
+                    command.sourceSizeBytes() == null ? 0L : command.sourceSizeBytes(),
+                    command.sourceMime() == null ? mimeType.wireValue() : command.sourceMime(),
+                    now);
+            Document saved = repository.save(doc);
+            publishExtractionRequested(saved, now);
+            return toDetailDto(saved, callerOwnsRow(saved, authorId.value()));
+        }
+
+        // Synchronous M2 path — body provided up front (JSON POST or
+        // plain markdown multipart without MinIO retention).
+        DocumentBody body = parseBody(command.body());
         Document doc = Document.create(
-                DocumentId.of(UUID.randomUUID()),
+                documentId,
                 authorId,
                 title,
                 body,
@@ -125,12 +179,7 @@ public class DocumentAppService {
                 mimeType,
                 now);
         Document saved = repository.save(doc);
-
-        // Spec §5: uploaded fires on CREATE (always — the body is new). The
-        // extracted Markdown is what M3 rag-ingestion sees, so PDF uploads
-        // require zero changes downstream (ADR-16 design constraint).
         publishUploaded(saved, now);
-
         return toDetailDto(saved, callerOwnsRow(saved, authorId.value()));
     }
 
@@ -190,6 +239,25 @@ public class DocumentAppService {
         DocumentId id = DocumentId.of(documentId);
         Document doc = repository.findById(id).orElseThrow(() -> new DocumentNotFoundException(id));
         return DocumentBodyDto.from(doc);
+    }
+
+    /**
+     * M6.1 — accessor for the source-blob metadata. Returns {@code null}
+     * when the document has no source blob (pre-M6.1 row) or when the caller
+     * is not authorized; the controller maps the latter via the
+     * {@link #getById} visibility gate already.
+     */
+    @Transactional(readOnly = true)
+    public com.playground.docs.application.dto.SourceBlobMeta getSourceMeta(UUID documentId, UUID callerId) {
+        DocumentId id = DocumentId.of(documentId);
+        Document doc = repository.findById(id).orElseThrow(() -> new DocumentNotFoundException(id));
+        if (!isReadableBy(doc, callerId)) {
+            throw new DocumentNotFoundException(id);
+        }
+        if (doc.sourceObjectKey() == null) {
+            return null;
+        }
+        return com.playground.docs.application.dto.SourceBlobMeta.from(doc);
     }
 
     @Transactional
@@ -281,6 +349,12 @@ public class DocumentAppService {
             throw new DocumentNotFoundException(id);
         }
         repository.deleteById(id);
+        // M6.1 — best-effort delete the MinIO blob. Adapter logs + swallows
+        // failures so a transient MinIO outage doesn't roll back the row
+        // delete; orphan cleanup pass reconciles drift.
+        if (blobStorage != null && existing.sourceObjectKey() != null) {
+            blobStorage.deleteObject(existing.sourceObjectKey());
+        }
         publishDeleted(existing, Instant.now(clock));
     }
 
@@ -313,6 +387,16 @@ public class DocumentAppService {
     private void publishDeleted(Document doc, Instant now) {
         if (events == null) return;
         events.publishEvent(new DocumentDeleted(doc.id(), doc.authorId(), now));
+    }
+
+    private void publishExtractionRequested(Document doc, Instant now) {
+        if (events == null) return;
+        events.publishEvent(new DocumentExtractionRequested(
+                doc.id(),
+                doc.authorId(),
+                doc.mimeType(),
+                doc.sourceObjectKey(),
+                now));
     }
 
     // --- helpers ---
