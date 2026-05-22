@@ -8,7 +8,7 @@ first-class Python binding (`pip install rhino3dm`) and no Java binding.
 ## Layout
 
 ```
-services/massing-gen/
+backend/fastapi/massing-gen/
 ├── Dockerfile          — multi-stage Python 3.12-slim + pip install
 ├── pyproject.toml      — deps + tooling pins
 ├── schema.sql          — arch.outputs DDL (hand-rolled, P0)
@@ -46,7 +46,7 @@ services/massing-gen/
 ## Tests
 
 ```bash
-cd services/massing-gen
+cd backend/fastapi/massing-gen
 pip install -e ".[test]"
 pytest
 ```

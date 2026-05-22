@@ -74,7 +74,7 @@ services:
   # --- ADR-01 v2 / ADR-07: Gateway (single ingress, host-exposed) ---
   gateway:
     build:
-      context: ../backend
+      context: ../backend/springboot
       dockerfile: gateway/Dockerfile
     image: playground/backend-gateway:dev
     container_name: playground-backend-gateway
@@ -120,7 +120,7 @@ services:
   # No host port — gateway is the only host-exposed ingress (ADR-08).
   identity-api:
     build:
-      context: ../backend
+      context: ../backend/springboot
       dockerfile: identity/identity-api/Dockerfile
     image: playground/backend-identity-api:dev
     container_name: playground-backend-identity-api
@@ -244,7 +244,7 @@ services:
   # google-sub (PLAYGROUND_OWNER_GOOGLE_SUB) for the public feed (ADR-12 §8).
   docs-api:
     build:
-      context: ../backend
+      context: ../backend/springboot
       dockerfile: docs/docs-api/Dockerfile
     image: playground/backend-docs-api:dev
     container_name: playground-backend-docs-api
@@ -344,7 +344,7 @@ services:
   # via host.docker.internal:10080 per ADR-04 + ADR-14 §B.
   rag-chat-api:
     build:
-      context: ../backend
+      context: ../backend/springboot
       dockerfile: rag-chat/rag-chat-api/Dockerfile
     image: playground/backend-rag-chat-api:dev
     container_name: playground-backend-rag-chat-api
@@ -403,7 +403,7 @@ services:
   # /api/arch/** route per ADR-18 §21 (StripPrefix=2 → /outputs/{id}).
   massing-gen-api:
     build:
-      context: ../services/massing-gen
+      context: ../backend/fastapi/massing-gen
       dockerfile: Dockerfile
     image: playground/massing-gen-api:dev
     container_name: massing-gen-api
@@ -445,7 +445,7 @@ services:
   # Probes spark-inference-gateway via host.docker.internal (ADR-04).
   metrics-api:
     build:
-      context: ../backend
+      context: ../backend/springboot
       dockerfile: metrics/metrics-api/Dockerfile
     image: playground/backend-metrics-api:dev
     container_name: playground-backend-metrics-api

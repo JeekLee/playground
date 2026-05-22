@@ -1,5 +1,5 @@
 # M8 massing-gen BC — Python 3.12 + FastAPI + rhino3dm.py per ADR-18 §A18.3.
-# Build context: services/massing-gen/. Invoked via infra/docker-compose.yml.
+# Build context: backend/fastapi/massing-gen/. Invoked via infra/docker-compose.yml.
 
 FROM python:3.12-slim AS base
 WORKDIR /app
