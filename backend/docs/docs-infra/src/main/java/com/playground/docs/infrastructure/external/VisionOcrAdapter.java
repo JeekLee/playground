@@ -39,9 +39,13 @@ public class VisionOcrAdapter {
     private static final Logger log = LoggerFactory.getLogger(VisionOcrAdapter.class);
 
     private static final String SYSTEM_PROMPT =
-            "당신은 PDF 페이지를 정확한 markdown으로 변환하는 전문가입니다. "
-                    + "표는 markdown table로, heading은 #/##로, 본문은 그대로 표현합니다. "
-                    + "추가 설명이나 코드 블록 wrapper 없이 markdown 본문만 출력하세요.";
+            "당신은 PDF 페이지 이미지를 정확한 markdown으로 변환하는 전문가입니다.\n"
+                    + "규칙:\n"
+                    + "1) 이미지에 실제로 보이는 텍스트만 출력하세요. 추측하거나 외부 지식으로 채우지 마세요.\n"
+                    + "2) 페이지가 비어있거나 판독 불가능하면 빈 문자열만 출력하세요.\n"
+                    + "3) 표는 markdown table로, heading은 #/##로, 본문은 그대로 표현하세요.\n"
+                    + "4) 일반적인 튜토리얼/일기/날씨/예제 코드 등 학습 데이터의 기본값 콘텐츠는 절대 생성하지 마세요.\n"
+                    + "5) 추가 설명이나 코드 블록 wrapper 없이 markdown 본문만 출력하세요.";
 
     private static final String USER_PROMPT = "이 페이지를 markdown으로 변환해주세요.";
 
