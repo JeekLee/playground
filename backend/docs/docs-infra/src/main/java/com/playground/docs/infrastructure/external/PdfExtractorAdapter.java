@@ -107,12 +107,24 @@ public class PdfExtractorAdapter implements PdfExtractorPort {
 
             PDFRenderer renderer = new PDFRenderer(doc);
 
-            // Per-page tasks dispatched to the shared extraction executor.
-            // Order preserved by index — assembly walks 0..N-1.
+            // Render pages SERIALLY on the calling thread, then dispatch
+            // OCR in parallel. PDFBox's PDDocument + PDFRenderer are NOT
+            // thread-safe — sharing a renderer across executor threads
+            // corrupts the internal page-parser / font-cache state and
+            // silently produces blank or garbled PNGs. The Vision LLM,
+            // given a near-blank image, hallucinates generic training
+            // content (Docker tutorials, weather diary entries) — the
+            // failure mode that triggered the 2026-05-22 incident. Render
+            // is ~150 ms / page (cheap relative to the ~15 s Vision call);
+            // serializing it costs ≈ N × 150 ms of wall time but the OCR
+            // network calls still overlap on `extractionExecutor`, so end-
+            // to-end latency stays dominated by the (parallelizable) LLM.
             List<Future<String>> futures = new ArrayList<>(pageCount);
             for (int i = 0; i < pageCount; i++) {
+                byte[] pngBytes = renderPage(renderer, i);
                 final int pageIndex = i;
-                Callable<String> task = () -> renderPageThenOcr(renderer, pageIndex);
+                final byte[] page = pngBytes;
+                Callable<String> task = () -> page == null ? "" : ocrWithRetry(page, pageIndex);
                 futures.add(extractionExecutor.submit(task));
             }
 
@@ -161,31 +173,30 @@ public class PdfExtractorAdapter implements PdfExtractorPort {
     }
 
     /**
-     * Render the i-th page to PNG, then call Vision with retry classification.
-     * Retryable: 5xx + IO errors. Non-retryable: 4xx. On exhaustion or page
-     * render failure: returns empty markdown for the page (graceful per-page
-     * degradation per ADR-16 + ADR-12 §A12.10).
+     * Render page i to a PNG byte[]. Called serially from the dispatcher
+     * loop (NOT from executor threads — see the comment in {@link #extract}).
+     * Returns {@code null} on render failure; the caller short-circuits to
+     * an empty page in that case.
      */
-    private String renderPageThenOcr(PDFRenderer renderer, int pageIndex) {
-        byte[] pngBytes;
+    private byte[] renderPage(PDFRenderer renderer, int pageIndex) {
         try {
             BufferedImage img = renderer.renderImageWithDPI(pageIndex, RENDER_DPI, ImageType.RGB);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ImageIO.write(img, "PNG", out);
-            pngBytes = out.toByteArray();
+            return out.toByteArray();
         } catch (IOException e) {
             log.warn("PDF page {} render failed, returning empty: {}", pageIndex, e.toString());
-            return "";
+            return null;
         }
+    }
 
-        // Up to (1 + maxRetryAttempts) calls — the Vision adapter swallows
-        // its own runtime errors and returns "" on transient failure, so the
-        // retry loop here exists to give one more chance when the adapter
-        // explicitly classifies a 5xx as retryable. The VisionOcrAdapter
-        // currently treats every failure as terminal-empty; treating an
-        // empty return as a retry attempt would re-call the LLM on every
-        // truly-blank page (e.g. a divider), which is wasteful. We retry
-        // only when the adapter throws an explicit retryable exception.
+    /**
+     * Call Vision with retry classification. Runs on an executor thread.
+     * Retryable: 5xx + IO errors. Non-retryable: 4xx. On exhaustion:
+     * returns empty markdown for the page (graceful per-page degradation
+     * per ADR-16 + ADR-12 §A12.10).
+     */
+    private String ocrWithRetry(byte[] pngBytes, int pageIndex) {
         int attempts = 0;
         while (true) {
             attempts++;
