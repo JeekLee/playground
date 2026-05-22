@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { StopCircle } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import { MarkdownReader } from '@/features/docs-reader';
-import type { Citation, Role } from '@/entities/chat';
+import type { Citation, Role, ToolCardState } from '@/entities/chat';
+import { ToolCardList } from '@/features/chat-tool-card';
 
 /**
  * ChatMessage — one chat turn (user or assistant).
@@ -51,6 +52,18 @@ export interface ChatMessageProps {
    * Returns null to suppress the accordion (user turns).
    */
   accordion?: (focusedN: number | null) => ReactNode;
+  /**
+   * M8 — `tool_result` / `tool_error` cards for tool invocations this
+   * turn dispatched (per design doc §2.3 / §2.5). Renders BELOW the
+   * assistant body and ABOVE the citation accordion in the same flex
+   * column, so the visual reading order is:
+   *
+   *   eyebrow → body → tool cards → citation accordion
+   *
+   * Empty array (the common case for pure-RAG questions) renders
+   * nothing.
+   */
+  toolCards?: ToolCardState[];
 }
 
 export function ChatMessage({
@@ -61,6 +74,7 @@ export function ChatMessage({
   phaseLabel,
   onStop,
   accordion,
+  toolCards,
 }: ChatMessageProps) {
   const isUser = role === 'user';
   const isAssistant = role === 'assistant';
@@ -144,6 +158,9 @@ export function ChatMessage({
       </div>
       {isAssistant && status === 'aborted' && (
         <p className="text-[12px] text-text-muted">Generation stopped</p>
+      )}
+      {isAssistant && toolCards && toolCards.length > 0 && (
+        <ToolCardList cards={toolCards} />
       )}
       {isAssistant && accordion?.(focusedN)}
     </article>

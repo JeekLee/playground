@@ -356,6 +356,7 @@ export function ChatPage({
                   status={mapStreamStatus(streamingAssistant.status)}
                   phaseLabel={streamingAssistant.phaseLabel}
                   onStop={streamApi.stop}
+                  toolCards={streamingAssistant.toolCards}
                   accordion={
                     streamingAssistant.citations.length > 0 || streamingAssistant.status === 'done'
                       ? (focusedN) => (

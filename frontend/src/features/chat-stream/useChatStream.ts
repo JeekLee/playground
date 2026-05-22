@@ -8,6 +8,7 @@ import type {
   ErrorPayload,
   StreamingTurn,
   StreamingTurnStatus,
+  ToolCardState,
 } from '@/entities/chat';
 
 /**
@@ -247,6 +248,101 @@ function makeOnEvent(
             }
           : prev,
       );
+    } else if (ev.type === 'tool_call') {
+      // LLM dispatched a tool — append an in-flight card. The matching
+      // `tool_result` / `tool_error` event (correlated by `id`) lifts
+      // it into the populated / error state in place. Until then, the
+      // skeleton card with `Running…` summary + spinner sits below the
+      // assistant body so the user sees that something is happening.
+      const calledAt = Date.now();
+      const card: ToolCardState = { kind: 'in_flight', toolCall: ev.payload, calledAt };
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? { ...prev, toolCards: [...prev.toolCards, card] }
+          : prev,
+      );
+    } else if (ev.type === 'tool_result') {
+      const resolvedAt = Date.now();
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? { ...prev, toolCards: applyToolResult(prev.toolCards, ev.payload, resolvedAt) }
+          : prev,
+      );
+    } else if (ev.type === 'tool_error') {
+      const resolvedAt = Date.now();
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? { ...prev, toolCards: applyToolError(prev.toolCards, ev.payload, resolvedAt) }
+          : prev,
+      );
     }
   };
+}
+
+/**
+ * Match a `tool_result` payload to its in-flight predecessor by `id`
+ * and transition that card to the `result` state. If no in-flight
+ * card with the same `id` exists (e.g., the result arrived before
+ * the call — should not happen per ADR-17 §3.1's ordering invariant,
+ * but defensive), we append a fresh `result` card with a synthetic
+ * `toolCall` derived from the result so the UI degrades gracefully.
+ */
+function applyToolResult(
+  cards: ToolCardState[],
+  payload: import('@/entities/chat').ToolResultPayload,
+  resolvedAt: number,
+): ToolCardState[] {
+  const idx = cards.findIndex((c) => c.toolCall.id === payload.id && c.kind === 'in_flight');
+  if (idx === -1) {
+    return [
+      ...cards,
+      {
+        kind: 'result',
+        toolCall: { id: payload.id, name: payload.name, args: {} },
+        toolResult: payload,
+        calledAt: resolvedAt,
+        resolvedAt,
+      },
+    ];
+  }
+  const next = cards.slice();
+  const previous = next[idx]!;
+  next[idx] = {
+    kind: 'result',
+    toolCall: previous.toolCall,
+    toolResult: payload,
+    calledAt: previous.calledAt,
+    resolvedAt,
+  };
+  return next;
+}
+
+function applyToolError(
+  cards: ToolCardState[],
+  payload: import('@/entities/chat').ToolErrorPayload,
+  resolvedAt: number,
+): ToolCardState[] {
+  const idx = cards.findIndex((c) => c.toolCall.id === payload.id && c.kind === 'in_flight');
+  if (idx === -1) {
+    return [
+      ...cards,
+      {
+        kind: 'error',
+        toolCall: { id: payload.id, name: payload.name, args: {} },
+        toolError: payload,
+        calledAt: resolvedAt,
+        resolvedAt,
+      },
+    ];
+  }
+  const next = cards.slice();
+  const previous = next[idx]!;
+  next[idx] = {
+    kind: 'error',
+    toolCall: previous.toolCall,
+    toolError: payload,
+    calledAt: previous.calledAt,
+    resolvedAt,
+  };
+  return next;
 }

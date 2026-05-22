@@ -159,10 +159,25 @@ const config: Config = {
           '0%, 80%, 100%': { opacity: '0.35', transform: 'translateY(0)' },
           '40%': { opacity: '1', transform: 'translateY(-2px)' },
         },
+        // M8 §2.2/§2.3 — tool_result card entrance. Soft 6px lift +
+        // fade so the card materializing mid-stream doesn't snap.
+        'tool-card-in': {
+          '0%': { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        // M8 §2.3 in-flight skeleton spinner — slow 1.2s rotation,
+        // calmer than a network-loading spinner so it reads as
+        // "tool is thinking" rather than "page is loading".
+        'tool-spinner': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
       },
       animation: {
         'chat-cursor': 'chat-cursor 1.1s ease-in-out infinite',
         'chat-dot': 'chat-dot 1s ease-in-out infinite',
+        'tool-card-in': 'tool-card-in 180ms cubic-bezier(0.4, 0, 0.2, 1) both',
+        'tool-spinner': 'tool-spinner 1.2s linear infinite',
       },
     },
   },
