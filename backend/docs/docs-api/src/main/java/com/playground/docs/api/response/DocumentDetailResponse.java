@@ -6,7 +6,11 @@ import java.time.Instant;
 /**
  * Response body for the single-document endpoints (POST / GET / PATCH) per
  * M2 spec §6.4 {@code DocDetail}. M6 adds {@code mimeType}; M6.1 adds the
- * async {@code extractionStatus} + {@code extractionReason} fields.
+ * async {@code extractionStatus} + {@code extractionReason} + {@code hasOriginal}
+ * fields. {@code hasOriginal} is true when a MinIO-retained source blob is
+ * available for download via {@code GET /api/docs/{id}/original}; the FE
+ * uses this to decide whether to render the "Download original" button
+ * (covers both PDF + MD multipart uploads, not only PDF).
  */
 public record DocumentDetailResponse(
         String id,
@@ -23,6 +27,7 @@ public record DocumentDetailResponse(
         String mimeType,
         String extractionStatus,
         String extractionReason,
+        boolean hasOriginal,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -43,6 +48,7 @@ public record DocumentDetailResponse(
                 dto.mimeType(),
                 dto.extractionStatus(),
                 dto.extractionReason(),
+                dto.hasOriginal(),
                 dto.publishedAt(),
                 dto.createdAt(),
                 dto.updatedAt());

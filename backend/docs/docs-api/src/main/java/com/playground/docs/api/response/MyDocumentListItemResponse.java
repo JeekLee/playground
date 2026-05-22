@@ -16,6 +16,7 @@ public record MyDocumentListItemResponse(
         long viewCount,
         long likeCount,
         String mimeType,
+        String extractionStatus,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -30,6 +31,7 @@ public record MyDocumentListItemResponse(
                 dto.viewCount(),
                 dto.likeCount(),
                 dto.mimeType(),
+                dto.extractionStatus(),
                 dto.publishedAt(),
                 dto.createdAt(),
                 dto.updatedAt());

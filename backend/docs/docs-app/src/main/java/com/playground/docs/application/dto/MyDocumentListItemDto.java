@@ -25,6 +25,7 @@ public record MyDocumentListItemDto(
         long viewCount,
         long likeCount,
         String mimeType,
+        String extractionStatus,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -39,6 +40,7 @@ public record MyDocumentListItemDto(
                 viewCount,
                 likeCount,
                 doc.mimeType().wireValue(),
+                doc.extractionStatus().wireValue(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());

@@ -228,6 +228,7 @@ class DocumentMultipartUploadTest {
                 "text/markdown", // M6 mimeType
                 "extracted",     // M6.1 extractionStatus
                 null,            // M6.1 extractionReason
+                false,           // M6.1 hasOriginal
                 null,            // publishedAt
                 now,
                 now);
