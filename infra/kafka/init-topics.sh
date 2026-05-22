@@ -3,8 +3,8 @@
 #
 # Per ADR-03 §"Default topic settings": partitions=3, replication=1 (dev),
 # retention=7d for business topics. ADR-13 §G.1 supersedes the original
-# 1d DLQ retention with 14d for the docs.*.dlq family (rag-ingestion's
-# error-handler DLQ targets — operator triage window).
+# 1d DLQ retention with 14d for the docs.*.dlq family (docs-api's
+# error-handler DLQ targets, post-M6.1 — operator triage window).
 #
 # The script is idempotent — `kafka-topics.sh --create --if-not-exists`
 # is a no-op for topics that already exist. ADR-03 keeps auto-create
@@ -59,13 +59,16 @@ create_topic "docs.document.deleted"             "${RETENTION_BUSINESS_MS}"
 create_topic "docs.document.extraction-requested"      "${RETENTION_BUSINESS_MS}"
 create_topic "docs.document.extraction-requested.dlq"  "${RETENTION_DLQ_MS}"
 
-# --- M3 (rag-ingestion BC) — per ADR-13 §E + §G.1 ---
+# --- M3 (rag-ingestion BC, retired in M6.1 — consumer is now docs-api) ---
 # Business event published when ingestion completes (consumed by future M4, M5).
+# Topic name kept as `rag.document.ingested` for backward-compat with existing
+# downstream consumers; the publisher is now docs-api per ADR-12 §A12.1.
 create_topic "rag.document.ingested"                     "${RETENTION_BUSINESS_MS}"
 
-# DLQs for the three docs.* topics rag-ingestion consumes (ADR-13 §8). The
-# DLQ owner is rag-ingestion (its DefaultErrorHandler.recover() re-publishes
-# the failed record). Retention is 14d (ADR-13 §G.1) for operator triage.
+# DLQs for the three docs.* topics docs-api now consumes (post-M6.1; the M3
+# rag-ingestion BC was absorbed per ADR-12 §A12.1). The DLQ owner is docs-api
+# (its DefaultErrorHandler.recover() re-publishes the failed record).
+# Retention is 14d (ADR-13 §G.1) for operator triage.
 create_topic "docs.document.uploaded.dlq"                "${RETENTION_DLQ_MS}"
 create_topic "docs.document.visibility-changed.dlq"      "${RETENTION_DLQ_MS}"
 create_topic "docs.document.deleted.dlq"                 "${RETENTION_DLQ_MS}"

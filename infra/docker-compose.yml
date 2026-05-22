@@ -23,7 +23,10 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- ADR-07 / ADR-08 amendment: Redis (sessions + rag-ingestion locks) ---
+  # --- ADR-07 / ADR-08 amendment: Redis (gateway sessions + docs ingestion locks) ---
+  # Namespace allocation (ADR-08 §A08.4): `spring:session:*` (gateway sessions)
+  # and `docs:lock:*` (docs-ingestion distributed locks — renamed from
+  # `rag-ingestion:lock:*` in M6.1 per BC consolidation).
   redis-playground:
     image: redis:7-alpine
     container_name: playground-redis
@@ -185,6 +188,33 @@ services:
       timeout: 10s
       retries: 20
 
+  # --- ADR-05 §A05.2 + ADR-12 §A12.4: MinIO sidecar (docs BC originals) ---
+  # M6.1 activates the "object storage — reserved slot" that ADR-05's 2026-05-17
+  # amendment penciled in for M2.1 — pinned to MinIO and host-exposed at
+  # 10294/10295 in the 102xx data-store block. The single bucket
+  # `playground-docs-originals` is created by docs-api at startup via the MinIO
+  # Java SDK's bucketExists + makeBucket (in-process bootstrap; no sidecar init
+  # container). Compose-internal only for the S3 API consumers — `10294` is
+  # host-exposed for operator tooling (mc, awscli) and `10295` for the console.
+  minio-playground:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    container_name: minio-playground
+    hostname: minio-playground
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
+    command: server /data --console-address ":9001"
+    ports:
+      - "10294:9000"   # S3 API (host-exposed for operator tooling; same 102xx block as postgres/redis/opensearch)
+      - "10295:9001"   # MinIO console
+    volumes:
+      - minio-playground-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
   # --- ADR-03: one-shot Kafka topic provisioning ---
   # Ensures the M1 (identity.user.*) and M2 (docs.document.*) business topics
   # exist with the ADR-03 default settings (partitions=3, replication=1,
@@ -228,15 +258,18 @@ services:
         condition: service_healthy
       opensearch-playground:
         condition: service_healthy
+      minio-playground:
+        condition: service_healthy   # M6.1: bucket bootstrap must not race the sidecar
       identity-api:
         condition: service_healthy   # boot-time owner resolution per ADR-12 §8
     networks:
-      # M6 ADR-16 — docs-api now uses Spring AI Vision for PDF OCR fallback
-      # and so must reach `spark-inference-gateway:8000` by container DNS.
-      # Joined to two bridges, same pattern as rag-chat-api / rag-ingestion-api /
-      # metrics-api (ADR-04 amendment 2026-05-20 originally listed those three;
-      # M6 extends the same membership to docs-api). Without this attach,
-      # docs-api gets "Temporary failure in name resolution" on every OCR call.
+      # M6 ADR-16 — docs-api uses Spring AI Vision for PDF OCR fallback and
+      # M6.1 ADR-12 §A12.1 absorbs rag-ingestion's BGE-M3 embedding calls, so
+      # it must reach `spark-inference-gateway:8000` by container DNS for both
+      # paths. Joined to two bridges (default + spark-inference-net), same
+      # pattern as rag-chat-api / metrics-api (ADR-04 amendment 2026-05-20).
+      # Without this attach, docs-api gets "Temporary failure in name
+      # resolution" on every OCR / embedding call.
       - default
       - spark-inference-net
     extra_hosts:
@@ -268,10 +301,10 @@ services:
       OPENSEARCH_BASE_URL: ${OPENSEARCH_BASE_URL:-http://opensearch-playground:9200}
       IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://identity-api:18081}
       PLAYGROUND_OWNER_GOOGLE_SUB: ${PLAYGROUND_OWNER_GOOGLE_SUB:-}
-      # M6 ADR-16 — Spring AI Vision OCR. docs-api joins the
-      # spark-inference-net bridge (declared above) AND needs the same
-      # SPRING_AI_OPENAI_* envs the other consumer BCs (rag-chat-api /
-      # rag-ingestion-api / metrics-api) carry. Without these the OpenAI-
+      # M6 ADR-16 + M6.1 ADR-12 §A12.1 — Spring AI Vision OCR + BGE-M3 embed.
+      # docs-api joins the spark-inference-net bridge (declared above) AND
+      # needs the same SPRING_AI_OPENAI_* envs the other consumer BCs
+      # (rag-chat-api / metrics-api) carry. Without these the OpenAI-
       # compatible client falls through to application.yml defaults
       # (base-url = host.docker.internal:10080, api-key = dummy-not-used),
       # giving HTTP 401 'invalid master key' from spark-inference-gateway.
@@ -290,71 +323,20 @@ services:
       timeout: 10s
       retries: 10
 
-  # --- M3: rag-ingestion-api (RAG-Ingestion BC quadruplet runnable per ADR-01 v2 + ADR-13) ---
-  # No host port — rag-ingestion has no public HTTP surface; only `/actuator/**`
-  # on the compose-internal 18083 port (ADR-08 + ADR-13 §A). Listens on three
-  # docs.* topics, publishes `rag.document.ingested`. Calls docs-api
-  # `/internal/docs/public/{id}/body` (ADR-08 Exception 1) and the host's
-  # spark-inference-gateway for BGE-M3 embeddings (ADR-04 + ADR-13 §10).
-  rag-ingestion-api:
-    build:
-      context: ../backend
-      dockerfile: rag-ingestion/rag-ingestion-api/Dockerfile
-    image: playground/backend-rag-ingestion-api:dev
-    container_name: playground-backend-rag-ingestion-api
-    hostname: playground-backend-rag-ingestion-api
-    depends_on:
-      postgres-playground:
-        condition: service_healthy
-      kafka-playground:
-        condition: service_healthy
-      redis-playground:
-        condition: service_healthy
-      docs-api:
-        condition: service_healthy   # body-fetch dependency per ADR-08 Exception 1
-    networks:
-      # Joined to two bridges: the playground compose default (postgres, kafka,
-      # redis, docs-api hops) AND the external `spark-inference-net` so the
-      # OpenAI-compatible `spark-inference-gateway` container's DNS resolves
-      # directly. See ADR-04 amendment (2026-05-20).
-      - default
-      - spark-inference-net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"   # ADR-04 fallback path (host-process gateway)
-    environment:
-      # Explicit heap cap so `jvm_memory_max_bytes` reports a positive value
-      # (the JVM in a container without -Xmx and without a cgroup memory
-      # limit returns -1 for max, which displays as garbage on the M5
-      # dashboard). 512 MB suits personal-scale workload; operators may
-      # tune via the JAVA_TOOL_OPTIONS env var without rebuilding.
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx512m}
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-playground}
-      POSTGRES_USER: ${POSTGRES_USER:-playground}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
-      REDIS_HOST: ${REDIS_HOST:-redis-playground}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      DOCS_API_BASE_URL: ${DOCS_API_BASE_URL:-http://docs-api:18082}
-      # Spark-inference-gateway via the OpenAI-compatible vLLM endpoint (ADR-04 + ADR-13 §10).
-      # Default targets the host-process gateway at http://host.docker.internal:10080.
-      SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
-      SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:18083/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    # NO `ports:` block — rag-ingestion-api is compose-internal only (ADR-08).
+  # --- M3 rag-ingestion-api: RETIRED in M6.1 (ADR-12 §A12.1 + ADR-01 §A01.1) ---
+  # The RAG-Ingestion BC was absorbed into docs-api on 2026-05-22. The chunker,
+  # embedder, pgvector adapter, distributed lock, and three Kafka listeners all
+  # moved to `docs-*` modules; port 18083 returned to the reservation pool.
+  # The Java modules `rag-ingestion-{domain,app,infra,api}` are removed in the
+  # same M6.1 cycle (commit 1). Historical reference: `docs/adr/13-m3-rag-ingestion.md`.
 
   # --- M4: rag-chat-api (RAG-Chat BC quadruplet runnable per ADR-01 v2 + ADR-14) ---
   # No host port — gateway routes /api/rag/chat/** here per ADR-07 + ADR-14 §2.
   # No Kafka dependency — rag-chat publishes/consumes no events (ADR-14 §1 + §A).
-  # Cross-schema SELECT into `rag.document_chunks`, `docs.documents`, and
-  # `identity.users` runs via JDBC against postgres-playground (ADR-14 §3 + §G.3);
-  # docs-api / rag-ingestion-api are NOT depends_on targets (no HTTP coupling).
+  # Cross-schema SELECT into `docs.document_chunks`, `docs.documents`, and
+  # `identity.users` runs via JDBC against postgres-playground (ADR-14 §3 + §G.3,
+  # post-M6.1 the chunks table moved to the `docs` schema per ADR-12 §A12.1);
+  # docs-api is NOT a depends_on target (no HTTP coupling).
   # Reaches spark-inference-gateway (Qwen3-32B chat + BGE-M3 query embeddings)
   # via host.docker.internal:10080 per ADR-04 + ADR-14 §B.
   rag-chat-api:
@@ -372,7 +354,7 @@ services:
       gateway:
         condition: service_started     # gateway must be up for /api/rag/chat/** routing
     networks:
-      # Joined to two bridges (see rag-ingestion-api block + ADR-04 amendment
+      # Joined to two bridges (see docs-api block + ADR-04 amendment
       # 2026-05-20): playground default for db/cache/gateway hops, external
       # `spark-inference-net` for direct DNS to `spark-inference-gateway`.
       - default
@@ -395,7 +377,8 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis-playground}
       REDIS_PORT: ${REDIS_PORT:-6379}
       # spark-inference-gateway via the OpenAI-compatible vLLM endpoint (ADR-04 + ADR-14 §B).
-      # Same defaults as rag-ingestion-api (M3) — shared host-process gateway at port 10080.
+      # Same defaults as docs-api (post-M6.1 absorbed rag-ingestion's embed path)
+      # and metrics-api — shared spark-inference-gateway endpoint.
       SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
       # Retrieval K (ADR-14 §7) — overridable for experiments without recompile.
@@ -447,11 +430,12 @@ services:
       METRICS_PROMETHEUS_BASE_URL: http://prometheus-playground:9090
       METRICS_LOKI_BASE_URL: http://loki-playground:3100
       # Spark probe wiring — reuses the operator's `.env` SPARK_INFERENCE_GATEWAY_URL
-      # so the metrics health-grid sees the same endpoint rag-chat / rag-ingestion
-      # call (ADR-15 §12 amendment 2026-05-20). Falls back to the original
-      # host-process URL if `SPARK_INFERENCE_GATEWAY_URL` is not in `.env`.
+      # so the metrics health-grid sees the same endpoint docs-api / rag-chat
+      # call (ADR-15 §12 amendment 2026-05-20; post-M6.1 the embed path moved
+      # from rag-ingestion to docs-api per ADR-12 §A12.1). Falls back to the
+      # original host-process URL if `SPARK_INFERENCE_GATEWAY_URL` is not in `.env`.
       METRICS_SPARK_GATEWAY_BASE_URL: ${SPARK_INFERENCE_GATEWAY_URL:-http://host.docker.internal:10080}
-      # Bearer token forwarded on every probe — same key rag-chat / rag-ingestion
+      # Bearer token forwarded on every probe — same key docs-api / rag-chat
       # use, so a single `.env` change covers all three BCs. Blank → no header,
       # which is fine for the bare-vLLM fallback that doesn't validate keys.
       METRICS_SPARK_GATEWAY_API_KEY: ${METRICS_SPARK_GATEWAY_API_KEY:-${SPRING_AI_OPENAI_API_KEY:-}}
@@ -599,6 +583,7 @@ volumes:
   redis-playground-data:
   kafka-playground-data:
   opensearch-playground-data:
+  minio-playground-data:
   prometheus-playground-data:
   loki-playground-data:
   alloy-playground-data:
@@ -613,9 +598,11 @@ networks:
   # The Spark inference stack (`spark-inference-gateway` + per-model backends
   # like `spark-inference-qwen3-vl-30b-a3b`, `spark-inference-bge-m3`) lives in a
   # SEPARATE compose project on a bridge named `spark-inference-net`. Three
-  # playground services (`rag-ingestion-api`, `rag-chat-api`, `metrics-api`)
-  # join this bridge so the gateway's container DNS resolves directly. See
-  # ADR-04 amendment 2026-05-20.
+  # playground services (`docs-api`, `rag-chat-api`, `metrics-api`) join this
+  # bridge so the gateway's container DNS resolves directly. (Pre-M6.1 the
+  # third member was `rag-ingestion-api`; that BC was absorbed into docs-api
+  # in M6.1, which now carries both the Vision OCR and the BGE-M3 embedding
+  # calls — see ADR-12 §A12.1.) See ADR-04 amendment 2026-05-20.
   #
   # Operator prerequisite: the spark-stack compose project must be up first so
   # the network already exists; otherwise `docker compose up` here errors with

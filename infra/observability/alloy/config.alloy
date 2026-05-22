@@ -17,19 +17,23 @@
 // on a missing target until then.
 // =====================================================================
 
-// 1. Backend BC scrape — 6 jobs at 5s cadence
+// 1. Backend BC scrape — 5 jobs at 5s cadence (post-M6.1, was 6 pre-M6.1)
 // `__address__`는 compose service key 기반 DNS (변경 없음). `service` 라벨은
 // container_name과 동일한 `playground-backend-*` prefix로 통일 — PromQL의
 // `{service=~"^playground-(backend|frontend)-.*"}` 정규식 매칭을 위함.
+// M6.1 ADR-12 §A12.1: `rag-ingestion-api:18083` 타깃은 BC 흡수와 함께 제거됨.
+// `docs-api`가 chunker/embedder/pgvector writer + Vision OCR을 모두 흡수했으므로
+// 동일 컨테이너의 `/actuator/prometheus`가 이전의 docs + rag-ingestion 메트릭을
+// 함께 노출한다 (counters는 `playground.rag-ingestion.*` prefix를 유지하므로
+// PromQL/대시보드는 무수정).
 prometheus.scrape "backend_bcs" {
   job_name = "playground-bcs"
   targets = [
-    { __address__ = "gateway:18080",           service = "playground-backend-gateway",           __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "identity-api:18081",      service = "playground-backend-identity-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "docs-api:18082",          service = "playground-backend-docs-api",          __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "rag-ingestion-api:18083", service = "playground-backend-rag-ingestion-api", __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "rag-chat-api:18084",      service = "playground-backend-rag-chat-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "metrics-api:18085",       service = "playground-backend-metrics-api",       __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "gateway:18080",       service = "playground-backend-gateway",       __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "identity-api:18081",  service = "playground-backend-identity-api",  __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "docs-api:18082",      service = "playground-backend-docs-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "rag-chat-api:18084",  service = "playground-backend-rag-chat-api",  __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "metrics-api:18085",   service = "playground-backend-metrics-api",   __metrics_path__ = "/actuator/prometheus" },
   ]
   scrape_interval = "5s"
   scrape_timeout  = "4s"
