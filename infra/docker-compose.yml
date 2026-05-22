@@ -281,13 +281,16 @@ services:
       # dashboard).
       #
       # M6.1 ADR-12 §A12.11 — docs-api absorbs rag-ingestion + serves the
-      # async extraction worker (N=5 parallel page renders + Vision calls).
-      # 1024 MB is the architect-pinned default headroom for the combined
-      # working set (Spring/Hibernate baseline + 5 concurrent PNG renders +
-      # 5 concurrent Vision request buffers + chunker + embed batches +
-      # OpenSearch projector + pgvector writes). Operators may tune via
-      # JAVA_TOOL_OPTIONS env override without rebuilding.
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx1024m}
+      # async extraction worker. Initial M6.1 pin of 1024 MB OOM'd on the
+      # first scan-heavy architectural PDF (2026-05-22 incident): PDFBox's
+      # DCTFilter decoded embedded 300-600 DPI JPEGs to native-resolution
+      # ByteInterleavedRasters during a single page render, which alone
+      # exceeded the headroom. The render-side fix (subsamplingAllowed +
+      # in-flight semaphore) cuts the steady-state working set back to
+      # ~50 MB per concurrent page, but the per-image decode peak is still
+      # ~hundreds of MB for image-rich PDFs. 2048 MB is the new default,
+      # tunable via JAVA_TOOL_OPTIONS without rebuilding.
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx2048m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
