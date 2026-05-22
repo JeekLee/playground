@@ -75,6 +75,7 @@ public class WebClientToolDispatcher implements ToolDispatcherPort {
 
     private final ConcurrentMap<String, WebClient> webClients = new ConcurrentHashMap<>();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public WebClientToolDispatcher(
             @Qualifier("toolWebClientBuilder") WebClient.Builder webClientBuilder,
             ToolBreakerRegistry breakerRegistry,
