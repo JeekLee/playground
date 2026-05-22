@@ -382,3 +382,158 @@ layering rules and Spring-free invariants apply verbatim.
 
 See `docs/adr/18-m8-massing-gen.md` §2 + §17 for the full M8
 specification.
+
+## Amendment 2026-05-22 (M8 Python flip — polyglot policy)
+
+> This amendment is appended to ADR-01 as a new amendment block
+> following the M8 block (§A01.6–§A01.10) above. The M8 BC's
+> implementation language is flipped from Java/Spring Boot to
+> Python/FastAPI (per ADR-18 §A18.1). This amendment formalizes a
+> polyglot policy that ADR-01 did not previously articulate, reverts
+> the Java module count change introduced in §A01.6–§A01.10, and
+> preserves the port 18083 reservation under the new language. The
+> §A01.6–§A01.10 block above is **not rewritten** — its Java-quadruplet
+> framing remains as the audit record of the design intent at the
+> time M8 was first scoped.
+
+### §A01.11. Polyglot policy — Java BCs are primary; Python BCs are permissible by exception
+
+**Decision: Java/Spring Boot remains the primary backend stack
+across the playground monorepo. Python BCs are permissible when (a)
+the BC has a hard Python-only dependency that the JVM cannot match
+in-process (rhino3dm.py for M8), AND (b) the BC's domain logic is
+better expressed in Python than in Java, AND (c) the polyglot choice
+is documented in an explicit per-milestone ADR amendment that lists
+the trade-offs.**
+
+M8 (`massing-gen`) is the **first such Python BC**. Future BCs are
+expected to default back to Java unless the same three-pronged test
+is met (rare).
+
+**What this means for the project shape:**
+
+- The monorepo is now polyglot in the strict sense — `backend/`
+  (Java) and `services/` (Python) live side-by-side under the same
+  Git root, the same compose network, the same Postgres / Kafka /
+  spark-inference-gateway / gateway. The transverse ADRs (00–09)
+  still apply at the **contract** layer (port pins, Kafka envelope,
+  schema-per-BC, gateway OAuth, ADR-08 channels) but not at the
+  **toolchain** layer (Gradle, JDK 21, Lombok, ArchUnit) for the
+  Python BC.
+- ArchUnit's classpath-level layering enforcement (§"Per-BC
+  dependency wiring") is not replicable in Python. The Python BC
+  enforces layering via directory convention + lint rules + code
+  review (per ADR-18 §A18.4). This is a deliberate downgrade for
+  the Python BC only; Java BCs retain the stronger guarantee.
+- Spring AI / Spring Cloud / Spring Boot patch bumps no longer
+  touch the Python BC (it has no Spring on its classpath). The
+  Python BC's deps evolve on its own cadence via `pyproject.toml`.
+
+### §A01.12. Module count correction — Java modules stay at 22
+
+**Decision: the Java module count returns to **22** (post-M6.1
+baseline per §A01.2). The +4 modules introduced in §A01.6 (the
+`massing-gen-{api,app,domain,infra}` quadruplet) are reverted — no
+such Java modules exist. The `backend/settings.gradle.kts` does NOT
+gain `:massing-gen:massing-gen-*` includes.**
+
+| Category | Count | Notes |
+|---|---|---|
+| Java BCs | 5 | identity, docs, rag-chat, metrics, + `gateway` + `shared-kernel` (non-BC modules) |
+| Java production modules | **22** | 5 BCs × 4 modules + gateway + shared-kernel; same as post-M6.1 baseline |
+| Python services | **1** | `services/massing-gen/` (single container, no four-module quadruplet) |
+| Total runnable backend containers | **6** | gateway + 4 Java BC `-api`s + 1 Python service |
+
+The ADR-00 ASCII module dependency graph is **redrawn** in the M8
+amendment-overview row to reflect the polyglot shape: the
+`massing-gen-api` lane stays drawn (the BC still exists), but its
+sub-modules drop and its language label becomes "Python (FastAPI)"
+instead of the four-module Java cluster. The `rhino3dm-bridge`
+external-sidecar lane is **removed** entirely (the sidecar is
+retired per ADR-18 §A18.2). The `rag-chat-api → massing-gen-api`
+arrow (Exception 4) and the `massing-gen-api → docs-api` arrow
+(Exception 5) are preserved — both are HTTP contracts independent
+of implementation language.
+
+**Top-level directory layout:**
+
+```
+playground/
+├── backend/         # Java BCs (Gradle multi-module, JDK 21, Spring Boot 3.3.x)
+│   ├── gateway/
+│   ├── shared-kernel/
+│   ├── identity/
+│   ├── docs/
+│   ├── rag-chat/
+│   ├── metrics/
+│   ├── buildSrc/
+│   ├── settings.gradle.kts
+│   └── ...
+├── services/        # Non-Java BCs — NEW directory added by ADR-18 §A18.4
+│   └── massing-gen/   # Python 3.12 + FastAPI (sole occupant at ship)
+├── frontend/
+├── infra/
+└── docs/
+```
+
+The `backend/` Gradle root is unaware of `services/`; the two are
+sibling top-level dirs aggregated only at the compose layer (each
+publishes a Docker image consumed by `infra/docker-compose.yml`).
+
+### §A01.13. Port 18083 — reservation preserved under Python container
+
+**Decision: port 18083 remains reserved for `massing-gen-api`. The
+hostname (`massing-gen-api`) and the compose service name
+(`massing-gen-api`) are preserved verbatim; only the container's
+base image and entrypoint change (was Java fat-jar in §A01.7's
+intent, is now `python:3.12-slim` + `uvicorn`).**
+
+The port table (post-Python-flip; supersedes the §A01.7 framing for
+the row marked "Python container" and supersedes both §A01.7 and the
+M6.1 §A01.3 reservation status for the `18083` row):
+
+| Module | Port | Host-exposed? | Runtime |
+|---|---|---|---|
+| `gateway` | **18080** | yes (single ingress) | Java (Spring Boot 3.3) |
+| `identity-api` | **18081** | no (compose-internal) | Java |
+| `docs-api` | **18082** | no | Java |
+| **`massing-gen-api`** | **18083** | **no** | **Python 3.12 (FastAPI + uvicorn)** — flipped from Java per ADR-18 §A18.1 |
+| `rag-chat-api` | **18084** | no | Java |
+| (reserved) | 18085 | reserved for next BC | — |
+| `metrics-api` | **18086** | no | Java |
+
+Other compose services that backend BCs reach (`postgres-playground`
+10232, `redis-playground` 10279, `opensearch-playground` 10292,
+`minio-playground` 10294/10295, the M5 observability stack, the
+host's `spark-inference-gateway` at `host.docker.internal:10080`)
+all remain language-neutral — the Python BC consumes them via
+SQLAlchemy / httpx the same way the Java BCs consume them via
+JDBC / Spring AI / Spring `WebClient`.
+
+### §A01.14. Cross-BC observation — future polyglot BC pattern
+
+**Decision: any future polyglot BC (e.g., a Python ML-serving BC, a
+Rust performance-critical BC) follows M8's pattern: single container,
+`services/<bc-name>/` directory, exposes its API contract over
+HTTP at a `*-api` hostname on a port from the same `1808x` block.
+The four-module quadruplet does not apply.**
+
+| Cross-BC concern | Java BC | Polyglot BC (M8 pattern) |
+|---|---|---|
+| Source directory | `backend/<bc>/<bc>-{api,app,domain,infra}/` | `services/<bc>/` |
+| Build system | Gradle (via `backend/settings.gradle.kts`) | per-BC (e.g., `pyproject.toml` for Python) |
+| Layering enforcement | classpath-level (ArchUnit + Gradle plugin graph) | review-enforced (no classpath analog) |
+| Runtime | JVM (Spring Boot fat-jar) | language-specific (uvicorn for Python; ...) |
+| Port | one of `18080–18086` (or future `1808x` slots) | same block |
+| Hostname (compose) | `<bc>-api` | `<bc>-api` |
+| Postgres schema | schema-per-BC per ADR-05 | schema-per-BC per ADR-05 (unchanged) |
+| Kafka envelope | shared-kernel `EventEnvelope<T>` (Java) | per-BC shim (Python equivalent — not needed for M8 since M8 has no Kafka surface; future polyglot BC with Kafka adds an ADR-03 amendment for serialization parity) |
+| Cross-BC HTTP exceptions | per ADR-08 amendments | per ADR-08 amendments (HTTP contract is language-neutral) |
+| Observability scrape | Spring Boot Actuator `/actuator/prometheus` | language-specific endpoint (e.g., `/metrics` for FastAPI per ADR-18 §A18.8) — M5 PromQL whitelist accommodates both |
+
+The polyglot policy does NOT pre-authorize future polyglot BCs.
+Each one still requires a per-milestone ADR amendment per §A01.11's
+three-pronged test.
+
+See `docs/adr/18-m8-massing-gen.md` §A18.1–§A18.9 for the full M8
+Python flip specification.

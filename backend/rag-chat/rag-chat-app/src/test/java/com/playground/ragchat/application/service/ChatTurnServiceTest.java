@@ -96,7 +96,11 @@ class ChatTurnServiceTest {
                 toolDispatcherPort,
                 new ObjectMapper(),
                 RagChatProperties.defaults(),
-                Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC),
+                // M8 ToolCatalog now contains MassingTool; force empty for
+                // the M4-grammar legacy test (preserves the original M4
+                // SSE shape contract).
+                java.util.List::of);
 
         when(autoTitleService.generate(any(), any())).thenReturn(Mono.empty());
     }

@@ -11,15 +11,17 @@ import org.junit.jupiter.api.Test;
 /**
  * Invariant tests for {@link ToolCatalog} per ADR-17 §1 + §8 + PRD Story 10.
  *
- * <p>P0 invariant: {@code descriptors()} returns an empty, immutable list
- * — no concrete tools are registered at M7 ship. M8 lands the first
- * descriptor (single-file PR per ADR-17 §D).
+ * <p>Post-M8: {@code descriptors()} contains the {@code generate_massing}
+ * descriptor (ADR-08 §A08.11 sub-row + ADR-18 §A18.5 §22). Subsequent tool
+ * BCs land single-file PRs that append their own constant here.
  */
 class ToolCatalogTest {
 
     @Test
-    void isEmpty_atM7Ship() {
-        assertThat(ToolCatalog.descriptors()).isEmpty();
+    void registers_massingTool_postM8() {
+        assertThat(ToolCatalog.descriptors())
+                .extracting(ToolDescriptor::name)
+                .contains("generate_massing");
     }
 
     @Test

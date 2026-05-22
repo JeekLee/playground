@@ -525,3 +525,66 @@ amendment) or provision a separate sidecar at slot 6.
 
 See `docs/adr/18-m8-massing-gen.md` §12 + §18 for the full M8
 storage specification.
+
+## Amendment 2026-05-22 (M8 Python flip — Alembic / hand-rolled SQL)
+
+> This amendment is appended to ADR-05 as a new amendment block
+> following the M8 block (§A05.5–§A05.8) above. The M8 BC's
+> implementation language is flipped from Java/Spring Boot to
+> Python/FastAPI (per ADR-18 §A18.1). The `arch` schema DDL and the
+> `arch.outputs` table shape are **unchanged**; only the migration
+> tool moves from Flyway to Alembic (or hand-rolled SQL). The
+> §A05.5–§A05.8 block above is **not rewritten**.
+
+### §A05.9. `arch` schema ownership — language flipped, DDL unchanged
+
+**Decision: the `arch` schema and the `arch.outputs` table DDL pinned
+in §A05.6 (and ratified in ADR-18 §18) are preserved verbatim. The
+implementation language of the owning BC (`massing-gen`) flips from
+Java to Python, but the DDL the Postgres cluster receives is
+identical — same column names, same types (UUID / BYTEA / JSONB /
+REAL / INT / TEXT / TIMESTAMPTZ), same indexes
+(`idx_arch_outputs_user`, `idx_arch_outputs_brief`), same comments.**
+
+**Migration tool — Flyway out, Alembic in (or hand-rolled SQL):**
+
+| Concern | Pre-flip (Java) | Post-flip (Python) |
+|---|---|---|
+| Migration tool | **Flyway** — `flyway_arch` history table; `V202605230001__arch_outputs.sql` under `massing-gen-infra/src/main/resources/db/migration/` | **Alembic** (recommended) OR hand-rolled SQL — see ADR-18 §A18.7. Alembic history lives in `alembic_version` table (Alembic's default); hand-rolled SQL has no history table. |
+| Migration file location | `backend/massing-gen/massing-gen-infra/src/main/resources/db/migration/V202605230001__arch_outputs.sql` | `services/massing-gen/alembic/versions/202605230001_arch_outputs.py` (Alembic) OR `services/massing-gen/schema.sql` (hand-rolled idempotent SQL with `CREATE SCHEMA IF NOT EXISTS arch; CREATE TABLE IF NOT EXISTS arch.outputs ...`) |
+| DDL bytes | identical | identical |
+| Bootstrap mechanic | Flyway auto-runs on Spring Boot startup | Alembic CLI invoked from container entrypoint OR `psycopg`-driven SQL execution in FastAPI's startup event (`@app.on_event("startup")`) |
+| Connection settings (`search_path`, `default_schema`) | `SET search_path TO arch, public` via Hikari `connection-init-sql`; Hibernate `default_schema: arch` | Same `SET search_path TO arch, public` configured via SQLAlchemy `connect_args={"options": "-csearch_path=arch,public"}` (or equivalent). SQLAlchemy has no `default_schema` equivalent; the implementer either fully-qualifies table names (`arch.outputs`) in SQLAlchemy `__table_args__ = {"schema": "arch"}` or relies on the search_path. Both achieve the same effect. |
+
+### §A05.10. Cross-BC migration uniformity — Flyway (Java BCs) + Alembic (Python BCs)
+
+**Decision: Java BCs continue to use Flyway (the ADR-05 default). The
+Python BC (massing-gen at M8) uses Alembic (or hand-rolled SQL). Both
+tools target the same `postgres-playground` Postgres instance, the
+same `playground` database, but distinct history tables
+(`flyway_arch` would not have existed under Java post-M6.1 anyway —
+ADR-05 §"Migrations" baseline uses per-schema `flyway_history`; for
+the Python BC the equivalent is `alembic_version`, scoped per
+schema via Alembic's `version_table_schema='arch'` config).**
+
+**No conflict in practice:** each BC owns its schema (`identity`,
+`docs`, `chat`, `arch`, `metrics`) and runs its own migrations on
+its own schema. The two migration tools never touch the same DDL.
+The polyglot migration toolchain is a direct consequence of the
+polyglot BC policy from ADR-01 §A01.11.
+
+| Schema | Owner BC | Implementation language | Migration tool |
+|---|---|---|---|
+| `identity` | `identity` | Java | Flyway |
+| `docs` | `docs` | Java | Flyway |
+| `chat` | `rag-chat` | Java | Flyway |
+| **`arch`** | **`massing-gen`** | **Python** (per ADR-18 §A18.1) | **Alembic** (preferred) or hand-rolled SQL |
+| `metrics` | `metrics` | Java | Flyway (reserved — no schema in P0 per ADR-15) |
+
+**Forward note:** if a future Python BC is introduced (per
+ADR-01 §A01.14), it MAY use Alembic; the migration tool choice is
+per-BC, not project-wide. Java BCs MAY NOT switch to Alembic — Flyway
+remains the Java default to keep the Java toolchain uniform.
+
+See `docs/adr/18-m8-massing-gen.md` §A18.7 + ADR-01 §A01.11–§A01.14
+for the full Python flip specification.
