@@ -32,6 +32,31 @@ export type DocVisibility = 'private' | 'public';
  */
 export type DocMimeType = 'text/markdown' | 'application/pdf';
 
+/**
+ * Async extraction lifecycle per M6.1 ADR-12 §A12.3 / §A12.5.
+ *
+ * - `pending` — body materialized synchronously at create time; no async
+ *   work required. Treated as "extracted" for UI purposes.
+ * - `pending_extraction` — INSERTed with empty body; worker has not yet
+ *   picked it up.
+ * - `extracting` — worker in progress. PDF rows transition through this
+ *   page-by-page; SSE may emit `pageDone`/`pageTotal` while in this state.
+ * - `extracted` — body materialized; the document is fully readable.
+ * - `failed` — worker errored; `extractionReason` carries a user-readable
+ *   reason. The original blob is retained in MinIO so the user can still
+ *   download the source.
+ *
+ * The field is optional on the wire for forward compatibility — pre-M6.1
+ * backends and never-extracted (markdown-authored) rows can omit it; the
+ * frontend treats `undefined` as terminal/`extracted` via {@link isExtractionTerminal}.
+ */
+export type ExtractionStatus =
+  | 'pending'
+  | 'pending_extraction'
+  | 'extracting'
+  | 'extracted'
+  | 'failed';
+
 export interface AuthorDto {
   id: string;
   displayName: string;
@@ -75,6 +100,18 @@ export interface DocDetailDto {
   updatedAt: string;
   /** M6 — present once the backend ships PDF support; absent means markdown. */
   mimeType?: DocMimeType;
+  /**
+   * M6.1 — async extraction lifecycle. Absent on pre-M6.1 rows; present and
+   * one of {@link ExtractionStatus} once the migration lands. The frontend
+   * treats `undefined` as `extracted` (terminal) so legacy rows render as
+   * before.
+   */
+  extractionStatus?: ExtractionStatus;
+  /**
+   * M6.1 — user-readable reason set when `extractionStatus === 'failed'`.
+   * `null` on every other status (and absent on legacy rows).
+   */
+  extractionReason?: string | null;
 }
 
 export interface MyDocListItemDto {
@@ -89,6 +126,13 @@ export interface MyDocListItemDto {
   likeCount: number;
   /** M6 — present once the backend ships PDF support; absent means markdown. */
   mimeType?: DocMimeType;
+  /**
+   * M6.1 — async extraction lifecycle. Optional — the list DTO doesn't
+   * surface it yet, so list rows treat `undefined` as `extracted` and skip
+   * the "(분석 중)" coexistence hint. Forward-compat for the day the
+   * backend exposes the column on the mine-list endpoint.
+   */
+  extractionStatus?: ExtractionStatus;
 }
 
 export interface CreateDocRequestDto {
@@ -515,4 +559,49 @@ export function bodyByteSize(body: string): number {
  */
 export function isPdfSourced(doc: { mimeType?: DocMimeType }): boolean {
   return doc.mimeType === 'application/pdf';
+}
+
+// -------------------- M6.1 extraction-status helpers ----------------------
+
+/**
+ * In-flight (not-yet-terminal) extraction state — body is empty, the reader
+ * surface should render the Analyzing skeleton instead of the markdown
+ * pipeline.
+ */
+export function isExtractionInFlight(status: ExtractionStatus | undefined): boolean {
+  return status === 'pending_extraction' || status === 'extracting';
+}
+
+/**
+ * The extraction failed and the body never materialized. Distinct from
+ * "in-flight" because the UI shows an error card (with the reason +
+ * download-original affordance) rather than a skeleton.
+ */
+export function isExtractionFailed(status: ExtractionStatus | undefined): boolean {
+  return status === 'failed';
+}
+
+/**
+ * Terminal success — body is materialized; render normally. Pre-M6.1 rows
+ * (status absent) and synchronous-path uploads (`pending` / `extracted`)
+ * both land here.
+ */
+export function isExtractionTerminal(status: ExtractionStatus | undefined): boolean {
+  return status === undefined || status === 'extracted' || status === 'pending';
+}
+
+/**
+ * Does the document carry an original blob in MinIO that the user can
+ * download? M6.1 streams every multipart upload (PDF and `.md` file imports)
+ * into MinIO; rows authored directly via the BlockNote editor (JSON POST)
+ * have no original. The wire DTO doesn't currently expose a `hasOriginal`
+ * flag, so this is inferred from `mimeType === 'application/pdf'` —
+ * PDFs always have an original; markdown rows may or may not. A later
+ * backend change can surface an explicit field; this helper is the seam.
+ */
+export function hasOriginalBlob(doc: {
+  mimeType?: DocMimeType;
+  extractionStatus?: ExtractionStatus;
+}): boolean {
+  return isPdfSourced(doc);
 }
