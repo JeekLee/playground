@@ -83,6 +83,50 @@ class ChatStreamControllerTest {
     }
 
     @Test
+    void toSse_toolCallCarriesIdNameArgs() {
+        ChatStreamEvent.ToolCall evt = new ChatStreamEvent.ToolCall(
+                "call_abc123", "generate_massing",
+                Map.of("briefDocId", "doc-1", "siteWidth", 30.0));
+        ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
+        assertThat(sse.event()).isEqualTo("tool_call");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) sse.data();
+        assertThat(data).containsEntry("id", "call_abc123");
+        assertThat(data).containsEntry("name", "generate_massing");
+        assertThat(data).containsKey("args");
+    }
+
+    @Test
+    void toSse_toolResultCarriesIdNameResult() {
+        ChatStreamEvent.ToolResult evt = new ChatStreamEvent.ToolResult(
+                "call_abc123", "generate_massing",
+                Map.of("fileUrl", "/api/arch/outputs/x", "summary", "12 rooms"));
+        ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
+        assertThat(sse.event()).isEqualTo("tool_result");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) sse.data();
+        assertThat(data).containsEntry("id", "call_abc123");
+        assertThat(data).containsEntry("name", "generate_massing");
+        assertThat(data).containsKey("result");
+    }
+
+    @Test
+    void toSse_toolErrorCarriesIdNameCodeMessage() {
+        ChatStreamEvent.ToolError evt = new ChatStreamEvent.ToolError(
+                "call_abc123", "generate_massing", "TIMEOUT",
+                "Tool 'generate_massing' did not respond within 30s");
+        ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
+        assertThat(sse.event()).isEqualTo("tool_error");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) sse.data();
+        assertThat(data).containsEntry("id", "call_abc123");
+        assertThat(data).containsEntry("name", "generate_massing");
+        assertThat(data).containsEntry("code", "TIMEOUT");
+        assertThat(data).containsEntry("message",
+                "Tool 'generate_massing' did not respond within 30s");
+    }
+
+    @Test
     void toSse_errorCarriesCodeAndMessage() {
         ServerSentEvent<Object> sse = ChatStreamController.toSse(ChatStreamEvent.Error.gatewayDown());
         assertThat(sse.event()).isEqualTo("error");

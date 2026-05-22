@@ -110,6 +110,37 @@ public class ChatStreamController {
             }
             return ServerSentEvent.<Object>builder((Object) data).event("error").build();
         }
+        if (evt instanceof ChatStreamEvent.ToolCall tc) {
+            // ADR-17 §3 + §A14.3 — wire shape carries id + name + args. Args is
+            // the LLM-produced JsonNode (or Jackson-serializable carrier); the
+            // controller defers JSON serialization to Spring's reactive codec.
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", tc.id());
+            data.put("name", tc.name());
+            data.put("args", tc.args());
+            return ServerSentEvent.<Object>builder((Object) data).event("tool_call").build();
+        }
+        if (evt instanceof ChatStreamEvent.ToolResult tr) {
+            // ADR-17 §3 — wire shape carries id + name + result. Result may be
+            // a Jackson JsonNode (truncated per §4) or any Jackson-serializable
+            // carrier.
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", tr.id());
+            data.put("name", tr.name());
+            data.put("result", tr.result());
+            return ServerSentEvent.<Object>builder((Object) data).event("tool_result").build();
+        }
+        if (evt instanceof ChatStreamEvent.ToolError te) {
+            // ADR-17 §3 — wire shape carries id + name + code (ToolErrorCode
+            // enum name string) + message. Note `tool_error` is NOT a
+            // fall-back to `error` — frontend dispatches them separately.
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", te.id());
+            data.put("name", te.name());
+            data.put("code", te.code());
+            data.put("message", te.message());
+            return ServerSentEvent.<Object>builder((Object) data).event("tool_error").build();
+        }
         log.warn("unknown chat stream event type: {}", evt.getClass());
         return ServerSentEvent.<Object>builder((Object) Map.of("code", "INTERNAL", "message", "unknown event"))
                 .event("error").build();

@@ -1,14 +1,21 @@
 package com.playground.ragchat.infrastructure.external;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.playground.ragchat.application.port.ChatGenerationPort;
+import com.playground.ragchat.application.tool.ToolBinding;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
+import java.util.ArrayList;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -33,10 +40,15 @@ public class SparkInferenceChatAdapter implements ChatGenerationPort {
 
     private final ChatClient chatClient;
     private final CircuitBreaker breaker;
+    private final ObjectMapper objectMapper;
 
-    public SparkInferenceChatAdapter(ChatClient.Builder chatClientBuilder, CircuitBreaker sparkGatewayBreaker) {
+    public SparkInferenceChatAdapter(
+            ChatClient.Builder chatClientBuilder,
+            CircuitBreaker sparkGatewayBreaker,
+            ObjectMapper objectMapper) {
         this.chatClient = chatClientBuilder.build();
         this.breaker = sparkGatewayBreaker;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -49,6 +61,63 @@ public class SparkInferenceChatAdapter implements ChatGenerationPort {
                 .content()
                 .transformDeferred(CircuitBreakerOperator.of(breaker))
                 .doOnError(err -> log.warn("chat stream error: {}", err.toString()));
+    }
+
+    @Override
+    public Flux<String> streamWithTools(String promptText, int maxTokens, List<ToolBinding> bindings) {
+        if (bindings == null || bindings.isEmpty()) {
+            // M4 invariant — no tool callbacks registered means we drop straight
+            // back to the existing path (Spring AI never sees a tools(...) call,
+            // never engages function-calling, SSE event grammar matches M4).
+            return stream(promptText, maxTokens);
+        }
+        List<ToolCallback> callbacks = new ArrayList<>(bindings.size());
+        for (ToolBinding b : bindings) {
+            callbacks.add(toCallback(b));
+        }
+        Prompt prompt = new Prompt(
+                new UserMessage(promptText),
+                OpenAiChatOptions.builder().maxTokens(maxTokens).build());
+        return chatClient.prompt(prompt)
+                .toolCallbacks(callbacks)
+                .stream()
+                .content()
+                .transformDeferred(CircuitBreakerOperator.of(breaker))
+                .doOnError(err -> log.warn("chat stream error (tools): {}", err.toString()));
+    }
+
+    private ToolCallback toCallback(ToolBinding binding) {
+        FunctionToolCallback.Builder<String, String> builder = FunctionToolCallback
+                .builder(binding.descriptor().name(), (String argsJson) -> {
+                    JsonNode args;
+                    try {
+                        args = (argsJson == null || argsJson.isBlank())
+                                ? objectMapper.createObjectNode()
+                                : objectMapper.readTree(argsJson);
+                    } catch (Exception e) {
+                        log.warn("tool_args_parse_error tool={} reason={}",
+                                binding.descriptor().name(), e.toString());
+                        args = objectMapper.createObjectNode();
+                    }
+                    JsonNode response = binding.handler().apply(args);
+                    if (response == null) {
+                        return "{}";
+                    }
+                    try {
+                        return objectMapper.writeValueAsString(response);
+                    } catch (Exception e) {
+                        log.warn("tool_response_serialize_error tool={} reason={}",
+                                binding.descriptor().name(), e.toString());
+                        return "{}";
+                    }
+                })
+                .description(binding.descriptor().description())
+                .inputType(String.class);
+        String schema = binding.descriptor().parameterSchema();
+        if (schema != null && !schema.isBlank()) {
+            builder = builder.inputSchema(schema);
+        }
+        return builder.build();
     }
 
     @Override

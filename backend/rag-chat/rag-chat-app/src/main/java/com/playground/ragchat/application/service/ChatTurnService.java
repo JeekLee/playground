@@ -1,5 +1,8 @@
 package com.playground.ragchat.application.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.playground.ragchat.application.dto.ChatTurnRequest;
 import com.playground.ragchat.application.dto.CitationDto;
 import com.playground.ragchat.application.port.ChatGenerationPort;
@@ -10,6 +13,10 @@ import com.playground.ragchat.application.port.TokenBucketPort;
 import com.playground.ragchat.application.properties.RagChatProperties;
 import com.playground.ragchat.application.repository.MessageRepository;
 import com.playground.ragchat.application.repository.SessionRepository;
+import com.playground.ragchat.application.tool.ToolBinding;
+import com.playground.ragchat.application.tool.ToolDispatcherPort;
+import com.playground.ragchat.application.tool.ToolInvocationResult;
+import com.playground.ragchat.application.tool.UserContext;
 import com.playground.ragchat.domain.exception.RagChatErrorCode;
 import com.playground.ragchat.domain.model.ChatSession;
 import com.playground.ragchat.domain.model.Message;
@@ -21,17 +28,23 @@ import com.playground.ragchat.domain.model.vo.TokenCount;
 import com.playground.ragchat.domain.service.HistoryTruncator;
 import com.playground.ragchat.domain.service.PromptTemplate;
 import com.playground.ragchat.domain.service.TokenCounter;
+import com.playground.ragchat.domain.tool.ToolCatalog;
+import com.playground.ragchat.domain.tool.ToolDescriptor;
+import com.playground.ragchat.domain.tool.ToolErrorCode;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -66,8 +79,12 @@ public class ChatTurnService {
     private final PromptTemplate promptTemplate;
     private final AutoTitleService autoTitleService;
     private final ActiveTurnRegistry activeTurnRegistry;
+    private final ToolDispatcherPort toolDispatcherPort;
+    private final ObjectMapper objectMapper;
     private final RagChatProperties properties;
     private final Clock clock;
+    /** Source of registered tool descriptors. Defaults to {@code ToolCatalog::descriptors}. */
+    private final java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier;
 
     public ChatTurnService(
             SessionRepository sessionRepository,
@@ -82,8 +99,35 @@ public class ChatTurnService {
             PromptTemplate promptTemplate,
             AutoTitleService autoTitleService,
             ActiveTurnRegistry activeTurnRegistry,
+            ToolDispatcherPort toolDispatcherPort,
+            ObjectMapper objectMapper,
             RagChatProperties properties,
             Clock clock) {
+        this(sessionRepository, messageRepository, tokenBucketPort, lockPort, embeddingPort,
+                chunkRetrievalPort, chatGenerationPort, historyTruncator, tokenCounter,
+                promptTemplate, autoTitleService, activeTurnRegistry, toolDispatcherPort,
+                objectMapper, properties, clock, ToolCatalog::descriptors);
+    }
+
+    /** Test-friendly constructor — pluggable tool-descriptor supplier. */
+    ChatTurnService(
+            SessionRepository sessionRepository,
+            MessageRepository messageRepository,
+            TokenBucketPort tokenBucketPort,
+            ConcurrentStreamLockPort lockPort,
+            EmbeddingPort embeddingPort,
+            ChunkRetrievalPort chunkRetrievalPort,
+            ChatGenerationPort chatGenerationPort,
+            HistoryTruncator historyTruncator,
+            TokenCounter tokenCounter,
+            PromptTemplate promptTemplate,
+            AutoTitleService autoTitleService,
+            ActiveTurnRegistry activeTurnRegistry,
+            ToolDispatcherPort toolDispatcherPort,
+            ObjectMapper objectMapper,
+            RagChatProperties properties,
+            Clock clock,
+            java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.tokenBucketPort = tokenBucketPort;
@@ -96,8 +140,11 @@ public class ChatTurnService {
         this.promptTemplate = promptTemplate;
         this.autoTitleService = autoTitleService;
         this.activeTurnRegistry = activeTurnRegistry;
+        this.toolDispatcherPort = toolDispatcherPort;
+        this.objectMapper = objectMapper;
         this.properties = properties;
         this.clock = clock;
+        this.toolDescriptorSupplier = toolDescriptorSupplier;
     }
 
     public Flux<ChatStreamEvent> stream(ChatTurnRequest request) {
@@ -206,8 +253,30 @@ public class ChatTurnService {
                         "참고 문서 확인 중",
                         java.util.Map.of("count", prep.retrieved().size())));
 
-        Flux<ChatStreamEvent> tokens = chatGenerationPort
-                .stream(prompt, properties.maxCompletionTokens())
+        // ADR-17 §1 — branch on whether any tools are registered. Empty catalog
+        // means the M4 invariant path: no tool callbacks passed to Spring AI,
+        // no `tool_*` SSE events emitted, behavior identical to M4 ship (PRD
+        // Story 10).
+        List<ToolDescriptor> descriptors = toolDescriptorSupplier.get();
+        // Sink the tool callbacks push events into. Multicast so the orchestrator
+        // can interleave the events with the token flux as they arrive.
+        Sinks.Many<ChatStreamEvent> toolEventSink = Sinks.many().multicast().onBackpressureBuffer();
+        AtomicInteger depth = new AtomicInteger(0);
+        UserContext userCtx = new UserContext(request.caller(), request.userSub());
+
+        List<ToolBinding> bindings = descriptors.isEmpty()
+                ? List.of()
+                : buildBindings(descriptors, toolEventSink, depth, userCtx);
+
+        Flux<String> rawDeltas = bindings.isEmpty()
+                ? chatGenerationPort.stream(prompt, properties.maxCompletionTokens())
+                : chatGenerationPort.streamWithTools(
+                        prompt, properties.maxCompletionTokens(), bindings);
+
+        // The token flux signals upstream completion of the LLM (and all its
+        // internal tool-calling round-trips done by Spring AI). When it
+        // terminates, close the tool-event sink so the merge completes.
+        Flux<ChatStreamEvent> tokens = rawDeltas
                 .timeout(java.time.Duration.ofSeconds(35))
                 .doOnNext(accumulated::append)
                 .map(delta -> (ChatStreamEvent) new ChatStreamEvent.Token(delta))
@@ -220,7 +289,16 @@ public class ChatTurnService {
                         return Flux.just(ChatStreamEvent.Error.gatewayDown());
                     }
                     return Flux.just(ChatStreamEvent.Error.internal(err.getMessage()));
-                });
+                })
+                .doFinally(sig -> toolEventSink.tryEmitComplete());
+
+        // Merge the tool events (emitted from inside Spring AI's function-calling
+        // callbacks) with the token deltas. The merge preserves the order each
+        // upstream emits in: tool events arrive when the callback fires; token
+        // events arrive as Spring AI streams the model's text.
+        Flux<ChatStreamEvent> mergedTokensAndToolEvents = bindings.isEmpty()
+                ? tokens
+                : Flux.merge(toolEventSink.asFlux(), tokens);
 
         Mono<ChatStreamEvent> done = Mono.defer(() -> {
             if (errored.get()) {
@@ -234,7 +312,7 @@ public class ChatTurnService {
         // land in `chat.messages` / `chat.message_citations`. Lock release and
         // auto-title fire from the source's terminal signal (not from the
         // client-facing flux).
-        Flux<ChatStreamEvent> source = Flux.concat(retrievalEvent, tokens, done)
+        Flux<ChatStreamEvent> source = Flux.concat(retrievalEvent, mergedTokensAndToolEvents, done)
                 .doFinally(signal -> {
                     activeTurnRegistry.unregister(prep.session().id());
                     try {
@@ -389,6 +467,128 @@ public class ChatTurnService {
             return "";
         }
         return text.length() > 160 ? text.substring(0, 160) : text;
+    }
+
+    /**
+     * Build one {@link ToolBinding} per registered descriptor. The binding's
+     * handler is the boundary where (per ADR-17 §3.1) we:
+     * <ol>
+     *   <li>Check depth cap — if exceeded, emit terminal {@code tool_error}
+     *       with {@code MAX_DEPTH} and throw so Spring AI aborts the
+     *       round-trip.</li>
+     *   <li>Generate a correlation id (server-side ULID-prefixed when Spring
+     *       AI does not surface its own — M7 P0 generates per call).</li>
+     *   <li>Emit {@code tool_call} to the sink BEFORE calling the
+     *       dispatcher.</li>
+     *   <li>Invoke {@link ToolDispatcherPort}.</li>
+     *   <li>Emit {@code tool_result} (success) or {@code tool_error}
+     *       (failure) to the sink, AFTER the dispatcher returns but BEFORE
+     *       returning the JSON to Spring AI.</li>
+     *   <li>For terminal failure codes ({@code CIRCUIT_OPEN} / {@code MAX_DEPTH})
+     *       throw so Spring AI does not continue the round-trip; the
+     *       use-case observes the upstream error and the sink already
+     *       carries the terminal event.</li>
+     * </ol>
+     */
+    private List<ToolBinding> buildBindings(
+            List<ToolDescriptor> descriptors,
+            Sinks.Many<ChatStreamEvent> sink,
+            AtomicInteger depth,
+            UserContext userCtx) {
+        List<ToolBinding> bindings = new ArrayList<>(descriptors.size());
+        for (ToolDescriptor d : descriptors) {
+            ToolDescriptor desc = d;
+            bindings.add(new ToolBinding(desc, args -> handleToolInvocation(desc, args, sink, depth, userCtx)));
+        }
+        return bindings;
+    }
+
+    private JsonNode handleToolInvocation(
+            ToolDescriptor desc,
+            JsonNode args,
+            Sinks.Many<ChatStreamEvent> sink,
+            AtomicInteger depth,
+            UserContext userCtx) {
+        String id = "call_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        int newDepth = depth.incrementAndGet();
+        int maxDepth = properties.toolMaxDepth();
+        if (newDepth > maxDepth) {
+            log.warn("tool_max_depth_exceeded tool=" + desc.name() + " depth=" + newDepth + " cap=" + maxDepth);
+            sink.tryEmitNext(new ChatStreamEvent.ToolError(
+                    id, desc.name(), ToolErrorCode.MAX_DEPTH.name(),
+                    "Tool-call depth cap of " + maxDepth + " exceeded"));
+            sink.tryEmitComplete();
+            throw new MaxDepthExceededException(desc.name(), maxDepth);
+        }
+        // tool_call BEFORE dispatching (ADR-17 §3.1 step 3a).
+        sink.tryEmitNext(new ChatStreamEvent.ToolCall(id, desc.name(), args));
+
+        ToolInvocationResult result = toolDispatcherPort.invoke(id, desc.name(), args, userCtx);
+        if (result instanceof ToolInvocationResult.Success s) {
+            sink.tryEmitNext(new ChatStreamEvent.ToolResult(s.id(), s.name(), s.body()));
+            // Truncate the body to the configured cap if needed for the
+            // LLM-bound feedback. The dispatcher already truncates at its
+            // own boundary (ADR-17 §4) but we re-cap here defensively
+            // before sending back to Spring AI.
+            return truncateForLlm(s.body());
+        }
+        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
+        sink.tryEmitNext(new ChatStreamEvent.ToolError(f.id(), f.name(), f.code().name(), f.message()));
+        if (f.code() == ToolErrorCode.CIRCUIT_OPEN) {
+            // Terminal — abort the round-trip so the LLM does not get a chance
+            // to retry (ADR-17 §3.1 + Story 6 operator cost-protection).
+            sink.tryEmitComplete();
+            throw new ToolCallTerminalException(f.code(), f.message());
+        }
+        // Non-terminal — feed the error back to the LLM as a synthetic tool
+        // result so the LLM can either apologize, retry with corrected args,
+        // or fall back to a natural-language response (ADR-17 §2 table).
+        ObjectNode err = objectMapper.createObjectNode();
+        err.put("error", true);
+        err.put("code", f.code().name());
+        err.put("message", f.message() == null ? "" : f.message());
+        return err;
+    }
+
+    /**
+     * Best-effort byte-level truncation of the JSON to feed back to the LLM
+     * within the configured cap (ADR-17 §4). The dispatcher already truncates;
+     * this is a belt-and-suspenders guard for any future direct-call path.
+     */
+    private JsonNode truncateForLlm(JsonNode body) {
+        try {
+            byte[] serialized = objectMapper.writeValueAsBytes(body);
+            int cap = properties.toolMaxResultBytes();
+            if (serialized.length <= cap) {
+                return body;
+            }
+            int excerptCap = Math.max(0, cap - 64);
+            byte[] excerptBytes = new byte[excerptCap];
+            System.arraycopy(serialized, 0, excerptBytes, 0, excerptCap);
+            ObjectNode envelope = objectMapper.createObjectNode();
+            envelope.put("truncated", true);
+            envelope.put("originalBytes", serialized.length);
+            envelope.put("excerpt", new String(excerptBytes, StandardCharsets.UTF_8));
+            return envelope;
+        } catch (Exception e) {
+            return body;
+        }
+    }
+
+    /** Thrown when the per-turn depth cap is exceeded — aborts the round-trip. */
+    static final class MaxDepthExceededException extends RuntimeException {
+        MaxDepthExceededException(String tool, int cap) {
+            super("Tool-call depth cap " + cap + " exceeded on tool " + tool);
+        }
+    }
+
+    /** Thrown when a tool error is terminal (CIRCUIT_OPEN / MAX_DEPTH). */
+    static final class ToolCallTerminalException extends RuntimeException {
+        final ToolErrorCode code;
+        ToolCallTerminalException(ToolErrorCode code, String message) {
+            super(message);
+            this.code = code;
+        }
     }
 
     private static boolean isCircuitOpen(Throwable err) {

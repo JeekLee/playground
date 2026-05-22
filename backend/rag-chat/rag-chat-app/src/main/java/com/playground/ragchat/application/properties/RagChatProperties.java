@@ -18,6 +18,12 @@ public final class RagChatProperties {
     /** Per-turn user-message raw byte cap per spec §5.1 (4 KB). */
     public static final int MAX_USER_MESSAGE_BYTES = 4096;
 
+    /** ADR-17 §6 default — max tool-call depth per user turn. */
+    public static final int DEFAULT_TOOL_MAX_DEPTH = 5;
+
+    /** ADR-17 §4 default — max tool-result body bytes; over-cap = truncate-and-warn. */
+    public static final int DEFAULT_TOOL_MAX_RESULT_BYTES = 16384;
+
     private final int retrievalK;
     private final int efSearch;
     private final int systemPromptBudgetTokens;
@@ -25,6 +31,8 @@ public final class RagChatProperties {
     private final int maxHistoryTokens;
     private final int maxCompletionTokens;
     private final int perChunkTokenBudget;
+    private final int toolMaxDepth;
+    private final int toolMaxResultBytes;
 
     public RagChatProperties(
             int retrievalK,
@@ -33,7 +41,9 @@ public final class RagChatProperties {
             int retrievalBlockTokenBudget,
             int maxHistoryTokens,
             int maxCompletionTokens,
-            int perChunkTokenBudget) {
+            int perChunkTokenBudget,
+            int toolMaxDepth,
+            int toolMaxResultBytes) {
         this.retrievalK = retrievalK;
         this.efSearch = efSearch;
         this.systemPromptBudgetTokens = systemPromptBudgetTokens;
@@ -41,6 +51,8 @@ public final class RagChatProperties {
         this.maxHistoryTokens = maxHistoryTokens;
         this.maxCompletionTokens = maxCompletionTokens;
         this.perChunkTokenBudget = perChunkTokenBudget;
+        this.toolMaxDepth = toolMaxDepth;
+        this.toolMaxResultBytes = toolMaxResultBytes;
     }
 
     public static RagChatProperties defaults() {
@@ -51,7 +63,9 @@ public final class RagChatProperties {
                 2400,
                 24576,
                 4000,
-                400);
+                400,
+                DEFAULT_TOOL_MAX_DEPTH,
+                DEFAULT_TOOL_MAX_RESULT_BYTES);
     }
 
     public int retrievalK() {
@@ -80,5 +94,15 @@ public final class RagChatProperties {
 
     public int perChunkTokenBudget() {
         return perChunkTokenBudget;
+    }
+
+    /** ADR-17 §6 — max tool-call depth per user turn. */
+    public int toolMaxDepth() {
+        return toolMaxDepth;
+    }
+
+    /** ADR-17 §4 — max tool-result body bytes (truncate-and-warn above). */
+    public int toolMaxResultBytes() {
+        return toolMaxResultBytes;
     }
 }
