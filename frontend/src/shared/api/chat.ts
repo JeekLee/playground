@@ -136,6 +136,118 @@ export interface ErrorEventPayload {
   retryAfter?: number;
 }
 
+// -------------------- M7 / M8 tool-calling SSE payloads ------------------
+//
+// Per ADR-17 §3.1 (M7 invariant) the dispatcher emits three standalone
+// events for every tool round-trip:
+//
+//   event: tool_call     {id, name, args}
+//   event: tool_result   {id, name, summary, outputUrl?, programJson?, metadata?}
+//   event: tool_error    {id, name, code, message}
+//
+// The `code` field on `tool_error` is the M7 wire-level enum (transport
+// classification: 4xx/5xx/timeout/etc.). M8 layers its domain code on
+// TOP of the message field via the prefix grammar pinned in ADR-18 §6
+// ("<DOMAIN_CODE>: <human-readable>"). The frontend's
+// `parseM8ErrorPrefix` helper in `features/chat-tool-card/` is the
+// SINGLE site that splits the prefix off.
+//
+// The shape is intentionally generic (Record<string, unknown> for args /
+// metadata / programJson) so future tool BCs (slide-gen, image-gen, …)
+// don't need a wire-level schema change. The M8-specific narrowing
+// happens in `features/chat-tool-card/`.
+
+/**
+ * Per ADR-17 §2 — wire-level classification the dispatcher applies
+ * to every tool round-trip. 4xx maps to `UPSTREAM_4XX` (NOT counted
+ * against the per-tool breaker per ADR-14 §4 invariant), 5xx / IO
+ * exceptions / timeouts map to the matching codes (counted against
+ * the breaker). M8 domain codes (`BRIEF_EXTRACTION_FAILED`, …) live
+ * as a prefix on `message`, not in this enum.
+ */
+export type ToolErrorCode =
+  | 'TIMEOUT'
+  | 'CIRCUIT_OPEN'
+  | 'MAX_DEPTH'
+  | 'UPSTREAM_4XX'
+  | 'UPSTREAM_5XX'
+  | 'SCHEMA_INVALID'
+  | 'INTERNAL';
+
+/** `event: tool_call` — LLM decided to invoke a tool (M7). */
+export interface ToolCallEventPayload {
+  id: string;
+  name: string;
+  /** Arguments the LLM resolved against the descriptor's parameterSchema. */
+  args: Record<string, unknown>;
+}
+
+/**
+ * `event: tool_result` — tool returned successfully (M7).
+ *
+ * `outputUrl` is a *relative* path per ADR-17 §3 — the gateway-issued
+ * session cookie carries `X-User-Id` to the BC's download endpoint, so
+ * the browser hits `<a href={outputUrl} download>` directly with no JS
+ * fetch involved. For M8 the URL is `/api/arch/outputs/{uuid}` per
+ * ADR-18 §21.
+ *
+ * `programJson` / `metadata` are tool-specific opaque blobs the
+ * dispatcher forwards verbatim from the BC. For M8 `programJson`
+ * matches the JSON Schema pinned in ADR-18 §9.
+ */
+export interface ToolResultEventPayload {
+  id: string;
+  name: string;
+  /** One-line user-facing summary. M8 emits Korean per ADR-18 §5. */
+  summary: string;
+  /** Relative download URL for file-producing tools. */
+  outputUrl?: string;
+  /** Tool-specific structured payload. M8: see {@link MassingProgramJson}. */
+  programJson?: Record<string, unknown>;
+  /** Reserved for non-file tools (e.g. image-gen returning an inline preview). */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * `event: tool_error` — tool failed (M7). The `code` is the wire-level
+ * M7 enum; M8's domain code (e.g. `BRIEF_EXTRACTION_FAILED`) is encoded
+ * inside `message` as a prefix grammar `<CODE>: <human-readable>` per
+ * ADR-18 §6. Frontend MUST parse via `parseM8ErrorPrefix` only.
+ */
+export interface ToolErrorEventPayload {
+  id: string;
+  name: string;
+  code: ToolErrorCode;
+  message: string;
+}
+
+/**
+ * M8 `programJson` shape per ADR-18 §9 (the
+ * `programJson.schema.json` draft 2020-12 file).
+ *
+ * The wire ships ONLY the extraction output — `rooms[]` is
+ * `{name, areaM2}` per room (no per-room floor / dimensions). The
+ * `RoomBox` algorithm output (which DOES have floor + x/y/w/d/h)
+ * is consumed server-side and serialized into the `.3dm` file; only
+ * the high-level program survives onto the wire (see PRD §"Wire-shape
+ * contracts" and ADR-18 §11 for the split).
+ *
+ * The optional site / floor-height fields land here when the LLM
+ * extracted them from the brief; if absent, they fell back to the
+ * request params or numerical defaults (ADR-18 §8).
+ */
+export interface MassingProgramJson {
+  rooms: MassingRoom[];
+  siteWidthM?: number;
+  siteDepthM?: number;
+  floorHeightM?: number;
+}
+
+export interface MassingRoom {
+  name: string;
+  areaM2: number;
+}
+
 // -------------------- Result type (mirrors docs.ts) ----------------------
 
 export type ChatResult<T> =

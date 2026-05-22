@@ -101,6 +101,7 @@ export function useChatStream(): UseChatStreamApi {
         content: '',
         citations: [],
         status: 'thinking',
+        toolCards: [],
       });
 
       await startChatStream({
@@ -148,6 +149,7 @@ export function useChatStream(): UseChatStreamApi {
             content: '',
             citations: [],
             status: 'thinking',
+            toolCards: [],
           });
         }
         onUnderlying(ev);

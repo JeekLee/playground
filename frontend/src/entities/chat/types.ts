@@ -11,6 +11,8 @@ import type {
   CitationVisibility,
   DoneEventPayload,
   ErrorEventPayload,
+  MassingProgramJson,
+  MassingRoom,
   MessageCitationDto,
   MessageDto,
   MessageRole,
@@ -18,6 +20,10 @@ import type {
   SessionListItemDto,
   SseErrorCode,
   TokenEventPayload,
+  ToolCallEventPayload,
+  ToolErrorCode,
+  ToolErrorEventPayload,
+  ToolResultEventPayload,
 } from '@/shared/api/chat';
 import type { ChatStreamEvent } from '@/shared/api/chat.sse';
 
@@ -31,7 +37,44 @@ export type PhasePayload = PhaseEventPayload;
 export type TokenPayload = TokenEventPayload;
 export type DonePayload = DoneEventPayload;
 export type ErrorPayload = ErrorEventPayload;
-export type { SseErrorCode };
+export type ToolCallPayload = ToolCallEventPayload;
+export type ToolResultPayload = ToolResultEventPayload;
+export type ToolErrorPayload = ToolErrorEventPayload;
+export type { SseErrorCode, ToolErrorCode, MassingProgramJson, MassingRoom };
+
+/**
+ * Per-tool-invocation state captured during a chat turn. The streaming
+ * turn accumulates an ordered `ToolCardState[]` (one entry per `id` in
+ * the `tool_call` / `tool_result` / `tool_error` triplet) and the
+ * `MassingResultCard` / `MassingErrorCard` widgets render one card per
+ * entry below the assistant body.
+ *
+ * Lifecycle:
+ *   `tool_call`   → state = `in_flight` (skeleton card with spinner)
+ *   `tool_result` → state = `result`     (populated card with primary action)
+ *   `tool_error`  → state = `error`      (warning palette + secondary action)
+ *
+ * `calledAt` lets the error card display the `<elapsed>s elapsed` line
+ * per design doc §2.5 — diff against the wall-clock when the matching
+ * `tool_error` arrives. Stored as `Date.now()` to keep the math simple
+ * and timezone-free.
+ */
+export type ToolCardState =
+  | { kind: 'in_flight'; toolCall: ToolCallPayload; calledAt: number }
+  | {
+      kind: 'result';
+      toolCall: ToolCallPayload;
+      toolResult: ToolResultPayload;
+      calledAt: number;
+      resolvedAt: number;
+    }
+  | {
+      kind: 'error';
+      toolCall: ToolCallPayload;
+      toolError: ToolErrorPayload;
+      calledAt: number;
+      resolvedAt: number;
+    };
 
 /**
  * Domain view of an in-flight assistant turn — the live "streaming
@@ -62,6 +105,16 @@ export interface StreamingTurn {
   phaseLabel?: string;
   /** When status === 'error' — the SSE error payload. */
   error?: ErrorPayload;
+  /**
+   * Ordered list of tool invocations the LLM dispatched during this
+   * turn. Each entry is keyed by the `id` field on the SSE
+   * `tool_call` / `tool_result` / `tool_error` triplet so the
+   * in-flight skeleton can transition into a populated or error card
+   * without reordering. Mirrors the citation pattern — empty array
+   * means no tool was called this turn (the common case for
+   * pure-RAG questions).
+   */
+  toolCards: ToolCardState[];
 }
 
 /** Stale citation predicate per ADR-14 §11 (title null after server JOIN). */
