@@ -279,3 +279,106 @@ over verbatim through the package-and-build-file `git mv`.
 
 See `docs/adr/12-m2-docs.md` amendment 2026-05-22 §A12.1 + §A12.5 for
 the full M6.1 specification.
+
+## Amendment 2026-05-22 (ADR-18, M8) — `massing-gen` quadruplet + port 18083 claimed
+
+The M8 PR set (ADR-18 — `docs/adr/18-m8-massing-gen.md`) introduces
+the `massing-gen` BC — the first concrete `ToolCatalog` consumer and
+the first new BC since M5. The Gradle module map and port table both
+update.
+
+### A01.6. Module list — `massing-gen-*` quadruplet added
+
+The `massing-gen` BC's four-module quadruplet is **added**:
+
+| Module | Type | bootJar? | Added in |
+|---|---|---|---|
+| `massing-gen-api` | runnable Spring Boot app | **yes** | **M8** |
+| `massing-gen-app` | Java library | no | **M8** |
+| `massing-gen-domain` | Java library | no | **M8** |
+| `massing-gen-infra` | Java library | no | **M8** |
+
+The directories
+`backend/massing-gen/massing-gen-{api,app,domain,infra}/` are
+created. Root `backend/settings.gradle.kts` gains four new
+`include(":massing-gen:massing-gen-*")` lines.
+
+Java package root: **`dev.jeeklee.playground.massinggen.*`**
+(joined-word convention matching `ragchat` for `rag-chat` and
+historical `ragingestion` for `rag-ingestion`; see ADR-18 §14).
+Per-layer subpackages mirror ADR-02 — `massing-gen-domain` →
+`dev.jeeklee.playground.massinggen.domain.*`,
+`massing-gen-app` → `...application.*`,
+`massing-gen-api` → `...api.*`,
+`massing-gen-infra` → `...infrastructure.*`.
+
+### A01.7. Port table — 18083 claimed by `massing-gen-api`
+
+Port 18083 (freed by the M6.1 amendment §A01.3 when `rag-ingestion-api`
+was retired) is **claimed by `massing-gen-api`**:
+
+| Module | Port | Host-exposed? |
+|---|---|---|
+| `gateway` | **18080** | yes (single ingress) |
+| `identity-api` | **18081** | no (compose-internal) |
+| `docs-api` | **18082** | no |
+| **`massing-gen-api`** | **18083** | **no** (compose-internal; gateway forwards `/api/arch/**` but not `/internal/**`) |
+| `rag-chat-api` | **18084** | no |
+| (reserved) | 18085 | freed by M6.1; remains reserved for next BC |
+| `metrics-api` | **18086** | no |
+
+**Stale-value note:** the M8 spec
+(`docs/superpowers/specs/2026-05-19-post-m5-roadmap.md` §6), the M8
+PRD (`docs/prd/M8-massing-gen.md` §"Bounded Context"), and
+`docs/roadmap.md` §M8 all carried **`18086`** as the working
+candidate for `massing-gen-api`. That working value is **stale**:
+`18086` was claimed by `metrics-api` in M5 (per §A01.3) before the
+M8 spec was authored. ADR-18 §2 rejects 18086 explicitly and
+pins **18083**. This amendment ratifies the port table. (PRD §Story 1
+note "open question Q-A" is closed by ADR-18 §2 +
+this amendment.)
+
+### A01.8. Updated module count
+
+Six BCs (identity, docs, rag-chat, metrics, **massing-gen**) × four
+modules each + gateway + shared-kernel = **26 production modules** +
+`buildSrc`. Up from 22 (post-M6.1 baseline per A01.2).
+
+ADR-00's ASCII module dependency graph is redrawn in lockstep — a new
+`massing-gen-api` lane is added on the gateway downstream;
+`rag-chat-api → massing-gen-api` is drawn (Exception 4 sub-row per
+ADR-08 §A08.11); `massing-gen-api → docs-api` is drawn (Exception 5
+per ADR-08 §A08.12); `massing-gen-api → rhino3dm-bridge` (new
+external sidecar) is drawn.
+
+### A01.9. Convention plugins — no change
+
+The six convention plugins
+(`playground.{java-conventions,spring-boot-app,bc-{domain,app,api,infra}}`)
+are unchanged by M8. The `massing-gen-{api,app,domain,infra}` modules
+apply the same `playground.bc-*` plugins as every other BC; the
+layering rules and Spring-free invariants apply verbatim.
+
+### A01.10. Consequences (M8-specific)
+
+- **Positive:** the reservation pool shrinks from 2 free slots
+  (18083 + 18085) to 1 (18085). The pool was intentionally
+  over-provisioned by M6.1; M8 absorbs the slack.
+- **Positive:** the new BC is the first concrete consumer of M7's
+  generic tool-calling infra — proving the 4-module quadruplet
+  pattern scales to add a new BC with one new schema + one new
+  sidecar + two new ADR-08 amendments (sub-row + fresh exception)
+  + one descriptor registration.
+- **Negative:** module count climb (22 → 26) is the expected
+  fresh-BC cost. IDE indexing rises proportionally; Gradle
+  configuration cache + build cache absorb it.
+- **Negative:** the spec/PRD/roadmap-level port mistake (18086 →
+  18083) means three docs need text amendments to reference the
+  correct port (the roadmap §M8 row is updated as part of this PR
+  set; the spec §6 is left as-is — historical record of the working
+  value at spec-authoring time; the PRD §Story 1 already cataloged
+  the issue as open question Q-A and references ADR-18 for the
+  closure).
+
+See `docs/adr/18-m8-massing-gen.md` §2 + §17 for the full M8
+specification.
