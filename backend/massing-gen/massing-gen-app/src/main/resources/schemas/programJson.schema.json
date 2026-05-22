@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://playground.jeeklee.dev/schemas/programJson.schema.json",
+  "title": "ExtractedProgram",
+  "type": "object",
+  "required": ["rooms"],
+  "additionalProperties": false,
+  "properties": {
+    "rooms": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": ["name", "areaM2"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Room name as extracted from the brief (Korean primary, e.g., '강의실 1')."
+          },
+          "areaM2": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "description": "Required area in square meters."
+          }
+        }
+      }
+    },
+    "siteWidthM": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1000,
+      "description": "Site width in meters. Optional — if absent, falls back to request param or 20.0."
+    },
+    "siteDepthM": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1000,
+      "description": "Site depth in meters. Optional — if absent, falls back to request param or 10.0."
+    },
+    "floorHeightM": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 20,
+      "description": "Floor-to-floor height in meters. Optional — if absent, falls back to request param or 3.5."
+    }
+  }
+}
