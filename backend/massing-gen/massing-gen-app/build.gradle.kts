@@ -13,4 +13,11 @@ dependencies {
     // BOM imported by the bc-app convention plugin.
     "implementation"("com.networknt:json-schema-validator:1.5.3")
     "implementation"("com.fasterxml.jackson.core:jackson-databind")
+
+    // Tests instantiate MassingErrorCode (which statically references
+    // org.springframework.http.HttpStatus from the carried-domain class).
+    // spring-web stays absent from production sources but the test runtime
+    // needs it for the MassingException → MassingErrorCode class init.
+    // Mirrors the same pattern in massing-gen-domain.
+    "testRuntimeOnly"("org.springframework:spring-web")
 }
