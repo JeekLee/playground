@@ -3,8 +3,9 @@ plugins {
 }
 
 // M6 (ADR-16) — Spring AI BOM for the Vision OCR fallback path. Same 1.0.0 GA
-// line that rag-chat (M4) and rag-ingestion (M3) pin per ADR-04 — keeps the
-// OpenAI-compatible spark-inference-gateway client coherent across the stack.
+// line that rag-chat (M4) and the (M6.1-absorbed) ingestion pipeline pin per
+// ADR-04 — keeps the OpenAI-compatible spark-inference-gateway client coherent
+// across the stack.
 dependencyManagement {
     imports {
         mavenBom("org.springframework.ai:spring-ai-bom:1.0.0")
@@ -44,9 +45,32 @@ dependencies {
     // The Vision call uses `Media`-attached UserMessage (multimodal).
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
 
+    // M6.1 (ADR-12 §A12.1) — absorbed from the retired rag-ingestion-infra
+    // module. Redisson Spring Boot starter wires a Spring-managed
+    // RedissonClient bean from application.yml properties; the
+    // RedissonDistributedLockAdapter uses it for the docs:lock:* namespace
+    // (ADR-08 §A08.2 — renamed from rag-ingestion:lock:*).
+    implementation("org.redisson:redisson-spring-boot-starter:3.34.1")
+
+    // M6.1 (ADR-12 §A12.1) — absorbed from rag-ingestion-infra. pgvector
+    // type bindings for the JPA adapter's native-SQL inserts into
+    // docs.document_chunks.
+    implementation("com.pgvector:pgvector:0.1.6")
+
+    // M6.1 (ADR-12 §A12.1) — absorbed from rag-ingestion-infra. micrometer-core
+    // types are referenced in -infra to construct Timer / Counter beans for the
+    // chunker metrics adapter; the actuator pulls in the registry separately.
+    implementation("io.micrometer:micrometer-core")
+
     // For the Testcontainers-driven integration test we need the -api class as
     // the @SpringBootTest entrypoint.
     testImplementation(project(":docs:docs-api"))
+
+    // M6.1 — absorbed from rag-ingestion-infra. WireMock pinned per ADR-13
+    // §13 stubs spark-inference-gateway during integration tests. The
+    // (now retired) docs-api /internal/** stub remains available for the
+    // ReembedCommandLineRunner integration test.
+    testImplementation("org.wiremock:wiremock-standalone:3.9.2")
 }
 
 // Integration tests opt in via -PintegrationTests. Default build runs only

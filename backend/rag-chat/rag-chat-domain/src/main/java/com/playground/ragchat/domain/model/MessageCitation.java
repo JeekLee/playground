@@ -12,7 +12,7 @@ import java.util.Objects;
  * @param messageId  parent assistant message
  * @param position   the 1-indexed {@code [N]} slot in the assistant body
  * @param documentId app-level FK to {@code docs.documents.id}
- * @param chunkIndex app-level FK to {@code rag.document_chunks.chunk_index}
+ * @param chunkIndex app-level FK to {@code docs.document_chunks.chunk_index}
  */
 public record MessageCitation(MessageId messageId, int position, DocumentId documentId, int chunkIndex) {
 

@@ -59,6 +59,11 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
+      # The DocsSearchProjector @KafkaListener overrides group-id =
+      # docs-search-projector; the (M6.1-absorbed) DocumentEventListener
+      # overrides group-id = rag-ingestion. This default value exists so
+      # the auto-configured ConsumerFactory bean (used by Spring Boot's
+      # auto-config) is not headless at startup.
       group-id: docs-search-projector
       auto-offset-reset: earliest
   modulith:
@@ -68,6 +73,13 @@ spring:
       # transactionally with the documents row per ADR-12 §1; the externalizer
       # mapping in docs-infra wraps them in the shared-kernel EventEnvelope and
       # routes them to the three Kafka topics defined in spec §5.
+      #
+      # M6.1 (ADR-08 §A08.6) — the retired rag.document.ingested topic no
+      # longer has an externalization rule; ApplicationEventPublisher calls
+      # on DocumentIngested simply do not externalize. The three
+      # docs.document.* topics are now in-BC (docs producer + docs
+      # consumer) per ADR-08 §A08.6 — Kafka stays in the path for DLQ +
+      # cross-thread-pool decoupling.
       jdbc:
         schema-initialization:
           enabled: true
@@ -106,6 +118,46 @@ spring:
           # cliff. ADR-16 amendment captures the empirical rationale.
           max-tokens: 1200
           frequency-penalty: 0.5
+      # M6.1 (ADR-12 §A12.1) — absorbed from rag-ingestion-api. The embedding
+      # model name the spark-inference-gateway exposes for BGE-M3 — used by
+      # SparkInferenceEmbeddingAdapter (in docs-infra) for chunk embedding.
+      embedding:
+        options:
+          model: ${SPRING_AI_EMBEDDING_MODEL:bge-m3}
+    retry:
+      # M6.1 (ADR-12 §A12.1) — absorbed from rag-ingestion-api. The embedding
+      # retry curve per ADR-13 §2 — applies to both the Vision chat call and
+      # the embedding call via Spring AI's retry advisor.
+      max-attempts: 3
+      backoff:
+        initial-interval: 400ms
+        multiplier: 4.0
+        max-interval: 5s
+      on-client-errors: false
+      exclude-on-http-codes:
+        - 400
+        - 413
+        - 422
+
+# M6.1 (ADR-12 §A12.1) — absorbed from rag-ingestion-api. The chunker +
+# reembed property prefixes are preserved (`playground.rag-ingestion.*`) so
+# existing env-var overrides (`PLAYGROUND_RAG_INGESTION_CHUNK_SIZE_TOKENS`,
+# etc.) keep working without operator action. ADR-13 §1 / §7 (M3.1
+# amendment) — see backing types ChunkingProperties / ReembedProperties.
+playground:
+  rag-ingestion:
+    chunk:
+      size-tokens: 800
+      overlap-tokens: 120
+      min-chunk-tokens: 64
+      tokenizer: cl100k-base
+      max-oversize-fence-tokens: 800
+      preserve-heading-path: true
+    reembed:
+      scope: all
+      user-id: null
+      document-id: null
+      inter-document-delay-millis: 0
 
 management:
   endpoints:
@@ -137,5 +189,9 @@ springdoc:
 
 logging:
   level:
+    # com.playground.docs covers both the original docs BC packages and the
+    # M6.1-absorbed ingestion subpackage (com.playground.docs.ingestion.*,
+    # com.playground.docs.infrastructure.ingestion.*, etc.). Single root
+    # logger keeps the M5 observability dashboards consistent.
     com.playground.docs: INFO
     org.springframework.modulith.events: INFO
