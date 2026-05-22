@@ -34,18 +34,29 @@ import type {
   PhaseEventPayload,
   SseErrorCode,
   TokenEventPayload,
+  ToolCallEventPayload,
+  ToolErrorEventPayload,
+  ToolResultEventPayload,
 } from './chat';
 
 /**
  * Discriminated union of the SSE event types per spec §5.2 (revised
- * in PR B). The legacy `retrieval` event is gone — progress info now
- * ships as `phase`, and citation cards land in the terminal `done`.
+ * in PR B) plus the M7 tool-calling events added in ADR-17 §3.1.
+ *
+ * The legacy `retrieval` event is gone — progress info ships as
+ * `phase`, citation cards land in the terminal `done`, and the
+ * `tool_call` / `tool_result` / `tool_error` triplet interleaves with
+ * `token` events to drive the chat-tool-card render below the
+ * assistant body.
  */
 export type ChatStreamEvent =
   | { type: 'phase'; payload: PhaseEventPayload }
   | { type: 'token'; payload: TokenEventPayload }
   | { type: 'done'; payload: DoneEventPayload }
-  | { type: 'error'; payload: ErrorEventPayload };
+  | { type: 'error'; payload: ErrorEventPayload }
+  | { type: 'tool_call'; payload: ToolCallEventPayload }
+  | { type: 'tool_result'; payload: ToolResultEventPayload }
+  | { type: 'tool_error'; payload: ToolErrorEventPayload };
 
 export interface StartChatStreamOptions {
   sessionId: string;
@@ -132,6 +143,12 @@ function parseFrame(rawFrame: string): ChatStreamEvent | null {
       return { type: 'done', payload: parsed as DoneEventPayload };
     case 'error':
       return { type: 'error', payload: parsed as ErrorEventPayload };
+    case 'tool_call':
+      return { type: 'tool_call', payload: parsed as ToolCallEventPayload };
+    case 'tool_result':
+      return { type: 'tool_result', payload: parsed as ToolResultEventPayload };
+    case 'tool_error':
+      return { type: 'tool_error', payload: parsed as ToolErrorEventPayload };
     default:
       return null;
   }
