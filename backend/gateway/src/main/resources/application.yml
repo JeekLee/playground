@@ -79,6 +79,17 @@ spring:
             - Path=/api/metrics/**
           filters:
             - StripPrefix=2
+        # M8 ADR-18 §2 + §21 — massing-gen-api on port 18083 (reclaimed from
+        # retired rag-ingestion-api). The /api/arch/** prefix carries only the
+        # owner-only download (.3dm bytes); the tool dispatch entry
+        # POST /internal/tools/generate-massing is NEVER forwarded by the
+        # gateway (Exception 4 invariant per ADR-08 §A08.8).
+        - id: massing-gen-api
+          uri: http://massing-gen-api:18083
+          predicates:
+            - Path=/api/arch/**
+          filters:
+            - StripPrefix=2
         # ADR-09 §allowlist names /api/users/me explicitly — BC-prefix-less
         # alias for the current-user endpoint matching the frontend's /me fetch.
         - id: users-me

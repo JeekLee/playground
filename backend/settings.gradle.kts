@@ -60,3 +60,16 @@ include(":metrics:metrics-api")
 include(":metrics:metrics-app")
 include(":metrics:metrics-domain")
 include(":metrics:metrics-infra")
+
+// M8 — massing-gen quadruplet (ADR-01 §A01.6 + ADR-18). Spring MVC -api on
+// port 18083 (reclaimed from the retired rag-ingestion-api per ADR-18 §2).
+// Owns the `arch` schema (single table arch.outputs holding generated .3dm
+// binaries as BYTEA). Two endpoints: POST /internal/tools/generate-massing
+// (rag-chat-api → Exception 4 sub-row per ADR-08 §A08.11) and
+// GET /api/arch/outputs/{id} (owner-only download via gateway routing).
+// Talks to docs-api over HTTP (ADR-08 §A08.12 Exception 5) and to the
+// rhino3dm-bridge sidecar over HTTP. No Kafka surface.
+include(":massing-gen:massing-gen-api")
+include(":massing-gen:massing-gen-app")
+include(":massing-gen:massing-gen-domain")
+include(":massing-gen:massing-gen-infra")
