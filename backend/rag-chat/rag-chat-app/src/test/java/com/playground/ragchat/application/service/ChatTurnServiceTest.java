@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.ragchat.application.dto.ChatTurnRequest;
 import com.playground.ragchat.application.port.ChatGenerationPort;
@@ -21,6 +22,7 @@ import com.playground.ragchat.application.port.TokenBucketPort;
 import com.playground.ragchat.application.properties.RagChatProperties;
 import com.playground.ragchat.application.repository.MessageRepository;
 import com.playground.ragchat.application.repository.SessionRepository;
+import com.playground.ragchat.application.tool.ToolDispatcherPort;
 import com.playground.ragchat.domain.enums.Visibility;
 import com.playground.ragchat.domain.model.ChatSession;
 import com.playground.ragchat.domain.model.MessageCitation;
@@ -54,6 +56,7 @@ class ChatTurnServiceTest {
     private ChunkRetrievalPort chunkRetrievalPort;
     private ChatGenerationPort chatGenerationPort;
     private AutoTitleService autoTitleService;
+    private ToolDispatcherPort toolDispatcherPort;
 
     private ChatTurnService chatTurnService;
 
@@ -70,6 +73,7 @@ class ChatTurnServiceTest {
         chunkRetrievalPort = mock(ChunkRetrievalPort.class);
         chatGenerationPort = mock(ChatGenerationPort.class);
         autoTitleService = mock(AutoTitleService.class);
+        toolDispatcherPort = mock(ToolDispatcherPort.class);
 
         TokenCounter tokenCounter = new TokenCounter();
         CitationExtractor citationExtractor = new CitationExtractor();
@@ -89,6 +93,8 @@ class ChatTurnServiceTest {
                 promptTemplate,
                 autoTitleService,
                 new ActiveTurnRegistry(),
+                toolDispatcherPort,
+                new ObjectMapper(),
                 RagChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC));
 

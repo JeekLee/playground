@@ -15,6 +15,7 @@ public class RagChatPropertiesBinding {
 
     private final Retrieval retrieval = new Retrieval();
     private final Prompt prompt = new Prompt();
+    private final Tool tool = new Tool();
 
     public Retrieval getRetrieval() {
         return retrieval;
@@ -22,6 +23,10 @@ public class RagChatPropertiesBinding {
 
     public Prompt getPrompt() {
         return prompt;
+    }
+
+    public Tool getTool() {
+        return tool;
     }
 
     public RagChatProperties toProperties() {
@@ -32,7 +37,9 @@ public class RagChatPropertiesBinding {
                 prompt.getRetrievalBlockTokenBudget(),
                 prompt.getMaxHistoryTokens(),
                 prompt.getMaxCompletionTokens(),
-                prompt.getPerChunkTokenBudget());
+                prompt.getPerChunkTokenBudget(),
+                tool.getMaxDepth(),
+                tool.getMaxResultBytes());
     }
 
     public static class Retrieval {
@@ -101,6 +108,28 @@ public class RagChatPropertiesBinding {
 
         public void setPerChunkTokenBudget(int v) {
             this.perChunkTokenBudget = v;
+        }
+    }
+
+    /** ADR-17 §4 + §6 — tool-calling tunables. */
+    public static class Tool {
+        private int maxDepth = RagChatProperties.DEFAULT_TOOL_MAX_DEPTH;
+        private int maxResultBytes = RagChatProperties.DEFAULT_TOOL_MAX_RESULT_BYTES;
+
+        public int getMaxDepth() {
+            return maxDepth;
+        }
+
+        public void setMaxDepth(int v) {
+            this.maxDepth = v;
+        }
+
+        public int getMaxResultBytes() {
+            return maxResultBytes;
+        }
+
+        public void setMaxResultBytes(int v) {
+            this.maxResultBytes = v;
         }
     }
 }

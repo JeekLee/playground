@@ -41,7 +41,8 @@ import java.util.Map;
  * {@code phase}. This contract leaves room for both shapes.
  */
 public sealed interface ChatStreamEvent
-        permits ChatStreamEvent.Phase, ChatStreamEvent.Token, ChatStreamEvent.Done, ChatStreamEvent.Error {
+        permits ChatStreamEvent.Phase, ChatStreamEvent.Token, ChatStreamEvent.Done, ChatStreamEvent.Error,
+                ChatStreamEvent.ToolCall, ChatStreamEvent.ToolResult, ChatStreamEvent.ToolError {
 
     /**
      * Progress / status update during the turn. {@code step} is the
@@ -68,6 +69,75 @@ public sealed interface ChatStreamEvent
      */
     record Done(String messageId, Integer tokensIn, Integer tokensOut, Object citations)
             implements ChatStreamEvent {}
+
+    /**
+     * Tool-calling event — LLM has decided to invoke a registered tool.
+     * Emitted immediately before the dispatcher issues the upstream
+     * HTTP call per ADR-17 §3.1. Wire event name is {@code tool_call};
+     * {@code id} is the opaque correlation id (Spring AI pass-through or
+     * server-generated ULID per ADR-17 §3.2); {@code args} is the
+     * LLM-produced JSON arguments (carrier object — serialized by the
+     * controller's Jackson mapper).
+     */
+    record ToolCall(String id, String name, Object args) implements ChatStreamEvent {
+        public ToolCall {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("ToolCall.id must not be blank");
+            }
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("ToolCall.name must not be blank");
+            }
+        }
+    }
+
+    /**
+     * Tool-calling event — tool BC returned a successful result.
+     * Emitted after the dispatch completes and the body is parsed,
+     * but before the result is fed back to the LLM (ADR-17 §3.1).
+     * Wire event name is {@code tool_result}. The {@code result} field
+     * carries the (possibly-truncated) JSON body — see ADR-17 §4 for
+     * the 16-KiB cap policy.
+     */
+    record ToolResult(String id, String name, Object result) implements ChatStreamEvent {
+        public ToolResult {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("ToolResult.id must not be blank");
+            }
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("ToolResult.name must not be blank");
+            }
+        }
+    }
+
+    /**
+     * Tool-calling event — tool dispatch failed.
+     * Wire event name is {@code tool_error}. The {@code code} field
+     * carries the verbatim {@code ToolErrorCode} enum name string
+     * (one of {@code TIMEOUT}, {@code CIRCUIT_OPEN}, {@code MAX_DEPTH},
+     * {@code UPSTREAM_4XX}, {@code UPSTREAM_5XX}, {@code SCHEMA_INVALID},
+     * {@code INTERNAL}). Note this lives in shared-kernel so the
+     * {@code code} is the bare string — the BC's mapper converts from
+     * the {@code ToolErrorCode} enum at the controller boundary.
+     *
+     * <p>Per ADR-17 §3.1, {@code code = "CIRCUIT_OPEN"} and
+     * {@code code = "MAX_DEPTH"} are <b>terminal</b> — no further
+     * {@code done} / {@code error} event follows. All other codes are
+     * non-terminal (the LLM may issue a follow-up turn).
+     */
+    record ToolError(String id, String name, String code, String message)
+            implements ChatStreamEvent {
+        public ToolError {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("ToolError.id must not be blank");
+            }
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("ToolError.name must not be blank");
+            }
+            if (code == null || code.isBlank()) {
+                throw new IllegalArgumentException("ToolError.code must not be blank");
+            }
+        }
+    }
 
     /**
      * Terminal failure. {@code code} values are intentionally a small,

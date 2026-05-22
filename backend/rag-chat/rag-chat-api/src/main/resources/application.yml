@@ -77,6 +77,7 @@ spring:
         - 422
 
 # ADR-14 §7 + §8 — overridable retrieval + prompt budgets.
+# ADR-17 §6 + §4 + §11 — overridable tool-calling tunables.
 playground:
   rag-chat:
     retrieval:
@@ -88,6 +89,14 @@ playground:
       max-history-tokens: 24576
       max-completion-tokens: 4000
       per-chunk-token-budget: 400
+    tool:
+      # ADR-17 §6 — max tool-call depth per user turn (counts every LLM-driven
+      # ToolCallback invocation). Cap exceeded → terminal `tool_error{MAX_DEPTH}`.
+      max-depth: ${PLAYGROUND_RAG_CHAT_TOOL_MAX_DEPTH:5}
+      # ADR-17 §4 — tool response body size cap. Over-cap = truncate-and-warn:
+      # the LLM-bound feedback becomes a {truncated, originalBytes, excerpt}
+      # envelope so the model knows the result was clipped.
+      max-result-bytes: ${PLAYGROUND_RAG_CHAT_TOOL_MAX_RESULT_BYTES:16384}
 
 # ADR-14 §4 — Resilience4j breaker config (resilience4j-spring-boot3 reads
 # this and registers the breaker, which our SparkGatewayCircuitBreakerConfig
