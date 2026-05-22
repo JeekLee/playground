@@ -1480,3 +1480,174 @@ Streaming response continues unaffected.
   below by this ADR — anon row dropped)
 - `docs/prd/M3-rag-ingestion.md` "M4 retrieval contract" (amended below
   by this ADR — anon row dropped)
+
+## Amendment 2026-05-22 (ADR-17, M7) — SSE grammar reconciliation for tool-calling
+
+The M7 PR set (ADR-17 — `docs/adr/17-m7-rag-chat-tool-calling.md`)
+adds three new SSE event types — `tool_call` / `tool_result` /
+`tool_error` — to the rag-chat streaming surface. This amendment
+reconciles the new events with the original §5.2 grammar table
+without changing any M4 behavior. Every shipped M4 invariant is
+preserved.
+
+### A14.1. SSE wire shape — standalone event names supersede placeholder phase steps
+
+The M4 spec §5.2 (revised 2026-05-19, PR B) example block carried
+two forward-looking placeholder rows annotated as "PR C onward —
+extra phase events from tool-calling":
+
+```
+event: phase
+data: {"step":"tool_call","label":"공개 문서 검색 중","data":{"tool":"…","args":{…}}}
+```
+
+with an implicit symmetric `step: "tool_result"` row.
+
+**Status flip:** these placeholder `phase.step` values for
+`tool_call` and `tool_result` are **retired** by M7. M7 ships
+function-calling SSE events as **standalone `event:` names**
+(`event: tool_call`, `event: tool_result`, `event: tool_error`),
+not as values of the `phase` event's `step` field.
+
+The `phase` event continues to exist for non-tool progress signaling
+(currently `step: "retrieval"`; spec §5.2's open-vocabulary
+`generating` / `thinking` examples remain valid). The `step`
+discriminator domain is now closed to progress-class values —
+tool-class values do not appear there.
+
+### A14.2. Why standalone event names
+
+- **The shipped M4 backend never emitted `step: "tool_call"` or
+  `step: "tool_result"`.** The
+  `rag-chat-app.ChatTurnService.stream(...)` method on `main` at the
+  M7 cycle start (commit `f540789`) emits exactly one `Phase` event
+  per turn — `step: "retrieval"`. The placeholder rows in spec §5.2
+  were forward-looking annotations, not shipped wire shape. Inspect
+  `backend/rag-chat/rag-chat-app/src/main/java/com/playground/ragchat/application/service/ChatTurnService.java`
+  ~line 204 — only `new ChatStreamEvent.Phase("retrieval", …)` is
+  constructed.
+- **The shipped M4 frontend `chat.sse.ts` already supports standalone
+  event-name dispatch** via a `switch (eventName)` block in
+  `parseFrame(...)`. Unknown event names return `null` and are
+  silently dropped — the frontend has been forward-compatible with
+  new `event:` names since M4 shipped. Adding `tool_call` /
+  `tool_result` / `tool_error` is purely additive; the existing FE
+  code does not break. Inspect
+  `frontend/src/shared/api/chat.sse.ts` — the comment block at line
+  ~103 explicitly notes that a future server "might add `usage` or
+  `tool_call` events" and that unknown event types are dropped.
+- **Standalone event names match FE dispatch ergonomics.** A
+  frontend that wants to render tool-call cards distinctly from
+  retrieval progress benefits from a dedicated event name (matches
+  React reducer / `EventSource.addEventListener('tool_call', …)`
+  patterns). Conflating tool calls with progress phases would force
+  the FE to disambiguate the same `phase` event into two different
+  rendering paths via the `step` field — unnecessary indirection
+  given the wire format can carry the distinction directly.
+- **Forward compatibility for parallel tool calls** (M7.1 scope).
+  When Spring AI's parallel function-calling lands and is adopted,
+  the `tool_call.id` correlation ID (ADR-17 §3.2) is the FE's
+  mechanism for pairing multiple in-flight tool calls — a dedicated
+  event name per tool action keeps the pairing JSON-shape compact.
+
+### A14.3. Updated §5.2 grammar example (replaces the PR C placeholder block)
+
+The revised §5.2 grammar example reads, post-M7:
+
+```
+event: phase
+data: {"step":"retrieval","label":"참고 문서 확인 중","data":{"count":6}}
+
+event: phase
+data: {"step":"generating"}
+
+# (M7 onward — tool-calling events emitted as standalone event names)
+event: tool_call
+data: {"id":"call_01HZ…","name":"generate_massing","args":{"briefDocId":"…","siteWidth":30.0}}
+
+event: tool_result
+data: {"id":"call_01HZ…","name":"generate_massing","result":{"fileUrl":"/api/arch/outputs/…","summary":"12 rooms, 3 floors, 480 m² total"}}
+
+# OR (tool failure alternative — NOT terminal unless code is MAX_DEPTH or CIRCUIT_OPEN)
+event: tool_error
+data: {"id":"call_01HZ…","name":"generate_massing","code":"TIMEOUT","message":"Tool 'generate_massing' did not respond within 30s"}
+
+event: token
+data: {"delta":"800-token windows "}
+
+event: token
+data: {"delta":"with 120-token overlap [1][2]…"}
+
+event: done
+data: {"messageId":"<uuid>","tokensIn":1234,"tokensOut":567,"citations":[…]}
+
+# OR (terminal alternative — chat-level fatal; tool-level errors do NOT fall back to this)
+event: error
+data: {"code":"GATEWAY_5XX|RATE_LIMIT|RETRIEVAL_EMPTY|ABORTED|INTERNAL","message":"<human-readable>"}
+```
+
+### A14.4. Invariants preserved from M4
+
+- `phase` events remain progress-class only. The `step`
+  discriminator domain after M7 ship is: `retrieval`, `generating`,
+  `thinking` (open vocabulary for progress only — tool-class values
+  retired).
+- `done` is the success terminal; `error` is the chat-level fatal
+  terminal. Neither changes. The `error` event continues to carry
+  the M4 §6.5 5-value enum: `GATEWAY_5XX` / `RATE_LIMIT` /
+  `RETRIEVAL_EMPTY` / `ABORTED` / `INTERNAL`.
+- `tool_error` does **not** fall back to `error` — tool failures are
+  distinct from chat-level fatals.
+- `tool_error` with `code: "CIRCUIT_OPEN"` or `code: "MAX_DEPTH"`
+  terminates the turn without a further `done` / `error` (the
+  `tool_error` event is itself terminal in those two cases; partial
+  assistant content accumulated so far is not persisted, matching
+  ADR-14 §13 abort-path semantics).
+- Stream-time `error` event termination shape per ADR-14 §C is
+  unchanged.
+
+### A14.5. `ChatStreamEvent` sealed-interface extension (in `shared-kernel`)
+
+The M4 `ChatStreamEvent` sealed interface in
+`backend/shared-kernel/src/main/java/com/playground/shared/chat/ChatStreamEvent.java`
+gains three new permitted subtype records — `ToolCall`,
+`ToolResult`, `ToolError`. The existing `Phase` / `Token` / `Done` /
+`Error` records are unchanged.
+
+The wire-name convention (lowercase snake_case of record name) is
+preserved — `ToolCall` → `tool_call`, `ToolResult` → `tool_result`,
+`ToolError` → `tool_error`. The existing `Phase` → `phase` mapping
+is unchanged.
+
+The pre-PR-B compat note in the existing `ChatStreamEvent` javadoc
+("Today rag-chat (M4) still emits the wire event `retrieval` as a
+`Phase` with `step = "retrieval"` …") remains accurate as
+historical context — the M7 PR set updates the javadoc to reflect
+the new permitted subtypes but does not rewrite the historical note.
+
+### A14.6. §1 component-placement table — additive only
+
+ADR-14 §1's table gains three new component rows (the M7 components
+from ADR-17 §8 — `ToolCatalog` / `ToolDescriptor` / `ToolDispatcher`
+/ etc.). The existing 18 rows are unchanged. The M4 implementation
+in `rag-chat-{api,app,domain,infra}` ships unmodified in the M7 PR
+set — the M7 commits are purely additive.
+
+### A14.7. No change to ADR-14 §4 (`spark-gateway` breaker)
+
+The shared `spark-gateway` Resilience4j circuit breaker introduced
+in ADR-14 §4 is **not** modified. M7 introduces a **new** set of
+breakers — one per tool descriptor, named `tool-<descriptor-name>`
+— with the same configuration template as `spark-gateway`. The two
+breaker registries (single `spark-gateway` vs per-descriptor
+`tool-*`) are independent; a degraded `spark-gateway` does not
+prevent the tool breakers from operating, and vice versa. Cross-cut
+operations (e.g., a tool BC that itself calls
+`spark-inference-gateway`) are subject to **both** breakers — the
+tool BC's outbound call is governed by its own breaker (in its own
+JVM), and rag-chat's call to the tool BC is governed by
+`tool-<descriptor>` in rag-chat's JVM. There is no shared state
+between them.
+
+See `docs/adr/17-m7-rag-chat-tool-calling.md` §1 + §2 + §3 + §5 +
+§8 + §10 for the full M7 specification.
