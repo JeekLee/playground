@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Outbound port for pgvector top-K retrieval per ADR-14 §3.2. Runs the
- * canonical retrieval SQL against the cross-schema {@code rag.document_chunks}
+ * canonical retrieval SQL against the cross-schema {@code docs.document_chunks}
  * + {@code docs.documents} join.
  *
  * <p>{@code visibility} filter pinned at SQL: {@code WHERE visibility='public'

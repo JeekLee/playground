@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * pgvector retrieval per ADR-14 §3.2 (verbatim SQL). Cross-schema SELECT into
- * {@code rag.document_chunks} for similarity ranking plus a second batched
+ * {@code docs.document_chunks} for similarity ranking plus a second batched
  * SELECT into {@code docs.documents} for title enrichment (per ADR-14 §3 —
  * the search_path covers both schemas, but we use fully-qualified table names
  * for clarity).
@@ -75,7 +75,7 @@ public class PgvectorChunkRetrievalAdapter implements ChunkRetrievalPort {
                 List<ChunkRow> collected;
                 try (PreparedStatement ps = conn.prepareStatement(
                         "SELECT document_id, chunk_index, text, user_id, visibility "
-                                + "FROM rag.document_chunks "
+                                + "FROM docs.document_chunks "
                                 + "WHERE visibility = 'public' "
                                 + "   OR (user_id = ? AND visibility = 'private') "
                                 + "ORDER BY embedding <=> ?::public.vector "

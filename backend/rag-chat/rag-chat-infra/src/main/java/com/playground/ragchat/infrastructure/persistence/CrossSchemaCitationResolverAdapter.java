@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 /**
  * Resolves a cited {@code (document_id, chunk_index)} pair into a
  * {@link SessionService.CitationResolver.Resolved} by JOINing
- * {@code docs.documents} (title) and {@code rag.document_chunks} (excerpt).
+ * {@code docs.documents} (title) and {@code docs.document_chunks} (excerpt).
  *
  * <p>Deleted-doc path per ADR-14 §11: if the {@code docs.documents} row is
  * gone, returns {@link SessionService.CitationResolver.Resolved#deleted()}
@@ -35,7 +35,7 @@ public class CrossSchemaCitationResolverAdapter implements SessionService.Citati
             return jdbc.queryForObject(
                     "SELECT d.title AS title, c.text AS text "
                             + "FROM docs.documents d "
-                            + "LEFT JOIN rag.document_chunks c "
+                            + "LEFT JOIN docs.document_chunks c "
                             + "  ON c.document_id = d.id AND c.chunk_index = ? "
                             + "WHERE d.id = ?",
                     (rs, n) -> {

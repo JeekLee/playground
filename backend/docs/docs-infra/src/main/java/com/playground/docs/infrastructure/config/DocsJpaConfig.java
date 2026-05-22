@@ -22,7 +22,16 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @Configuration(proxyBeanMethods = false)
 @EntityScan(basePackages = {
         "com.playground.docs.infrastructure.persistence",
+        // M6.1 (ADR-12 §A12.1) — chunk JPA entity moved from the retired
+        // rag-ingestion BC; lives under the `ingestion.persistence`
+        // subpackage now. The JpaEventPublication entity below is
+        // unchanged; the rag.event_publication outbox is dropped per
+        // ADR-12 §A12.13.
+        "com.playground.docs.infrastructure.ingestion.persistence",
         "org.springframework.modulith.events.jpa"
 })
-@EnableJpaRepositories(basePackages = "com.playground.docs.infrastructure.persistence")
+@EnableJpaRepositories(basePackages = {
+        "com.playground.docs.infrastructure.persistence",
+        "com.playground.docs.infrastructure.ingestion.persistence"
+})
 public class DocsJpaConfig {}

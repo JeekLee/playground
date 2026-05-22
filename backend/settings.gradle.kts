@@ -29,20 +29,21 @@ include(":identity:identity-domain")
 include(":identity:identity-infra")
 
 // M2 — docs quadruplet (ADR-01 v2 + ADR-12). S1 ships single-author CRUD only;
-// search projector / events / engagement counters land in M2 S2+.
+// search projector / events / engagement counters land in M2 S2+. M6.1
+// (ADR-12 amendment §A12.1 + ADR-01 §A01.1) absorbs the retired rag-ingestion
+// BC's domain/app/infra packages into the docs-* quadruplet under the
+// `ingestion` subpackage — no new modules, just heavier docs ones.
 include(":docs:docs-api")
 include(":docs:docs-app")
 include(":docs:docs-domain")
 include(":docs:docs-infra")
 
-// M3 — rag-ingestion quadruplet (ADR-01 v2 + ADR-13). Backend-only BC: no
-// public HTTP surface (ADR-13 §A — actuator-only on 18083). Consumes the
-// three docs.document.* topics, writes pgvector chunks, emits
-// rag.document.ingested.
-include(":rag-ingestion:rag-ingestion-api")
-include(":rag-ingestion:rag-ingestion-app")
-include(":rag-ingestion:rag-ingestion-domain")
-include(":rag-ingestion:rag-ingestion-infra")
+// M3 — rag-ingestion quadruplet RETIRED by M6.1 (ADR-01 §A01.1 +
+// ADR-12 §A12.1). The four modules collapsed into docs-* (port 18083
+// returned to the reservation pool). The packages live under
+// `com.playground.docs.ingestion.*` (domain/app) and
+// `com.playground.docs.infrastructure.ingestion.*` (infra) inside docs-api's
+// single JVM.
 
 // M4 — rag-chat quadruplet (ADR-01 v2 + ADR-14). WebFlux SSE controller on
 // port 18084 (gateway-routable). Cross-schema SELECT into rag/docs/identity
