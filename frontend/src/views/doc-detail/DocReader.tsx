@@ -1,16 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Copy, Eye, Pencil } from 'lucide-react';
 import { Avatar } from '@/shared/ui/avatar';
 import { Chip } from '@/shared/ui/chip';
 import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { MarkdownReader } from '@/features/docs-reader';
 import { LikeButton } from '@/features/doc-like';
-import { formatRelative, isPdfSourced } from '@/entities/document';
+import {
+  DownloadOriginalButton,
+  ExtractionAnalyzingSkeleton,
+  ExtractionFailedCard,
+  ExtractionStatusPill,
+  useExtractionStream,
+} from '@/features/docs-extraction-stream';
+import {
+  formatRelative,
+  hasOriginalBlob,
+  isExtractionFailed,
+  isExtractionInFlight,
+  isPdfSourced,
+} from '@/entities/document';
 import { incrementView } from '@/shared/api/docs';
-import type { Document } from '@/entities/document';
+import type { Document, ExtractionStatus } from '@/entities/document';
 
 /**
  * DocReader — read-only surface for `/docs/{id}` when the caller is NOT
@@ -45,6 +59,7 @@ export interface DocReaderProps {
 }
 
 export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
   const url =
     typeof window === 'undefined'
@@ -58,11 +73,43 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
       .map((s) => s[0]?.toUpperCase() ?? '')
       .join('') || '?';
 
+  // M6.1 — subscribe to the extraction lifecycle. The hook is the single
+  // source of truth for the live status; on terminal transition we refresh
+  // the route so the SSR'd `doc.body` re-fetches with the populated
+  // markdown. Pre-M6.1 rows and synchronous-path uploads ship with
+  // `extractionStatus === 'extracted'` (or undefined for very old rows) so
+  // the snapshot completes the stream immediately and the hook idles.
+  const onExtractionTerminal = useCallback(
+    (final: ExtractionStatus) => {
+      // 'extracted' is the case where the body materialized — refresh to
+      // pull the populated markdown from SSR. 'failed' rendering is fully
+      // client-driven from the hook's state, so no refresh is needed.
+      if (final === 'extracted') {
+        router.refresh();
+      }
+    },
+    [router],
+  );
+  const extraction = useExtractionStream({
+    docId: doc.id,
+    initialStatus: doc.extractionStatus,
+    initialReason: doc.extractionReason,
+    onTerminal: onExtractionTerminal,
+  });
+
+  const liveStatus = extraction.status ?? doc.extractionStatus;
+  const analyzing = isExtractionInFlight(liveStatus);
+  const failed = isExtractionFailed(liveStatus);
+  const showOriginal = hasOriginalBlob(doc);
+
   // Fire-and-forget view beacon — public docs only (the API no-ops
   // private docs but we still skip the round-trip when the SSR'd
-  // visibility says private).
+  // visibility says private). Also held off while extraction is in flight
+  // so a half-written doc doesn't accumulate phantom views before the body
+  // exists; we re-fire after extraction finishes.
   useEffect(() => {
     if (doc.visibility !== 'public') return;
+    if (analyzing || failed) return;
     // Guard against React strict-mode double-mount in dev.
     let cancelled = false;
     const handle = window.setTimeout(() => {
@@ -73,7 +120,7 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [doc.id, doc.visibility]);
+  }, [doc.id, doc.visibility, analyzing, failed]);
 
   const copyLink = async () => {
     try {
@@ -108,7 +155,7 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-sm">
+          <div className="flex flex-wrap items-center justify-end gap-sm">
             {isOwner && (
               <Link
                 href={`/docs/${doc.id}?mode=edit`}
@@ -118,6 +165,9 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
                 <Pencil size={12} aria-hidden="true" />
                 <span>Edit</span>
               </Link>
+            )}
+            {showOriginal && (
+              <DownloadOriginalButton docId={doc.id} mimeType={doc.mimeType} />
             )}
             <button
               type="button"
@@ -161,7 +211,33 @@ export function DocReader({ doc, isAuthenticated, isOwner = false }: DocReaderPr
         </div>
       </header>
 
-      <MarkdownReader body={doc.body} />
+      {(analyzing || failed) && (
+        <ExtractionStatusPill
+          status={failed ? 'failed' : 'extracting'}
+          pageDone={extraction.pageDone}
+          pageTotal={extraction.pageTotal}
+          className="-mt-sm"
+        />
+      )}
+
+      {analyzing ? (
+        <ExtractionAnalyzingSkeleton />
+      ) : failed ? (
+        <ExtractionFailedCard reason={extraction.reason ?? doc.extractionReason} />
+      ) : (
+        <MarkdownReader body={doc.body} />
+      )}
+
+      {extraction.connectionLost && (analyzing || failed) && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-small text-text-muted"
+        >
+          Connection to the analysis stream was lost — refresh the page if the status doesn&apos;t
+          update.
+        </p>
+      )}
 
       <footer className="border-t border-border pt-md">
         <Link

@@ -21,6 +21,7 @@ import type {
   DocListItemDto,
   DocMimeType,
   DocVisibility,
+  ExtractionStatus as ApiExtractionStatus,
   FolderListItemDto,
   MyDocListItemDto,
   OwnerInfoDto,
@@ -41,6 +42,7 @@ export type SearchHit = SearchHitDto;
 export type OwnerInfo = OwnerInfoDto;
 export type DocSearchScope = SearchScope;
 export type FolderListItem = FolderListItemDto;
+export type ExtractionStatus = ApiExtractionStatus;
 
 /**
  * Resolve initials for an author avatar fallback. The design system

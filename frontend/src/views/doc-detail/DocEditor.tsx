@@ -8,6 +8,13 @@ import { Chip } from '@/shared/ui/chip';
 import { PdfBadge } from '@/shared/ui/pdf-badge';
 import { BlockNoteEditor, useSaveShortcut } from '@/features/docs-editor';
 import { FolderPicker } from '@/features/folder-picker';
+import {
+  DownloadOriginalButton,
+  ExtractionAnalyzingSkeleton,
+  ExtractionFailedCard,
+  ExtractionStatusPill,
+  useExtractionStream,
+} from '@/features/docs-extraction-stream';
 import { ConfirmModal } from '@/widgets/confirm-modal';
 import {
   bodyByteSize,
@@ -17,8 +24,13 @@ import {
   publishDocument,
   unpublishDocument,
 } from '@/shared/api/docs';
-import { isPdfSourced } from '@/entities/document';
-import type { Document } from '@/entities/document';
+import {
+  hasOriginalBlob,
+  isExtractionFailed,
+  isExtractionInFlight,
+  isPdfSourced,
+} from '@/entities/document';
+import type { Document, ExtractionStatus } from '@/entities/document';
 
 /**
  * DocEditor — `/docs/{id}` author surface. Per design doc §"Edit document"
@@ -112,18 +124,50 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
     }
   }, [body, doc.id, router, title]);
 
+  // M6.1 — subscribe to the extraction lifecycle when the doc landed
+  // mid-extraction (e.g., the user uploaded a PDF from /docs/mine and
+  // navigated to ?mode=edit before the worker finished). On `extracted`
+  // we refresh the route so the SSR-loaded `doc.body` re-fetches with the
+  // populated markdown; on `failed` we render an error card in place of
+  // the editor surface.
+  const onExtractionTerminal = useCallback(
+    (final: ExtractionStatus) => {
+      if (final === 'extracted') {
+        router.refresh();
+      }
+    },
+    [router],
+  );
+  const extraction = useExtractionStream({
+    docId: doc.id,
+    initialStatus: doc.extractionStatus,
+    initialReason: doc.extractionReason,
+    onTerminal: onExtractionTerminal,
+  });
+  const liveStatus = extraction.status ?? doc.extractionStatus;
+  const analyzing = isExtractionInFlight(liveStatus);
+  const failed = isExtractionFailed(liveStatus);
+  const blockedByExtraction = analyzing || failed;
+  const showOriginal = hasOriginalBlob(doc);
+
   // Debounced PATCH. Skipped while pristine (no changes since last save).
+  // Also skipped while extraction is in flight — the worker is the
+  // exclusive writer of `body` until extraction finishes, and a stale
+  // editor-state PATCH would clobber the worker's output.
   useEffect(() => {
     if (pristine) return;
     if (saveState.kind === 'too-large') return;
+    if (blockedByExtraction) return;
     const handle = window.setTimeout(() => { void runSave(); }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [pristine, runSave, saveState.kind]);
+  }, [blockedByExtraction, pristine, runSave, saveState.kind]);
 
   // ⌘+S / Ctrl+S immediate save — same no-op guard as the debounced loop.
   useSaveShortcut(
-    useCallback(() => { if (!pristine) void runSave(); }, [pristine, runSave]),
-    saveState.kind !== 'too-large' && !publishing,
+    useCallback(() => {
+      if (!pristine && !blockedByExtraction) void runSave();
+    }, [blockedByExtraction, pristine, runSave]),
+    saveState.kind !== 'too-large' && !publishing && !blockedByExtraction,
   );
 
   const onPublish = useCallback(async () => {
@@ -203,11 +247,12 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
           setModalError(null);
           setShowDeleteModal(true);
         }}
-        canPublish={!publishing && !overLimit}
+        canPublish={!publishing && !overLimit && !blockedByExtraction}
         publishing={publishing}
+        blockedByExtraction={blockedByExtraction}
       />
 
-      {isPublic && (
+      {isPublic && !blockedByExtraction && (
         <a
           href={`/docs/${doc.id}`}
           target="_blank"
@@ -216,6 +261,16 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
         >
           &rarr; View public: /docs/{doc.id}
         </a>
+      )}
+
+      {blockedByExtraction && (
+        <div className="border-b border-border bg-bg">
+          <ExtractionStatusPill
+            status={failed ? 'failed' : 'extracting'}
+            pageDone={extraction.pageDone}
+            pageTotal={extraction.pageTotal}
+          />
+        </div>
       )}
 
       <div className="relative flex-1 overflow-y-auto bg-bg">
@@ -244,13 +299,33 @@ export function DocEditor({ doc, publishedFlash = false }: DocEditorProps) {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Untitled"
               aria-label="Document title"
-              className="min-w-0 flex-1 bg-transparent text-h1 text-text placeholder:text-text-subtle focus:outline-none"
+              disabled={blockedByExtraction}
+              className="min-w-0 flex-1 bg-transparent text-h1 text-text placeholder:text-text-subtle focus:outline-none disabled:cursor-not-allowed"
             />
             {isPdfSourced(doc) && <PdfBadge className="relative top-[-2px]" />}
+            {showOriginal && (
+              <DownloadOriginalButton docId={doc.id} mimeType={doc.mimeType} />
+            )}
           </div>
           <div className="mt-lg">
-            <BlockNoteEditor initialBody={doc.body} onChange={setBody} />
+            {analyzing ? (
+              <ExtractionAnalyzingSkeleton />
+            ) : failed ? (
+              <ExtractionFailedCard reason={extraction.reason ?? doc.extractionReason} />
+            ) : (
+              <BlockNoteEditor initialBody={doc.body} onChange={setBody} />
+            )}
           </div>
+          {extraction.connectionLost && blockedByExtraction && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="mt-md text-small text-text-muted"
+            >
+              Connection to the analysis stream was lost — refresh the page if the status doesn&apos;t
+              update.
+            </p>
+          )}
         </div>
       </div>
 
@@ -290,6 +365,7 @@ function EditorToolbar({
   onOpenDelete,
   canPublish,
   publishing,
+  blockedByExtraction,
 }: {
   saveState: SaveState;
   visibility: Document['visibility'];
@@ -299,6 +375,7 @@ function EditorToolbar({
   onOpenDelete: () => void;
   canPublish: boolean;
   publishing: boolean;
+  blockedByExtraction: boolean;
 }) {
   const isPublic = visibility === 'public';
   return (
@@ -314,24 +391,30 @@ function EditorToolbar({
         }}
       />
       <div className="flex items-center gap-sm">
+        {/* Delete is allowed even mid-extraction — the worker's row write is
+            transactional with the row's existence; a delete simply cascades.
+            Publish + Unpublish are the visibility mutations; both are gated
+            because publishing an empty body is nonsensical UX. */}
         <Button variant="ghost" onClick={onOpenDelete} aria-label="Delete document">
           <Trash2 size={14} aria-hidden="true" />
           <span>Delete</span>
         </Button>
-        {isPublic && (
+        {isPublic && !blockedByExtraction && (
           <Button variant="secondary" onClick={onOpenUnpublish}>
             Unpublish
           </Button>
         )}
-        <Button variant="primary" onClick={onPublish} disabled={!canPublish}>
-          {publishing
-            ? isPublic
-              ? 'Publishing…'
-              : 'Publishing…'
-            : isPublic
-              ? 'Publish changes'
-              : 'Publish'}
-        </Button>
+        {!blockedByExtraction && (
+          <Button variant="primary" onClick={onPublish} disabled={!canPublish}>
+            {publishing
+              ? isPublic
+                ? 'Publishing…'
+                : 'Publishing…'
+              : isPublic
+                ? 'Publish changes'
+                : 'Publish'}
+          </Button>
+        )}
       </div>
     </div>
   );

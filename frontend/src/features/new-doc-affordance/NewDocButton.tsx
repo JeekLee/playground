@@ -172,7 +172,12 @@ export function NewDocButton({ className, folderPath }: NewDocButtonProps) {
             className="flex w-full items-center gap-sm border-t border-border px-md py-sm text-left text-small text-text hover:bg-surface-soft"
           >
             <Upload size={14} className="text-text-muted" aria-hidden="true" />
-            <span>{importing ? 'Importing…' : 'Import .md or .pdf…'}</span>
+            {/* M6.1: copy split — "Uploading…" while the multipart upload
+                streams; "Analyzing…" is shown on the destination page via
+                the SSE pill, so the dropdown stays focused on the upload
+                phase. The dropdown closes the moment the upload resolves
+                and we navigate. */}
+            <span>{importing ? 'Uploading…' : 'Import .md or .pdf…'}</span>
           </button>
         </div>
       )}
