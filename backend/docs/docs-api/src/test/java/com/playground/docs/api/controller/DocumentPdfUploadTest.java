@@ -176,6 +176,7 @@ class DocumentPdfUploadTest {
                 mimeType,
                 extractionStatus,
                 null,
+                false,
                 null,
                 now,
                 now);

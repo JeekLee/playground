@@ -54,6 +54,7 @@ public record DocumentDetailDto(
         String mimeType,
         String extractionStatus,
         String extractionReason,
+        boolean hasOriginal,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -81,6 +82,7 @@ public record DocumentDetailDto(
                 doc.mimeType().wireValue(),
                 doc.extractionStatus().wireValue(),
                 doc.extractionReason(),
+                doc.sourceObjectKey() != null,
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());

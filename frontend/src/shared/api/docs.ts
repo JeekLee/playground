@@ -112,6 +112,13 @@ export interface DocDetailDto {
    * `null` on every other status (and absent on legacy rows).
    */
   extractionReason?: string | null;
+  /**
+   * M6.1 follow-up — true when a MinIO-retained source blob exists for this
+   * document (i.e., `GET /api/docs/{id}/original` will stream it back).
+   * Absent on pre-M6.1 rows; backend always sets it on M6.1+ rows
+   * (true for multipart uploads — PDF *and* MD — and false for JSON POSTs).
+   */
+  hasOriginal?: boolean;
 }
 
 export interface MyDocListItemDto {
@@ -127,10 +134,10 @@ export interface MyDocListItemDto {
   /** M6 — present once the backend ships PDF support; absent means markdown. */
   mimeType?: DocMimeType;
   /**
-   * M6.1 — async extraction lifecycle. Optional — the list DTO doesn't
-   * surface it yet, so list rows treat `undefined` as `extracted` and skip
-   * the "(분석 중)" coexistence hint. Forward-compat for the day the
-   * backend exposes the column on the mine-list endpoint.
+   * M6.1 — async extraction lifecycle. The backend surfaces this on every
+   * M6.1+ row; absent on pre-M6.1 rows (treated as `extracted` / terminal
+   * by the list row). Drives the "(분석 중)" coexistence hint + title
+   * dim on `/docs/mine`.
    */
   extractionStatus?: ExtractionStatus;
 }
@@ -592,16 +599,16 @@ export function isExtractionTerminal(status: ExtractionStatus | undefined): bool
 
 /**
  * Does the document carry an original blob in MinIO that the user can
- * download? M6.1 streams every multipart upload (PDF and `.md` file imports)
- * into MinIO; rows authored directly via the BlockNote editor (JSON POST)
- * have no original. The wire DTO doesn't currently expose a `hasOriginal`
- * flag, so this is inferred from `mimeType === 'application/pdf'` —
- * PDFs always have an original; markdown rows may or may not. A later
- * backend change can surface an explicit field; this helper is the seam.
+ * download? Reads the explicit `hasOriginal` field the M6.1 backend
+ * surfaces. Pre-M6.1 rows (absent field) fall back to the legacy PDF-only
+ * heuristic so freshly-deployed clients on still-old data render sensibly.
  */
 export function hasOriginalBlob(doc: {
   mimeType?: DocMimeType;
-  extractionStatus?: ExtractionStatus;
+  hasOriginal?: boolean;
 }): boolean {
+  if (typeof doc.hasOriginal === 'boolean') {
+    return doc.hasOriginal;
+  }
   return isPdfSourced(doc);
 }
