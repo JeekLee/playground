@@ -10,25 +10,39 @@ import java.util.UUID;
  * <p>{@code body} and {@code path} are optional — the application service
  * normalizes nulls to {@code ""} and {@code "/"} respectively.
  *
- * <p>M6 ADR-16: {@code mimeType} is the source media type of the upload —
- * {@link MimeType#MARKDOWN} for raw {@code .md} uploads + every JSON-body
- * {@code POST /api/docs} call, {@link MimeType#PDF} for PDF uploads (where
- * {@code body} carries the PDFBox/Vision-OCR-extracted Markdown). Defaults
- * to {@link MimeType#MARKDOWN} when null so M2-era callers keep working.
+ * <p>M6 ADR-16: {@code mimeType} is the source media type of the upload.
+ *
+ * <p>M6.1 ADR-12 §A12.5 — when {@code sourceObjectKey} is non-null the
+ * application service routes the create through the async-extraction path:
+ * INSERTs the row with empty body + {@code extraction_status='pending_extraction'},
+ * publishes {@code docs.document.extraction-requested}, and returns the
+ * detail DTO without the body materialized. When {@code sourceObjectKey} is
+ * null (JSON POST or pre-M6.1 markdown multipart) the synchronous M2 path
+ * applies: body provided up-front, INSERTed as
+ * {@code extraction_status='extracted'}, publishes {@code docs.document.uploaded}.
  */
 public record CreateDocumentCommand(
         UUID authorId,
         String title,
         String body,
         String path,
-        MimeType mimeType) {
+        MimeType mimeType,
+        String sourceObjectKey,
+        Long sourceSizeBytes,
+        String sourceMime) {
 
-    /**
-     * Backwards-compatible factory matching the M2 four-field record shape —
-     * defaults {@code mimeType = MARKDOWN}. New M6 call sites should pass
-     * the mime type explicitly via the canonical record constructor.
-     */
+    /** M2 four-field shape — defaults to synchronous Markdown path. */
     public CreateDocumentCommand(UUID authorId, String title, String body, String path) {
-        this(authorId, title, body, path, MimeType.MARKDOWN);
+        this(authorId, title, body, path, MimeType.MARKDOWN, null, null, null);
+    }
+
+    /** M6 five-field shape (synchronous mime-aware) — preserves backwards compat. */
+    public CreateDocumentCommand(UUID authorId, String title, String body, String path, MimeType mimeType) {
+        this(authorId, title, body, path, mimeType, null, null, null);
+    }
+
+    /** True when the command should land via the async extraction path. */
+    public boolean isAsyncExtraction() {
+        return sourceObjectKey != null;
     }
 }

@@ -52,6 +52,13 @@ create_topic "docs.document.uploaded"            "${RETENTION_BUSINESS_MS}"
 create_topic "docs.document.visibility-changed"  "${RETENTION_BUSINESS_MS}"
 create_topic "docs.document.deleted"             "${RETENTION_BUSINESS_MS}"
 
+# --- M6.1 (docs BC) — per ADR-12 §A12.5 + §A12.8 ---
+# In-BC async-extraction dispatch topic + its DLQ. Producer + consumer both
+# live in docs-api (Spring Modulith outbox bridges to Kafka so the worker
+# decouples from the upload request thread).
+create_topic "docs.document.extraction-requested"      "${RETENTION_BUSINESS_MS}"
+create_topic "docs.document.extraction-requested.dlq"  "${RETENTION_DLQ_MS}"
+
 # --- M3 (rag-ingestion BC) — per ADR-13 §E + §G.1 ---
 # Business event published when ingestion completes (consumed by future M4, M5).
 create_topic "rag.document.ingested"                     "${RETENTION_BUSINESS_MS}"

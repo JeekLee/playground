@@ -144,6 +144,8 @@ spring:
 # existing env-var overrides (`PLAYGROUND_RAG_INGESTION_CHUNK_SIZE_TOKENS`,
 # etc.) keep working without operator action. ADR-13 §1 / §7 (M3.1
 # amendment) — see backing types ChunkingProperties / ReembedProperties.
+#
+# M6.1 (ADR-12 §A12.4..§A12.10) — async extraction + MinIO knobs follow.
 playground:
   rag-ingestion:
     chunk:
@@ -158,6 +160,24 @@ playground:
       user-id: null
       document-id: null
       inter-document-delay-millis: 0
+  docs:
+    minio:
+      endpoint: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:http://minio-playground:9000}
+      access-key: ${MINIO_ROOT_USER:playground}
+      secret-key: ${MINIO_ROOT_PASSWORD:playground-secret}
+      bucket: ${PLAYGROUND_DOCS_MINIO_BUCKET:playground-docs-originals}
+      region: ${PLAYGROUND_DOCS_MINIO_REGION:us-east-1}
+    extraction:
+      executor:
+        parallelism: ${PLAYGROUND_DOCS_EXTRACTION_PARALLELISM:5}
+        queue-capacity: ${PLAYGROUND_DOCS_EXTRACTION_QUEUE_CAPACITY:200}
+      vision:
+        per-page-timeout-seconds: ${PLAYGROUND_DOCS_VISION_PER_PAGE_TIMEOUT_SECONDS:60}
+        retry:
+          max-attempts: ${PLAYGROUND_DOCS_VISION_RETRY_MAX_ATTEMPTS:2}
+          failure-threshold: ${PLAYGROUND_DOCS_VISION_FAILURE_THRESHOLD:0.2}
+      pdf:
+        max-pages: ${PLAYGROUND_DOCS_PDF_MAX_PAGES:100}
 
 management:
   endpoints:
@@ -186,6 +206,8 @@ springdoc:
 #   OPENSEARCH_BASE_URL          (default http://opensearch-playground:9200)
 #   IDENTITY_BASE_URL            (default http://identity-api:18081)
 #   PLAYGROUND_OWNER_GOOGLE_SUB  (unset → fail-closed empty owner feed)
+#   MINIO_ROOT_USER              (default playground)
+#   MINIO_ROOT_PASSWORD          (default playground-secret)
 
 logging:
   level:

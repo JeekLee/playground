@@ -247,19 +247,14 @@ services:
       # limit returns -1 for max, which displays as garbage on the M5
       # dashboard).
       #
-      # M6 ADR-16 — docs-api now does PDF page rendering for OCR fallback
-      # (PDFBox `PDFRenderer.renderImageWithDPI(150)` produces an RGB
-      # BufferedImage that's ~13 MB per A4 page, plus PNG + base64 + Spring
-      # AI request body buffer per page). The MultipartFile.getBytes() path
-      # also pins the full uploaded PDF (≤25 MB cap) in memory while
-      # extraction is in progress. Step ladder during M6 P0 rollout:
-      # 512 MB OOM'd on the first 55-page PDF → 1 GB still tight under
-      # Spring AI buffering → 2 GB held but cut it close → operator
-      # picks 4 GB as the comfortable headroom for concurrent uploads
-      # and any future markdown-reformat pass that may queue more LLM
-      # output in memory. Operators tune via JAVA_TOOL_OPTIONS env
-      # override without rebuilding.
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx4096m}
+      # M6.1 ADR-12 §A12.11 — docs-api absorbs rag-ingestion + serves the
+      # async extraction worker (N=5 parallel page renders + Vision calls).
+      # 1024 MB is the architect-pinned default headroom for the combined
+      # working set (Spring/Hibernate baseline + 5 concurrent PNG renders +
+      # 5 concurrent Vision request buffers + chunker + embed batches +
+      # OpenSearch projector + pgvector writes). Operators may tune via
+      # JAVA_TOOL_OPTIONS env override without rebuilding.
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx1024m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -283,6 +278,12 @@ services:
       SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://spark-inference-gateway:8000}
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
       SPRING_AI_VISION_MODEL: ${SPRING_AI_VISION_MODEL:-qwen3-vl-30b-a3b}
+      # M6.1 ADR-12 §A12.4 — MinIO source-blob storage. The sidecar service
+      # itself is added in the infra commit; here we wire only the env vars
+      # the docs-api process reads via application.yml's @Value bindings.
+      PLAYGROUND_DOCS_MINIO_ENDPOINT: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:-http://minio-playground:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18082/actuator/health || exit 1"]
       interval: 15s

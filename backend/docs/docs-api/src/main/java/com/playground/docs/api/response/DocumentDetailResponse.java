@@ -5,10 +5,8 @@ import java.time.Instant;
 
 /**
  * Response body for the single-document endpoints (POST / GET / PATCH) per
- * M2 spec §6.4 {@code DocDetail}. S2 includes the author block, derived
- * excerpt, and view/like counters (the increment paths land in S3).
- *
- * <p>{@code likedByMe} is null in S2 (the {@code document_likes} table is S3).
+ * M2 spec §6.4 {@code DocDetail}. M6 adds {@code mimeType}; M6.1 adds the
+ * async {@code extractionStatus} + {@code extractionReason} fields.
  */
 public record DocumentDetailResponse(
         String id,
@@ -23,6 +21,8 @@ public record DocumentDetailResponse(
         long likeCount,
         Boolean likedByMe,
         String mimeType,
+        String extractionStatus,
+        String extractionReason,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -41,6 +41,8 @@ public record DocumentDetailResponse(
                 dto.likeCount(),
                 dto.likedByMe(),
                 dto.mimeType(),
+                dto.extractionStatus(),
+                dto.extractionReason(),
                 dto.publishedAt(),
                 dto.createdAt(),
                 dto.updatedAt());

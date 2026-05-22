@@ -52,6 +52,8 @@ public record DocumentDetailDto(
         long likeCount,
         Boolean likedByMe,
         String mimeType,
+        String extractionStatus,
+        String extractionReason,
         Instant publishedAt,
         Instant createdAt,
         Instant updatedAt) {
@@ -77,6 +79,8 @@ public record DocumentDetailDto(
                 likeCount,
                 likedByMe,
                 doc.mimeType().wireValue(),
+                doc.extractionStatus().wireValue(),
+                doc.extractionReason(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());

@@ -1,5 +1,6 @@
 package com.playground.docs.domain.model;
 
+import com.playground.docs.domain.enums.ExtractionStatus;
 import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.model.id.AuthorId;
@@ -22,20 +23,19 @@ import java.util.Objects;
  * instance through the repository port and the JPA adapter copies the mutable
  * columns onto the managed entity.
  *
- * <p>S1 invariants:
+ * <p>M6.1 additions (ADR-12 §A12.3 / §A12.4):
  * <ul>
- *   <li>Author is fixed at creation; {@link #authorId()} is never re-assigned.</li>
- *   <li>{@code publishedAt} is set on the first {@code PRIVATE -> PUBLIC}
- *       transition and retained across subsequent unpublish/republish cycles
- *       (per M2 spec §4.4).</li>
- *   <li>{@code updatedAt} bumps on any application-level mutation.</li>
+ *   <li>{@code extractionStatus} — the async extraction lifecycle state.</li>
+ *   <li>{@code extractionReason} — human-readable failure context (only set on
+ *       {@code FAILED}).</li>
+ *   <li>{@code sourceObjectKey} — MinIO object key for the original blob.</li>
+ *   <li>{@code sourceSizeBytes} — original blob length in bytes (for the
+ *       download endpoint's {@code Content-Length}).</li>
+ *   <li>{@code sourceMime} — stored multipart media type. Usually mirrors
+ *       {@code mimeType.wireValue()} for new uploads.</li>
  * </ul>
- *
- * <p>S2 adds the denormalized {@code view_count} / {@code like_count} columns
- * (migration {@code V202605190001__add_counter_columns.sql}). The aggregate
- * carries them as immutable fields on the read path — the increment paths
- * (POST /like, POST /view) and the nightly resync land in S3 per ADR-12 §11.
- * S2 always reads them and always writes 0 on a brand-new draft.
+ * Pre-M6.1 rows backfill with {@code extractionStatus=EXTRACTED} and null
+ * source-blob columns (their bytes were discarded in the pre-MinIO regime).
  */
 public final class Document {
 
@@ -48,6 +48,11 @@ public final class Document {
     private final long viewCount;
     private final long likeCount;
     private final MimeType mimeType;
+    private final ExtractionStatus extractionStatus;
+    private final String extractionReason;
+    private final String sourceObjectKey;
+    private final Long sourceSizeBytes;
+    private final String sourceMime;
     private final Instant publishedAt;
     private final Instant createdAt;
     private final Instant updatedAt;
@@ -62,6 +67,11 @@ public final class Document {
             long viewCount,
             long likeCount,
             MimeType mimeType,
+            ExtractionStatus extractionStatus,
+            String extractionReason,
+            String sourceObjectKey,
+            Long sourceSizeBytes,
+            String sourceMime,
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
@@ -80,20 +90,37 @@ public final class Document {
         this.viewCount = viewCount;
         this.likeCount = likeCount;
         this.mimeType = mimeType == null ? MimeType.MARKDOWN : mimeType;
+        this.extractionStatus = extractionStatus == null ? ExtractionStatus.EXTRACTED : extractionStatus;
+        this.extractionReason = extractionReason;
+        this.sourceObjectKey = sourceObjectKey;
+        this.sourceSizeBytes = sourceSizeBytes;
+        this.sourceMime = sourceMime;
         this.publishedAt = publishedAt;
         this.createdAt = Objects.requireNonNull(createdAt, "Document.createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "Document.updatedAt must not be null");
-        if (visibility == Visibility.PRIVATE && publishedAt != null) {
-            // Per M2 spec §4.4 publishedAt is retained across an unpublish, but the
-            // initial state must have publishedAt == null on a brand-new private doc.
-            // Acceptance: applyVisibility() guarantees the retention path; constructor
-            // permits both shapes — the invariant we enforce is "publishedAt non-null
-            // only after publish has been called at least once".
-        }
         if (visibility == Visibility.PUBLIC && publishedAt == null) {
             throw new IllegalStateException(
                     "Document.publishedAt must not be null when visibility=PUBLIC");
         }
+    }
+
+    /** Backwards-compatible constructor — defaults the M6.1 extraction columns. */
+    public Document(
+            DocumentId id,
+            AuthorId authorId,
+            DocumentTitle title,
+            DocumentBody body,
+            Visibility visibility,
+            DocumentPath path,
+            long viewCount,
+            long likeCount,
+            MimeType mimeType,
+            Instant publishedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, authorId, title, body, visibility, path, viewCount, likeCount, mimeType,
+                ExtractionStatus.EXTRACTED, null, null, null, null,
+                publishedAt, createdAt, updatedAt);
     }
 
     /**
@@ -111,15 +138,11 @@ public final class Document {
             Instant publishedAt,
             Instant createdAt,
             Instant updatedAt) {
-        this(id, authorId, title, body, visibility, path, 0L, 0L, MimeType.MARKDOWN, publishedAt, createdAt, updatedAt);
+        this(id, authorId, title, body, visibility, path, 0L, 0L, MimeType.MARKDOWN,
+                publishedAt, createdAt, updatedAt);
     }
 
-    /**
-     * Backwards-compatible constructor (pre-M6, no {@code mimeType} field).
-     * Defaults {@code mimeType} to {@link MimeType#MARKDOWN}. Used by code paths
-     * that were written before the PDF support landed (S2/S3 unit tests, the
-     * counter-only increment helpers, etc.).
-     */
+    /** Pre-M6 constructor (no mimeType). Defaults to MARKDOWN. */
     public Document(
             DocumentId id,
             AuthorId authorId,
@@ -137,13 +160,8 @@ public final class Document {
     }
 
     /**
-     * Factory for a brand-new draft. Default visibility is {@link Visibility#PRIVATE}
-     * per M2 spec §6.1 ({@code POST /api/docs} creates documents with
-     * {@code visibility='private'} and {@code path='/'}). Counters start at 0.
-     *
-     * <p>Defaults {@code mimeType = MARKDOWN}; PDF uploads call the
-     * {@link #create(DocumentId, AuthorId, DocumentTitle, DocumentBody, DocumentPath, MimeType, Instant)}
-     * overload (M6 ADR-16).
+     * Factory for a brand-new draft — synchronous path. Defaults to
+     * {@link ExtractionStatus#EXTRACTED} (the body is already provided).
      */
     public static Document create(
             DocumentId id,
@@ -155,14 +173,7 @@ public final class Document {
         return create(id, authorId, title, body, path, MimeType.MARKDOWN, now);
     }
 
-    /**
-     * M6 ADR-16 factory variant — caller passes the {@link MimeType} so PDF
-     * uploads can record their source media type alongside the extracted
-     * Markdown body. M2 callers (the JSON {@code POST /api/docs} path + the
-     * Markdown multipart variant) keep using the {@link #create(DocumentId,
-     * AuthorId, DocumentTitle, DocumentBody, DocumentPath, Instant)} shape
-     * above, which defaults to {@link MimeType#MARKDOWN}.
-     */
+    /** M6 factory variant — synchronous path with explicit mime type. */
     public static Document create(
             DocumentId id,
             AuthorId authorId,
@@ -182,6 +193,49 @@ public final class Document {
                 0L,
                 0L,
                 mimeType == null ? MimeType.MARKDOWN : mimeType,
+                ExtractionStatus.EXTRACTED,
+                null,
+                null,
+                null,
+                null,
+                null,
+                now,
+                now);
+    }
+
+    /**
+     * M6.1 factory — async extraction path. The body starts empty, the
+     * document is INSERTed with {@link ExtractionStatus#PENDING_EXTRACTION},
+     * the source-blob columns are stamped from the MinIO upload, and the
+     * extraction worker materializes the body asynchronously.
+     */
+    public static Document createPendingExtraction(
+            DocumentId id,
+            AuthorId authorId,
+            DocumentTitle title,
+            DocumentPath path,
+            MimeType mimeType,
+            String sourceObjectKey,
+            long sourceSizeBytes,
+            String sourceMime,
+            Instant now) {
+        Objects.requireNonNull(now, "Document.createPendingExtraction.now must not be null");
+        Objects.requireNonNull(sourceObjectKey, "sourceObjectKey must not be null for async-extraction uploads");
+        return new Document(
+                id,
+                authorId,
+                title,
+                DocumentBody.empty(),
+                Visibility.PRIVATE,
+                path,
+                0L,
+                0L,
+                mimeType == null ? MimeType.MARKDOWN : mimeType,
+                ExtractionStatus.PENDING_EXTRACTION,
+                null,
+                sourceObjectKey,
+                sourceSizeBytes,
+                sourceMime,
                 null,
                 now,
                 now);
@@ -223,6 +277,26 @@ public final class Document {
         return mimeType;
     }
 
+    public ExtractionStatus extractionStatus() {
+        return extractionStatus;
+    }
+
+    public String extractionReason() {
+        return extractionReason;
+    }
+
+    public String sourceObjectKey() {
+        return sourceObjectKey;
+    }
+
+    public Long sourceSizeBytes() {
+        return sourceSizeBytes;
+    }
+
+    public String sourceMime() {
+        return sourceMime;
+    }
+
     public Instant publishedAt() {
         return publishedAt;
     }
@@ -235,12 +309,10 @@ public final class Document {
         return updatedAt;
     }
 
-    /** Caller is the author? */
     public boolean isAuthoredBy(AuthorId candidate) {
         return Objects.equals(authorId, candidate);
     }
 
-    /** The doc is readable by anonymous callers / non-authors. */
     public boolean isPublic() {
         return visibility == Visibility.PUBLIC;
     }
@@ -267,28 +339,53 @@ public final class Document {
                 this.viewCount,
                 this.likeCount,
                 this.mimeType,
+                this.extractionStatus,
+                this.extractionReason,
+                this.sourceObjectKey,
+                this.sourceSizeBytes,
+                this.sourceMime,
                 this.publishedAt,
                 this.createdAt,
                 now);
     }
 
     /**
-     * Transition visibility. First {@code PRIVATE -> PUBLIC} stamps
-     * {@code publishedAt = now}; subsequent transitions retain the existing
-     * value (M2 spec §4.4).
-     *
-     * <p>Kept package-visible so the dedicated {@link #publish(Instant)} +
-     * {@link #unpublish(Instant)} aggregate behaviors (the spec §6.1 surface)
-     * remain the canonical entry points. The unit tests exercise the dedicated
-     * methods, not this lower-level helper.
+     * M6.1 — record an extraction transition. Sets the new status, optional
+     * reason (only meaningful on {@code FAILED}), replaces the body (typically
+     * non-empty on {@code EXTRACTED}; pass {@code null} to leave unchanged),
+     * and bumps {@code updatedAt}.
      */
+    public Document withExtraction(
+            ExtractionStatus newStatus,
+            String reason,
+            DocumentBody newBody,
+            Instant now) {
+        Objects.requireNonNull(newStatus, "newStatus must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        return new Document(
+                this.id,
+                this.authorId,
+                this.title,
+                newBody == null ? this.body : newBody,
+                this.visibility,
+                this.path,
+                this.viewCount,
+                this.likeCount,
+                this.mimeType,
+                newStatus,
+                reason,
+                this.sourceObjectKey,
+                this.sourceSizeBytes,
+                this.sourceMime,
+                this.publishedAt,
+                this.createdAt,
+                now);
+    }
+
     Document changeVisibility(Visibility next, Instant now) {
         Objects.requireNonNull(next, "Document.changeVisibility.next must not be null");
         Objects.requireNonNull(now, "Document.changeVisibility.now must not be null");
         if (this.visibility == next) {
-            // Idempotent: spec §6.1 says POST /publish + /unpublish are
-            // idempotent. Preserve the existing instance verbatim — no spurious
-            // updatedAt bump, no spurious DB write upstream.
             return this;
         }
         Instant newPublishedAt = this.publishedAt;
@@ -305,48 +402,26 @@ public final class Document {
                 this.viewCount,
                 this.likeCount,
                 this.mimeType,
+                this.extractionStatus,
+                this.extractionReason,
+                this.sourceObjectKey,
+                this.sourceSizeBytes,
+                this.sourceMime,
                 newPublishedAt,
                 this.createdAt,
                 now);
     }
 
-    /**
-     * Publish: transition to {@link Visibility#PUBLIC}. Per M2 spec §6.1
-     * {@code POST /api/docs/{id}/publish} is idempotent — calling it on an
-     * already-public document returns the existing aggregate verbatim (no
-     * {@code publishedAt} or {@code updatedAt} mutation). First publish stamps
-     * {@code publishedAt = now}; subsequent unpublish/republish cycles retain
-     * the original stamp.
-     */
     public Document publish(Instant now) {
         Objects.requireNonNull(now, "Document.publish.now must not be null");
         return changeVisibility(Visibility.PUBLIC, now);
     }
 
-    /**
-     * Unpublish: transition to {@link Visibility#PRIVATE} while <em>retaining
-     * {@code publishedAt}</em> (M2 spec §6.1 row: "publishedAt retained"; §4.4).
-     * Idempotent — calling it on an already-private document returns the
-     * existing aggregate verbatim.
-     */
     public Document unpublish(Instant now) {
         Objects.requireNonNull(now, "Document.unpublish.now must not be null");
         return changeVisibility(Visibility.PRIVATE, now);
     }
 
-    /**
-     * Counter mutation: bump {@code view_count} by one. Per M2 spec §10
-     * "View dedup correctness" the dedup happens upstream (Redis claim in
-     * {@code ViewIncrementService}); this aggregate-level helper assumes the
-     * caller has already claimed the view and merely produces the next state.
-     *
-     * <p>Does <em>not</em> bump {@code updatedAt} — view increments are a
-     * background-style counter mutation; surfacing them as a recent-edit signal
-     * on {@code /docs/mine} would mis-represent author activity (the author
-     * didn't edit the doc; a reader visited it). The denormalized column is
-     * updated transactionally by the JPA-layer increment query so the aggregate
-     * itself never need round-trip through a save() call.
-     */
     public Document incrementViewCount() {
         return new Document(
                 this.id,
@@ -358,19 +433,16 @@ public final class Document {
                 this.viewCount + 1,
                 this.likeCount,
                 this.mimeType,
+                this.extractionStatus,
+                this.extractionReason,
+                this.sourceObjectKey,
+                this.sourceSizeBytes,
+                this.sourceMime,
                 this.publishedAt,
                 this.createdAt,
                 this.updatedAt);
     }
 
-    /**
-     * Counter mutation: bump {@code like_count} by one. Per M2 spec §10
-     * "Like idempotency" the per-user upsert happens at the
-     * {@code document_likes} table layer; this helper produces the next
-     * aggregate state for code paths that round-trip the aggregate.
-     *
-     * <p>Like {@link #incrementViewCount()}, does not bump {@code updatedAt}.
-     */
     public Document incrementLikeCount() {
         return new Document(
                 this.id,
@@ -382,17 +454,16 @@ public final class Document {
                 this.viewCount,
                 this.likeCount + 1,
                 this.mimeType,
+                this.extractionStatus,
+                this.extractionReason,
+                this.sourceObjectKey,
+                this.sourceSizeBytes,
+                this.sourceMime,
                 this.publishedAt,
                 this.createdAt,
                 this.updatedAt);
     }
 
-    /**
-     * Counter mutation: decrement {@code like_count} by one, clamped to 0
-     * (M2 spec §10 "Like idempotency" + S3 brief: "Don't let it go below 0").
-     * Idempotent against an already-zero counter — returns the existing
-     * instance verbatim.
-     */
     public Document decrementLikeCount() {
         if (this.likeCount <= 0) {
             return this;
@@ -407,6 +478,11 @@ public final class Document {
                 this.viewCount,
                 this.likeCount - 1,
                 this.mimeType,
+                this.extractionStatus,
+                this.extractionReason,
+                this.sourceObjectKey,
+                this.sourceSizeBytes,
+                this.sourceMime,
                 this.publishedAt,
                 this.createdAt,
                 this.updatedAt);

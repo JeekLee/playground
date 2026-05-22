@@ -1,5 +1,6 @@
 package com.playground.docs.infrastructure.persistence;
 
+import com.playground.docs.domain.enums.ExtractionStatus;
 import com.playground.docs.domain.enums.MimeType;
 import com.playground.docs.domain.enums.Visibility;
 import com.playground.docs.domain.model.Document;
@@ -29,6 +30,11 @@ public final class DocumentMapper {
                 entity.getViewCount(),
                 entity.getLikeCount(),
                 MimeType.fromWire(entity.getMimeType()),
+                ExtractionStatus.fromWire(entity.getExtractionStatus()),
+                entity.getExtractionReason(),
+                entity.getSourceObjectKey(),
+                entity.getSourceSizeBytes(),
+                entity.getSourceMime(),
                 entity.getPublishedAt(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
@@ -45,6 +51,11 @@ public final class DocumentMapper {
                 doc.viewCount(),
                 doc.likeCount(),
                 doc.mimeType().wireValue(),
+                doc.extractionStatus().wireValue(),
+                doc.extractionReason(),
+                doc.sourceObjectKey(),
+                doc.sourceSizeBytes(),
+                doc.sourceMime(),
                 doc.publishedAt(),
                 doc.createdAt(),
                 doc.updatedAt());
@@ -62,6 +73,11 @@ public final class DocumentMapper {
         managed.setVisibility(source.visibility().wireValue());
         managed.setPath(source.path().value());
         managed.setMimeType(source.mimeType().wireValue());
+        managed.setExtractionStatus(source.extractionStatus().wireValue());
+        managed.setExtractionReason(source.extractionReason());
+        managed.setSourceObjectKey(source.sourceObjectKey());
+        managed.setSourceSizeBytes(source.sourceSizeBytes());
+        managed.setSourceMime(source.sourceMime());
         managed.setPublishedAt(source.publishedAt());
         managed.setUpdatedAt(source.updatedAt());
         return managed;

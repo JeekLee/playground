@@ -45,6 +45,11 @@ dependencies {
     // The Vision call uses `Media`-attached UserMessage (multimodal).
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
 
+    // M6.1 (ADR-12 §A12.4): MinIO Java SDK for the docs source-blob store.
+    // Streams uploads/downloads via the multipart S3 API — no in-heap
+    // byte[] materialization.
+    implementation(libs.minio)
+
     // M6.1 (ADR-12 §A12.1) — absorbed from the retired rag-ingestion-infra
     // module. Redisson Spring Boot starter wires a Spring-managed
     // RedissonClient bean from application.yml properties; the
