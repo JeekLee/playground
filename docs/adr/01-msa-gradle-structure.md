@@ -412,10 +412,14 @@ is met (rare).
 
 **What this means for the project shape:**
 
-- The monorepo is now polyglot in the strict sense — `backend/`
-  (Java) and `services/` (Python) live side-by-side under the same
-  Git root, the same compose network, the same Postgres / Kafka /
-  spark-inference-gateway / gateway. The transverse ADRs (00–09)
+- The monorepo is polyglot in the strict sense — `backend/springboot/`
+  (Java) and `backend/fastapi/` (Python) live side-by-side under the
+  same `backend/` umbrella, the same compose network, the same
+  Postgres / Kafka / spark-inference-gateway / gateway. The split
+  inside `backend/` is by **runtime/framework** (`springboot/` vs
+  `fastapi/`) rather than by language — this maps 1:1 in practice
+  (each runtime has exactly one language), but the framework name
+  reads more concretely at a glance. The transverse ADRs (00–09)
   still apply at the **contract** layer (port pins, Kafka envelope,
   schema-per-BC, gateway OAuth, ADR-08 channels) but not at the
   **toolchain** layer (Gradle, JDK 21, Lombok, ArchUnit) for the
@@ -441,7 +445,7 @@ gain `:massing-gen:massing-gen-*` includes.**
 |---|---|---|
 | Java BCs | 5 | identity, docs, rag-chat, metrics, + `gateway` + `shared-kernel` (non-BC modules) |
 | Java production modules | **22** | 5 BCs × 4 modules + gateway + shared-kernel; same as post-M6.1 baseline |
-| Python services | **1** | `services/massing-gen/` (single container, no four-module quadruplet) |
+| Python services | **1** | `backend/fastapi/massing-gen/` (single container, no four-module quadruplet) |
 | Total runnable backend containers | **6** | gateway + 4 Java BC `-api`s + 1 Python service |
 
 The ADR-00 ASCII module dependency graph is **redrawn** in the M8
@@ -459,26 +463,28 @@ of implementation language.
 
 ```
 playground/
-├── backend/         # Java BCs (Gradle multi-module, JDK 21, Spring Boot 3.3.x)
-│   ├── gateway/
-│   ├── shared-kernel/
-│   ├── identity/
-│   ├── docs/
-│   ├── rag-chat/
-│   ├── metrics/
-│   ├── buildSrc/
-│   ├── settings.gradle.kts
-│   └── ...
-├── services/        # Non-Java BCs — NEW directory added by ADR-18 §A18.4
-│   └── massing-gen/   # Python 3.12 + FastAPI (sole occupant at ship)
+├── backend/
+│   ├── springboot/   # Java BCs (Gradle multi-module, JDK 21, Spring Boot 3.3.x)
+│   │   ├── gateway/
+│   │   ├── shared-kernel/
+│   │   ├── identity/
+│   │   ├── docs/
+│   │   ├── rag-chat/
+│   │   ├── metrics/
+│   │   ├── buildSrc/
+│   │   ├── settings.gradle.kts
+│   │   └── ...
+│   └── fastapi/      # Non-Java BCs — Python 3.12 + FastAPI + uvicorn
+│       └── massing-gen/   # sole occupant at ship
 ├── frontend/
 ├── infra/
 └── docs/
 ```
 
-The `backend/` Gradle root is unaware of `services/`; the two are
-sibling top-level dirs aggregated only at the compose layer (each
-publishes a Docker image consumed by `infra/docker-compose.yml`).
+`backend/springboot/` is the Gradle multi-project root; it is
+unaware of its sibling `backend/fastapi/`. Each language tree
+publishes its own Docker image consumed by `infra/docker-compose.yml`
+— compose is the only aggregation layer.
 
 ### §A01.13. Port 18083 — reservation preserved under Python container
 
@@ -512,11 +518,13 @@ JDBC / Spring AI / Spring `WebClient`.
 
 ### §A01.14. Cross-BC observation — future polyglot BC pattern
 
-**Decision: any future polyglot BC (e.g., a Python ML-serving BC, a
-Rust performance-critical BC) follows M8's pattern: single container,
-`services/<bc-name>/` directory, exposes its API contract over
-HTTP at a `*-api` hostname on a port from the same `1808x` block.
-The four-module quadruplet does not apply.**
+**Decision: any future polyglot BC follows M8's pattern: single
+container, `backend/<runtime>/<bc-name>/` directory (e.g.,
+`backend/fastapi/<bc-name>/` for another Python BC,
+`backend/axum/<bc-name>/` for a Rust BC, etc.), exposes its API
+contract over HTTP at a `*-api` hostname on a port from the same
+`1808x` block. The four-module quadruplet does not apply — those
+are an artifact of `backend/springboot/`'s hexagonal idiom.**
 
 | Cross-BC concern | Java BC | Polyglot BC (M8 pattern) |
 |---|---|---|

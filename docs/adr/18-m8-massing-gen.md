@@ -1590,7 +1590,7 @@ inter-service specification.
 
 **Decision: M8's `massing-gen` BC is implemented as a single
 Python/FastAPI service, not a Java Spring Boot four-module
-quadruplet. The new top-level directory is `services/massing-gen/`
+quadruplet. The new top-level directory is `backend/fastapi/massing-gen/`
 (the existing `backend/` directory remains Java-only). The HTTP
 contract, the `arch` schema DDL, the port pin (18083), and the
 compose service name (`massing-gen-api`) are preserved verbatim.**
@@ -1637,7 +1637,7 @@ in the FastAPI service.**
 
 ### §A18.3. Implementation stack pin
 
-**Decision: the `services/massing-gen/` FastAPI service uses the
+**Decision: the `backend/fastapi/massing-gen/` FastAPI service uses the
 following stack pins. Exact versions are advisory (latest stable at
 implementer time); the implementer chooses pin freshness within the
 Python 3.12 family.**
@@ -1662,9 +1662,9 @@ The fat-jar invariant of `*-api` modules in ADR-01 is replaced by a
 single `python:3.12-slim`-based Docker image that runs
 `uvicorn app.main:app --host 0.0.0.0 --port 18083`.
 
-### §A18.4. File layout — `services/massing-gen/`
+### §A18.4. File layout — `backend/fastapi/massing-gen/`
 
-**Decision: M8 lives at the new top-level `services/` directory. The
+**Decision: M8 lives at the new top-level `backend/fastapi/` directory. The
 `backend/` directory remains Java-only.**
 
 ```
@@ -1729,7 +1729,7 @@ discipline downgrades to "review-enforced", matching ADR-02's original
 
 | Section | Status under Python flip | Replacement |
 |---|---|---|
-| §1 (Module placement — Java quadruplet) | **Retired** | Replaced by §A18.3 + §A18.4 (single FastAPI service at `services/massing-gen/`) |
+| §1 (Module placement — Java quadruplet) | **Retired** | Replaced by §A18.3 + §A18.4 (single FastAPI service at `backend/fastapi/massing-gen/`) |
 | §2 (Port 18083) | **Preserved** | `massing-gen-api` container still binds 18083 |
 | §3 (Q-E — body fetch over Exception 5) | **Preserved** | HTTP contract language-neutral; httpx replaces WebClient (§A18.3) |
 | §4 (Q-C — Spring AI ChatClient) | **Retired** | Replaced by §A18.3 — httpx call to spark-inference-gateway's OpenAI-compatible `/v1/chat/completions` endpoint. Same model (Qwen3-32B), same base URL, same temperature/max-tokens config; Spring AI's wrapper is not used because there is no Spring AI. |
@@ -1737,8 +1737,8 @@ discipline downgrades to "review-enforced", matching ADR-02's original
 | §6 (Q-D — `<CODE>: <message>` prefix grammar) | **Preserved** | Wire-level; produced by Python the same way Java would |
 | §7 (MassingErrorCode enum + HTTP mapping) | **Preserved (port to Python)** | `app/domain/errors.py` enum + a FastAPI exception handler that maps to the same HTTP statuses (404 / 403 / 422 / 502 / 504 / 500). The `BRIEF_FETCH_FAILED` code is added (§A08.12's reliability discipline maps permanent docs-api failure to that code). |
 | §8 (MassingAlgorithm — over-area + maxFloors=10) | **Preserved (port to Python)** | Same algorithm, same defaults, same throw-on-over-area policy. Lives in `app/domain/algorithm.py`. |
-| §9 (JSON Schema + networknt validator) | **Retired** | Replaced by **Pydantic v2** as the primary validator. The `programJson.schema.json` file is preserved (kept at `services/massing-gen/schemas/program.schema.json` for audit + as a system-prompt inlining source per §10), but the LLM output validation in code uses Pydantic's `TypeAdapter.validate_json(...)` against the equivalent Pydantic model. The two are kept in sync at PR-review time. Schema-validation failure → same `BRIEF_EXTRACTION_FAILED` enum value. |
-| §10 (Korean prompt template) | **Preserved** | Prompt files move to `services/massing-gen/prompts/`. The system prompt still inlines `program.schema.json` verbatim — the LLM is instructed by the JSON Schema regardless of whether Python or Java validates the output. |
+| §9 (JSON Schema + networknt validator) | **Retired** | Replaced by **Pydantic v2** as the primary validator. The `programJson.schema.json` file is preserved (kept at `backend/fastapi/massing-gen/schemas/program.schema.json` for audit + as a system-prompt inlining source per §10), but the LLM output validation in code uses Pydantic's `TypeAdapter.validate_json(...)` against the equivalent Pydantic model. The two are kept in sync at PR-review time. Schema-validation failure → same `BRIEF_EXTRACTION_FAILED` enum value. |
+| §10 (Korean prompt template) | **Preserved** | Prompt files move to `backend/fastapi/massing-gen/prompts/`. The system prompt still inlines `program.schema.json` verbatim — the LLM is instructed by the JSON Schema regardless of whether Python or Java validates the output. |
 | §11 (rhino3dm-bridge Node sidecar) | **Retired** | Replaced by §A18.2 — in-process `import rhino3dm`. Box-coordinate convention (the table in §11 — x/y/z/width/depth/height/roomName/floor) is preserved verbatim as the layout the Python `rhino_serializer` builds. |
 | §12 (BYTEA storage in arch.outputs.file_bytes) | **Preserved** | SQLAlchemy `LargeBinary` column maps to BYTEA the same way JPA `@Lob` did. |
 | §13 (Orphan cleanup — untouched) | **Preserved** | Policy is language-neutral. |
@@ -1750,7 +1750,7 @@ discipline downgrades to "review-enforced", matching ADR-02's original
 | §19 (env-var knobs) | **Mostly preserved** | The two `PLAYGROUND_RHINO3DM_BRIDGE_*` vars are retired (§A18.2). All other env vars — `SERVER_PORT`, `PLAYGROUND_MASSING_LLM_MODEL`, `PLAYGROUND_MASSING_MAX_FLOORS`, `PLAYGROUND_DOCS_API_URL`, `PLAYGROUND_DOCS_BODY_FETCH_TIMEOUT_MS`, `SPRING_AI_OPENAI_BASE_URL`, `SPRING_AI_OPENAI_API_KEY` — keep their names and values. The two Spring-AI-prefixed keys (`SPRING_AI_OPENAI_*`) keep their names for cross-BC env-var uniformity even though there is no Spring AI in M8 (the keys are re-read by Python's `app/config.py` and passed to httpx). |
 | §20 (MassingTool descriptor) | **Preserved** | Lives in Java (rag-chat-domain). Endpoint URL `http://massing-gen-api:18083/internal/tools/generate-massing` unchanged. |
 | §21 (Wire-shape contracts) | **Preserved** | HTTP request / response / `Content-Disposition` shapes are language-neutral. |
-| §22 (Test surface) | **Preserved conceptually; retired in Java form** | The 13 Java test classes are not created. The intent of each — visibility check, `BRIEF_NOT_READY`, over-area, summary format, error-prefix wire shape, owner-only download — is reimplemented in pytest under `services/massing-gen/tests/` per §A18.9. |
+| §22 (Test surface) | **Preserved conceptually; retired in Java form** | The 13 Java test classes are not created. The intent of each — visibility check, `BRIEF_NOT_READY`, over-area, summary format, error-prefix wire shape, owner-only download — is reimplemented in pytest under `backend/fastapi/massing-gen/tests/` per §A18.9. |
 | §23 (Rollout commit topology) | **Retired** | The Java-specific commit suggestion (module scaffolding, Flyway migration, etc.) is replaced by an implementer-determined Python topology. The PR ships off the same `worktree-m8-massing-gen` branch. |
 
 ### §A18.6. Circuit breakers retired in P0
@@ -1826,7 +1826,7 @@ the same way it picks up Java BCs' Spring Boot Actuator `/actuator/prometheus`.*
 ### §A18.9. Testing — pytest
 
 **Decision: the Java test surface from §22 is reimplemented in pytest
-under `services/massing-gen/tests/`. Test intents (algorithm
+under `backend/fastapi/massing-gen/tests/`. Test intents (algorithm
 correctness, error-code mapping, owner-only download semantics,
 Korean summary format, JSON-schema validation, brief visibility
 enforcement) carry over 1:1; class names and assertion grammars
