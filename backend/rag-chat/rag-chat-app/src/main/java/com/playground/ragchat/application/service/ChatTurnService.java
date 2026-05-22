@@ -109,8 +109,14 @@ public class ChatTurnService {
                 objectMapper, properties, clock, ToolCatalog::descriptors);
     }
 
-    /** Test-friendly constructor — pluggable tool-descriptor supplier. */
-    ChatTurnService(
+    /**
+     * Test-friendly constructor — pluggable tool-descriptor supplier.
+     * Public so end-to-end tests in {@code rag-chat-infra} (different
+     * package) can wire a synthetic catalog without reaching for
+     * reflection. Production wiring uses the primary constructor which
+     * binds the supplier to {@code ToolCatalog::descriptors}.
+     */
+    public ChatTurnService(
             SessionRepository sessionRepository,
             MessageRepository messageRepository,
             TokenBucketPort tokenBucketPort,
