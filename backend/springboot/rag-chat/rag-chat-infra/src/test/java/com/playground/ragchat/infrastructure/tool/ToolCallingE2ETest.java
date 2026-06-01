@@ -173,6 +173,7 @@ class ToolCallingE2ETest {
                 new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), dispatcher,
+                (userId, limit) -> java.util.List.of(),
                 objectMapper, props,
                 Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
                 () -> List.of(desc));
