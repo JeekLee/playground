@@ -17,6 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Response
 from sqlalchemy import select
 
+from ..content_disposition import content_disposition_attachment
 from ..deps import UserContextDep
 from ..database import session_scope
 from ..errors import MassingError, MassingErrorCode
@@ -56,7 +57,9 @@ def download_output(
         content=file_bytes,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            # RFC 6266 — slug preserves Hangul, which is not latin-1 and
+            # would crash the ASGI response if placed in a bare filename=.
+            "Content-Disposition": content_disposition_attachment(filename),
             "Content-Length": str(len(file_bytes)),
         },
     )

@@ -428,7 +428,7 @@ services:
       # spark-inference-gateway — shared with the other LLM-touching BCs.
       SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
-      PLAYGROUND_MASSING_GEN_LLM_MODEL: ${PLAYGROUND_MASSING_GEN_LLM_MODEL:-qwen3-30b-a3b}
+      PLAYGROUND_MASSING_GEN_LLM_MODEL: ${PLAYGROUND_MASSING_GEN_LLM_MODEL:-qwen3-vl-30b-a3b}
       PLAYGROUND_MASSING_GEN_MAX_FLOORS: ${PLAYGROUND_MASSING_GEN_MAX_FLOORS:-10}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:18083/actuator/health || exit 1"]
