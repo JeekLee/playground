@@ -6,6 +6,7 @@ import com.playground.ragchat.domain.enums.Role;
 import com.playground.ragchat.domain.enums.Visibility;
 import com.playground.ragchat.domain.model.Message;
 import com.playground.ragchat.domain.model.RetrievedChunk;
+import com.playground.ragchat.domain.model.UserDocumentRef;
 import com.playground.ragchat.domain.model.id.DocumentId;
 import com.playground.ragchat.domain.model.id.MessageId;
 import com.playground.ragchat.domain.model.id.SessionId;
@@ -40,6 +41,39 @@ class PromptTemplateTest {
         String out = template.assemble(chunks, List.of(), "hi", 400);
         assertThat(out).contains("[1] Doc A (visibility=public) — first text");
         assertThat(out).contains("[2] Doc B (visibility=private) — second text");
+    }
+
+    @Test
+    void assemble_withoutDocuments_rendersNoDocumentIndexSection() {
+        // The 4-arg overload (and a null/empty manifest) must keep the M4
+        // prompt byte-shape — no [YOUR DOCUMENTS] section at all.
+        String out = template.assemble(List.of(), List.of(), "hi", 400);
+        assertThat(out).doesNotContain("[YOUR DOCUMENTS]");
+        String out2 = template.assemble(List.of(), List.of(), "hi", 400, List.of());
+        assertThat(out2).doesNotContain("[YOUR DOCUMENTS]");
+        assertThat(out2).isEqualTo(out);
+    }
+
+    @Test
+    void assemble_withDocuments_rendersOrderedManifestWithIds() {
+        UUID firstId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        UUID secondId = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        List<UserDocumentRef> docs = List.of(
+                new UserDocumentRef(1, firstId, "사업계획서", "application/pdf", "extracted"),
+                new UserDocumentRef(2, secondId, "KFI 설계공모지침서", "application/pdf", "extracted"));
+        String out = template.assemble(List.of(), List.of(), "두 번째 문서로 매싱 만들어줘", 400, docs);
+
+        assertThat(out).contains("[YOUR DOCUMENTS]");
+        // Ordinal + title + raw UUID must be present so the model can map an
+        // ordinal/name reference to the exact briefDocId.
+        assertThat(out).contains("1.");
+        assertThat(out).contains("사업계획서");
+        assertThat(out).contains(firstId.toString());
+        assertThat(out).contains("2.");
+        assertThat(out).contains("KFI 설계공모지침서");
+        assertThat(out).contains(secondId.toString());
+        // Section must precede the current turn so it is in-context for the tool call.
+        assertThat(out.indexOf("[YOUR DOCUMENTS]")).isLessThan(out.indexOf("[CURRENT TURN]"));
     }
 
     @Test

@@ -100,6 +100,7 @@ class ChatTurnServiceToolCallingTest {
                 autoTitleService,
                 new ActiveTurnRegistry(),
                 toolDispatcherPort,
+                (userId, limit) -> java.util.List.of(),
                 new ObjectMapper(),
                 RagChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
@@ -261,6 +262,7 @@ class ChatTurnServiceToolCallingTest {
                 new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
+                (userId, limit) -> java.util.List.of(),
                 new ObjectMapper(), RagChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
                 () -> List.of(desc));
@@ -341,6 +343,7 @@ class ChatTurnServiceToolCallingTest {
                 new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
+                (userId, limit) -> java.util.List.of(),
                 new ObjectMapper(), RagChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
                 () -> List.of(desc));

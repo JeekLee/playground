@@ -10,6 +10,7 @@ import com.playground.ragchat.application.port.ChunkRetrievalPort;
 import com.playground.ragchat.application.port.ConcurrentStreamLockPort;
 import com.playground.ragchat.application.port.EmbeddingPort;
 import com.playground.ragchat.application.port.TokenBucketPort;
+import com.playground.ragchat.application.port.UserDocumentManifestPort;
 import com.playground.ragchat.application.properties.RagChatProperties;
 import com.playground.ragchat.application.repository.MessageRepository;
 import com.playground.ragchat.application.repository.SessionRepository;
@@ -22,6 +23,7 @@ import com.playground.ragchat.domain.model.ChatSession;
 import com.playground.ragchat.domain.model.Message;
 import com.playground.ragchat.domain.model.MessageCitation;
 import com.playground.ragchat.domain.model.RetrievedChunk;
+import com.playground.ragchat.domain.model.UserDocumentRef;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
 import com.playground.ragchat.domain.model.vo.TokenCount;
@@ -80,9 +82,16 @@ public class ChatTurnService {
     private final AutoTitleService autoTitleService;
     private final ActiveTurnRegistry activeTurnRegistry;
     private final ToolDispatcherPort toolDispatcherPort;
+    private final UserDocumentManifestPort userDocumentManifestPort;
     private final ObjectMapper objectMapper;
     private final RagChatProperties properties;
     private final Clock clock;
+
+    /**
+     * Cap on the document manifest injected into the prompt's [YOUR DOCUMENTS]
+     * section. Bounds prompt tokens; personal-scale corpora sit well under it.
+     */
+    static final int DOCUMENT_MANIFEST_LIMIT = 30;
     /** Source of registered tool descriptors. Defaults to {@code ToolCatalog::descriptors}. */
     private final java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier;
 
@@ -101,13 +110,14 @@ public class ChatTurnService {
             AutoTitleService autoTitleService,
             ActiveTurnRegistry activeTurnRegistry,
             ToolDispatcherPort toolDispatcherPort,
+            UserDocumentManifestPort userDocumentManifestPort,
             ObjectMapper objectMapper,
             RagChatProperties properties,
             Clock clock) {
         this(sessionRepository, messageRepository, tokenBucketPort, lockPort, embeddingPort,
                 chunkRetrievalPort, chatGenerationPort, historyTruncator, tokenCounter,
                 promptTemplate, autoTitleService, activeTurnRegistry, toolDispatcherPort,
-                objectMapper, properties, clock, ToolCatalog::descriptors);
+                userDocumentManifestPort, objectMapper, properties, clock, ToolCatalog::descriptors);
     }
 
     /**
@@ -131,6 +141,7 @@ public class ChatTurnService {
             AutoTitleService autoTitleService,
             ActiveTurnRegistry activeTurnRegistry,
             ToolDispatcherPort toolDispatcherPort,
+            UserDocumentManifestPort userDocumentManifestPort,
             ObjectMapper objectMapper,
             RagChatProperties properties,
             Clock clock,
@@ -148,6 +159,7 @@ public class ChatTurnService {
         this.autoTitleService = autoTitleService;
         this.activeTurnRegistry = activeTurnRegistry;
         this.toolDispatcherPort = toolDispatcherPort;
+        this.userDocumentManifestPort = userDocumentManifestPort;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.clock = clock;
@@ -223,13 +235,26 @@ public class ChatTurnService {
         int userMessageCount = messageRepository.countUserMessages(session.id());
         boolean firstTurn = userMessageCount == 1;
 
+        // Caller's document manifest for the [YOUR DOCUMENTS] prompt section, so
+        // the model can resolve an ordinal/title/type reference to a briefDocId.
+        // Degrades gracefully — a failed lookup just omits the section.
+        List<UserDocumentRef> documents;
+        try {
+            documents = userDocumentManifestPort.recentForUser(request.caller(), DOCUMENT_MANIFEST_LIMIT);
+        } catch (RuntimeException e) {
+            log.warn("document_manifest_lookup_failed userId=" + request.caller()
+                    + " error=" + e.getMessage());
+            documents = List.of();
+        }
+
         log.info("turn_start sessionId=" + session.id()
                 + " userId=" + request.caller()
                 + " userSub=" + maskSub(request.userSub())
                 + " retrievedK=" + retrieved.size()
-                + " historyTurns=" + truncated.size());
+                + " historyTurns=" + truncated.size()
+                + " docManifest=" + documents.size());
 
-        return new Preparation(session, retrieved, truncated, savedUser, firstTurn);
+        return new Preparation(session, retrieved, truncated, savedUser, firstTurn, documents);
     }
 
     /** Phase 2: lock + stream. The lock is released in doFinally. */
@@ -245,9 +270,16 @@ public class ChatTurnService {
         final java.util.concurrent.atomic.AtomicBoolean errored =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
 
+        // ADR-17 §1 — branch on whether any tools are registered. The document
+        // manifest is only useful for resolving a tool argument (briefDocId), so
+        // the [YOUR DOCUMENTS] section is injected ONLY when tools are present.
+        // Empty catalog → M4-invariant prompt shape (PRD Story 10), byte-identical.
+        List<ToolDescriptor> descriptors = toolDescriptorSupplier.get();
+        List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : prep.documents();
+
         String prompt = promptTemplate.assemble(
                 prep.retrieved(), prep.truncatedHistory(), request.message(),
-                properties.perChunkTokenBudget());
+                properties.perChunkTokenBudget(), promptDocuments);
 
         // Spec §5.2 (revised in PR B): the retrieval phase now ships just
         // a count, not the candidate chunk list — the citation cards land
@@ -260,11 +292,6 @@ public class ChatTurnService {
                         "참고 문서 확인 중",
                         java.util.Map.of("count", prep.retrieved().size())));
 
-        // ADR-17 §1 — branch on whether any tools are registered. Empty catalog
-        // means the M4 invariant path: no tool callbacks passed to Spring AI,
-        // no `tool_*` SSE events emitted, behavior identical to M4 ship (PRD
-        // Story 10).
-        List<ToolDescriptor> descriptors = toolDescriptorSupplier.get();
         // Sink the tool callbacks push events into. Multicast so the orchestrator
         // can interleave the events with the token flux as they arrive.
         Sinks.Many<ChatStreamEvent> toolEventSink = Sinks.many().multicast().onBackpressureBuffer();
@@ -623,7 +650,8 @@ public class ChatTurnService {
             List<RetrievedChunk> retrieved,
             List<Message> truncatedHistory,
             Message savedUser,
-            boolean firstTurn) {
+            boolean firstTurn,
+            List<UserDocumentRef> documents) {
 
         String lastUserMessageContent(ChatTurnRequest request) {
             return request.message();

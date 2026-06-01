@@ -94,6 +94,7 @@ class ChatTurnServiceTest {
                 autoTitleService,
                 new ActiveTurnRegistry(),
                 toolDispatcherPort,
+                (userId, limit) -> java.util.List.of(),
                 new ObjectMapper(),
                 RagChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC),
