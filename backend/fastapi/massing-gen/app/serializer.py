@@ -12,6 +12,9 @@ user-text attribute. The .3dm bytes are returned.
 
 from __future__ import annotations
 
+import base64
+import binascii
+
 import rhino3dm  # type: ignore[import-not-found]
 
 from .errors import MassingError, MassingErrorCode
@@ -46,16 +49,23 @@ def serialize_massing(boxes: list[RoomBox]) -> bytes:
             attrs.SetUserString("roomName", box.name)
             file.Objects.AddMesh(mesh, attrs)
 
-        # rhino3dm.py 8.x exposes ToByteArray() returning bytes; older
-        # bindings may only expose Encode(). Prefer ToByteArray when
-        # available so we don't pay the base64 / utf-8 round-trip.
+        # rhino3dm.py 8.x exposes ToByteArray() returning raw archive bytes;
+        # other builds (e.g. 8.17) only expose Encode(), which returns a
+        # *base64 string* of the binary archive, not the archive itself.
         if hasattr(file, "ToByteArray"):
-            data = file.ToByteArray()  # type: ignore[attr-defined]
-            return bytes(data)
-        encoded = file.Encode()
-        if isinstance(encoded, bytes):
-            return encoded
-        return encoded.encode("latin-1")
+            data = bytes(file.ToByteArray())  # type: ignore[attr-defined]
+        else:
+            encoded = file.Encode()
+            data = encoded if isinstance(encoded, bytes) else encoded.encode("latin-1")
+        # A real .3dm begins with the OpenNURBS magic string. If we don't see
+        # it, `data` is still base64 — decode it so the download is an openable
+        # binary .3dm rather than base64 text Rhino can't parse.
+        if not data.startswith(b"3D Geometry File Format"):
+            try:
+                data = base64.b64decode(data, validate=True)
+            except (binascii.Error, ValueError):
+                pass
+        return data
     except MassingError:
         raise
     except Exception as exc:  # noqa: BLE001 — wrap any rhino3dm runtime issue
