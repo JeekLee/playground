@@ -35,7 +35,10 @@ class Settings(BaseSettings):
         default="dummy-not-used",
         alias="SPRING_AI_OPENAI_API_KEY",
     )
-    llm_model: str = Field(default="qwen3-30b-a3b", alias="PLAYGROUND_MASSING_GEN_LLM_MODEL")
+    # qwen3-vl-30b-a3b is the model the gateway actually serves — the
+    # text-only qwen3-30b-a3b was retired in the M6 swap (see infra
+    # .env.example SPRING_AI_CHAT_MODEL). The stale default 404'd here.
+    llm_model: str = Field(default="qwen3-vl-30b-a3b", alias="PLAYGROUND_MASSING_GEN_LLM_MODEL")
     llm_timeout_seconds: float = Field(default=60.0)
     llm_max_tokens: int = Field(default=2000)
     llm_temperature: float = Field(default=0.1)
