@@ -1,10 +1,13 @@
-"""MassingWorkflow LangGraph behavior test (ADR-19 §A19.8 / Phase 3a).
+"""MassingWorkflow LangGraph behavior test (ADR-19 §A19.8 / Phase 3a-2).
 
 Proves the orchestrator sequences fetch_brief → resolve_program(subgraph) →
-massing(subgraph) → serialize → persist and produces the expected
+compute → serialize → persist and produces the expected
 GenerateMassingResponse, using a stubbed docs client, an injected fake
 extraction chain (no network), and a fake DB session (no real Postgres).
-Real LLM/docs/DB + extraction parity is covered by the real-gateway E2E.
+The resolve_program subgraph now runs the 5-stage interpretation pipeline
+(locate → extract → reconcile → classify → derive) with floors footprint-
+driven by the largest single space. Real LLM/docs/DB + extraction parity is
+covered by the real-gateway E2E.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ from types import SimpleNamespace
 
 from langchain_core.runnables import RunnableLambda
 
-from architecture.app import workflow as wf
 from architecture.app.graphs import program_resolution as pr
 from architecture.app.nodes import persist as persist_node
 from architecture.app.workflow import MassingWorkflow
@@ -28,21 +30,38 @@ class _FakeDocs:
     def get_document(self, doc_id, *, user_id, user_sub):
         return SimpleNamespace(
             extraction_status="extracted",
-            body="대지면적 12,000㎡. 업무 20,000㎡, 시험 6,500㎡, 지하주차 4,500㎡.",
+            body=(
+                "## 규모\n대지면적 14,000㎡. 연면적 31,000㎡.\n\n"
+                "## 면적 프로그램\n연구영역 합계 26,500㎡(전용 75%), "
+                "Middle Lab 5,680㎡. 지하주차 4,500㎡."
+            ),
             title="KFI 테스트 브리프",
         )
 
 
-# KFI-like fixed extraction: above 26,500 (2 zones) + below 4,500 (1 zone),
-# site 12,000, no floor_limit → resolve defaults to 4 above + 1 basement.
+# KFI-like fixed extraction: gross zones (연구영역 26,500 above + 지하 4,500 below)
+# plus a named above-grade sub-space (Middle Lab 5,680 net, 전용 75%). Footprint
+# driver = 5,680 / 0.75 ≈ 7,573 → floors = ceil(26,500 / 7,573) = 4; site 14,000
+# × coverage 0.6 = 8,400 buildable (driver fits). → 지상 4층 + 지하 1층.
 _FIXED_ANALYSIS = BriefAnalysis.model_validate(
     {
         "program": [
-            {"name": "업무시설", "area_m2": 20000.0, "grade": "above"},
-            {"name": "시험시설", "area_m2": 6500.0, "grade": "above"},
-            {"name": "지하주차장", "area_m2": 4500.0, "grade": "below"},
+            {
+                "name": "Middle Lab",
+                "area_m2": 5680.0,
+                "grade": "above",
+                "parent_zone": "연구영역",
+                "is_net": True,
+            },
         ],
-        "site_area_m2": 12000.0,
+        "zones_gross": [
+            {"name": "연구영역", "area_m2": 26500.0, "grade": "above",
+             "net_ratio": 0.75},
+            {"name": "지하영역", "area_m2": 4500.0, "grade": "below"},
+        ],
+        "site_area_m2": 14000.0,
+        "coverage_ratio_max": 0.6,
+        "total_gfa_m2": 31000.0,
     }
 )
 
@@ -85,13 +104,15 @@ def test_graph_runs_path_and_builds_response(monkeypatch):
 
     resp = flow.run(req, user_id=uuid.uuid4(), user_sub=None)
 
-    # total program area = 31,000 m²; 4 above-grade floors + 1 basement.
+    # zone gross total = 31,000 m²; footprint-driven 4 above-grade floors + 1
+    # basement (driver ≈ 7,573 from Middle Lab 5,680 / 0.75).
     assert resp.total_area_m2 == 31000.0
     assert resp.floor_count == 4
     assert resp.basement_levels == 1
-    assert len(resp.program_json.rooms) == 3
+    # two GROSS zones drive the program (연구영역 + 지하영역).
+    assert len(resp.program_json.rooms) == 2
     assert resp.file_url == f"/api/arch/outputs/{_FIXED_ID}"
-    assert resp.summary == "3실 · 지상 4층 + 지하 1층 · 총 31000 m²"
+    assert resp.summary == "2실 · 지상 4층 + 지하 1층 · 총 31000 m²"
 
 
 def test_graph_has_expected_nodes_and_subgraphs():
@@ -100,20 +121,23 @@ def test_graph_has_expected_nodes_and_subgraphs():
     assert {
         "fetch_brief",
         "resolve_program",
-        "massing",
+        "compute",
         "serialize",
         "persist",
     } <= nodes
 
-    # the massing subgraph (deterministic compute).
-    massing_sub = wf.build_massing_subgraph(Settings())
-    assert "compute" in set(massing_sub.get_graph().nodes)
-
-    # the program-resolution subgraph has extract + resolve with a re-prompt loop.
+    # the program-resolution subgraph runs all 5 interpretation stages with a
+    # re-prompt loop anchored at derive.
     res_sub = pr.build_program_resolution_subgraph(
         Settings(), chain=_fake_extraction_chain()
     )
-    assert {"extract", "resolve"} <= set(res_sub.get_graph().nodes)
+    assert {
+        "locate",
+        "extract",
+        "reconcile",
+        "classify",
+        "derive",
+    } <= set(res_sub.get_graph().nodes)
 
 
 def test_reprompt_loop_fails_when_site_area_never_found(monkeypatch):
