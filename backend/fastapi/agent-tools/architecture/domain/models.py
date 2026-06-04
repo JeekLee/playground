@@ -27,12 +27,39 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ProgramItem(BaseModel):
-    """A single area-program line the brief states."""
+    """A single area-program line the brief states.
+
+    Two flavours coexist in `BriefAnalysis.program`:
+    - a **named sub-space** (e.g. "Middle Lab" 5,680㎡) — usually a 전용(net)
+      area nested under a zone. `parent_zone` names its zone; `is_net=True`.
+    - a standalone program line where no zone breakdown is given.
+
+    `parent_zone` / `is_net` are optional and only set when the brief makes the
+    relationship explicit; classify uses them to pick the largest single space
+    and gross-adjust it.
+    """
 
     name: str = Field(min_length=1)
     area_m2: float = Field(gt=0)
     grade: Literal["above", "below", "unknown"] = "unknown"
     kind: str | None = None
+    parent_zone: str | None = None  # the zone this sub-space belongs to, if stated
+    is_net: bool | None = None  # True = 전용(net); False = gross; None = unknown
+
+
+class ZoneGross(BaseModel):
+    """A per-zone GROSS total the brief states (전용 + 공용 합계).
+
+    Preferred over the summed named sub-spaces for massing, because a brief
+    usually gives both detailed 전용 spaces AND a zone 합계 that already includes
+    공용. `net_ratio` is the 전용비율 (전용/합계) when the split is stated, so
+    classify can gross-adjust a named net sub-space within this zone.
+    """
+
+    name: str = Field(min_length=1)
+    area_m2: float = Field(gt=0)  # GROSS (합계) area
+    grade: Literal["above", "below", "unknown"] = "unknown"
+    net_ratio: float | None = None  # 전용비율, stored 0..1 when stated
 
 
 class Parking(BaseModel):
@@ -59,6 +86,7 @@ class BriefAnalysis(BaseModel):
     """
 
     program: list[ProgramItem] = Field(min_length=1)
+    zones_gross: list[ZoneGross] = Field(default_factory=list)  # per-zone 합계(GROSS)
     site_area_m2: float | None = None
     coverage_ratio_max: float | None = None  # 건폐율, stored 0..1 (80% -> 0.8)
     floor_area_ratio_max: float | None = None  # 용적률 (e.g. 3.5)
@@ -76,13 +104,71 @@ class BriefAnalysis(BaseModel):
         return self
 
 
-# --- Algorithm contract: MassingInputs (TIGHT, validated) ---
+# --- Algorithm contract: Zone (used by intermediates + MassingInputs) ---
 
 
 class Zone(BaseModel):
     name: str = Field(min_length=1)
     area_m2: float = Field(gt=0)
     grade: Literal["above", "below"]
+
+
+# --- Pipeline intermediates: reconcile -> classify carriers ---
+
+
+class NormalizedZone(BaseModel):
+    """A reconciled per-zone GROSS program line (output of `reconcile`).
+
+    Grade is still open ("unknown" allowed) — `classify` grades it. Carries
+    `net_ratio` (전용비율) forward when known so classify can gross-adjust a
+    named sub-space that belongs to this zone.
+    """
+
+    name: str = Field(min_length=1)
+    area_m2: float = Field(gt=0)  # GROSS area used for massing
+    grade: Literal["above", "below", "unknown"] = "unknown"
+    net_ratio: float | None = None
+
+
+class NormalizedBrief(BaseModel):
+    """Output of `reconcile`: gross zone program + named sub-spaces + facts.
+
+    `zones` are the GROSS per-zone totals to mass with. `sub_spaces` are the
+    named (usually net) spaces classify scans for the largest-space footprint
+    driver. `consistency_note` is set (non-fatal) when Σ(zone gross) deviates
+    from `total_gfa_m2` by more than ±5%.
+    """
+
+    zones: list[NormalizedZone] = Field(min_length=1)
+    sub_spaces: list[ProgramItem] = Field(default_factory=list)
+    site_area_m2: float | None = None
+    coverage_ratio_max: float | None = None  # 0..1
+    floor_area_ratio_max: float | None = None
+    total_gfa_m2: float | None = None
+    floor_limit: int | None = None
+    consistency_note: str | None = None
+
+
+class ClassifiedBrief(BaseModel):
+    """Output of `classify`: graded gross zones + the footprint driver.
+
+    `zones` are graded (above/below resolved). `footprint_driver_m2` is the
+    gross-adjusted area of the largest single above-grade NAMED sub-space — the
+    minimum footprint the building must provide. `None` when no named
+    above-grade sub-space exists (derive then falls back).
+    """
+
+    zones: list[Zone] = Field(min_length=1)
+    footprint_driver_m2: float | None = None
+    site_area_m2: float | None = None
+    coverage_ratio_max: float | None = None
+    floor_area_ratio_max: float | None = None
+    total_gfa_m2: float | None = None
+    floor_limit: int | None = None
+    consistency_note: str | None = None
+
+
+# --- Algorithm contract: MassingInputs (TIGHT, validated) ---
 
 
 class MassingInputs(BaseModel):
