@@ -9,8 +9,8 @@ import logging
 
 from pydantic import ValidationError
 
-from .errors import MassingError, MassingErrorCode
-from .llm_client import LlmClient
+from shared_kernel.errors import MassingError, MassingErrorCode
+from shared_kernel.llm_client import LlmClient
 from .models import ExtractedProgram
 
 logger = logging.getLogger(__name__)

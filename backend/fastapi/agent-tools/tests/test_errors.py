@@ -6,7 +6,7 @@ from http import HTTPStatus
 
 import pytest
 
-from app.errors import MassingError, MassingErrorCode
+from shared_kernel.errors import MassingError, MassingErrorCode
 
 
 def test_enum_has_expected_codes() -> None:

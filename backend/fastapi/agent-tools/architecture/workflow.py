@@ -22,10 +22,10 @@ from uuid import UUID
 
 from .algorithm import compute_massing
 from .brief_extractor import extract_program
-from .config import Settings
-from .docs_client import DocsClient
-from .errors import MassingError, MassingErrorCode
-from .llm_client import LlmClient
+from shared_kernel.config import Settings
+from shared_kernel.docs_client import DocsClient
+from shared_kernel.errors import MassingError, MassingErrorCode
+from shared_kernel.llm_client import LlmClient
 from .models import (
     ArchOutput,
     GenerateMassingRequest,
@@ -39,7 +39,7 @@ from .models import (
 from .serializer import serialize_massing
 from .slug import briefslug
 from .summary import format_summary
-from .database import session_scope
+from shared_kernel.database import session_scope
 
 logger = logging.getLogger(__name__)
 

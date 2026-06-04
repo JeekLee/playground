@@ -17,7 +17,7 @@ import binascii
 
 import rhino3dm  # type: ignore[import-not-found]
 
-from .errors import MassingError, MassingErrorCode
+from shared_kernel.errors import MassingError, MassingErrorCode
 from .models import RoomBox
 
 

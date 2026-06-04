@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from app.brief_extractor import extract_program
-from app.errors import MassingError, MassingErrorCode
+from architecture.brief_extractor import extract_program
+from shared_kernel.errors import MassingError, MassingErrorCode
 
 
 class _FakeLlm:

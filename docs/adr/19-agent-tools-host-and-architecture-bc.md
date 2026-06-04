@@ -371,3 +371,30 @@ BC-per-service divergence), `docs/adr/17-m7-rag-chat-tool-calling.md`
 §A17.1 (orchestration boundary + LangGraph guardrail), and
 `docs/adr/18-m8-massing-gen.md` §A18.10 (massing-gen → architecture
 supersession) for the corresponding amendments.
+
+## Amendment 2026-06-04 (Phase 2a) — `app/` host framing refined to `shared_kernel/` + BC modules
+
+§D1 described the host-shared plumbing as living at `agent-tools/app/`.
+Phase 2a (implemented; behavior-identical, no LangGraph) refines this to
+mirror the Java `shared-kernel` module pattern (ADR-01/02) instead:
+
+- **`shared_kernel/`** (BC-neutral, reusable by future BCs): `errors`
+  (the `MassingError` + `MassingErrorCode` "tool error" vocabulary, moved
+  **wholesale** — base/BC-specific split deferred until a 2nd BC needs it),
+  `llm_client` (spark-gateway), `docs_client` (docs-api), `database`
+  (engine/session), `config` (single `Settings` — kept unified; the
+  host/BC config split is deferred), `context` (`UserContext` + X-User-Id
+  header deps), and `models` (only `DocsDetailSubset`, the docs-client wire
+  type — kept here so `shared_kernel` imports nothing from a BC).
+- **`architecture/`** (BC domain): `models`, `algorithm`, `brief_extractor`,
+  `serializer`, `slug`, `summary`, `content_disposition`, `workflow`, the
+  BC-wiring `deps` (`get_workflow`/`get_docs_client`), `routers/`, `schema.sql`.
+- **`main.py`** (top-level entrypoint, `uvicorn main:app`): composes the
+  shared_kernel app factory + mounts the `architecture` BC.
+
+**Hard invariant:** `shared_kernel` MUST NOT import from any BC package.
+**Deferred to Phase 2b / later:** env-var renames (`PLAYGROUND_MASSING_GEN_*`
+unchanged), the `config` host/BC split, and the errors base/BC-specific split.
+Verified: 39 unit tests pass under the new imports; container boots healthy
+on `uvicorn main:app`; direct `generate_massing` call serves 200
+(cross-package runtime path intact).

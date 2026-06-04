@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.slug import briefslug
+from architecture.slug import briefslug
 
 
 def test_korean_title() -> None:

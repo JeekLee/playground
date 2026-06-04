@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.algorithm import compute_massing
-from app.errors import MassingError, MassingErrorCode
-from app.models import Room, SiteFootprint
+from architecture.algorithm import compute_massing
+from shared_kernel.errors import MassingError, MassingErrorCode
+from architecture.models import Room, SiteFootprint
 
 
 def _site(width: float = 20.0, depth: float = 10.0) -> SiteFootprint:
