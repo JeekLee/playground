@@ -398,3 +398,85 @@ unchanged), the `config` host/BC split, and the errors base/BC-specific split.
 Verified: 39 unit tests pass under the new imports; container boots healthy
 on `uvicorn main:app`; direct `generate_massing` call serves 200
 (cross-package runtime path intact).
+
+## Amendment 2026-06-04 (Phase 2c) — architecture BC internal layering + graph/chains/nodes + langchain-openai
+
+Phase 2c gives the `architecture` BC the **api / app / domain / infra**
+layering (the DDD layering of ADR-02), as Python **sub-packages** (not
+separate deploy modules), and structures the LangGraph orchestration into
+`graph` / `chains` / `nodes` under `app`. This is a *deliberate refinement*
+of ADR-18 §A18.1's "no four-module quadruplet": A18.1 ruled out separate
+**Gradle/deploy modules** for a polyglot BC (still true — `architecture` is
+one directory in one container); it did NOT preclude DDD **directory
+layering inside** the BC. The owner chose to adopt the layering + the
+graph/chain/node vocabulary from the start, accepting some structure ahead
+of need to avoid later churn/confusion.
+
+### §A19.7. Layer layout (per BC, under `agent-tools/<bc>/`)
+
+```
+architecture/
+├── api/      routers (tools, outputs), request/response wire DTOs,
+│             content_disposition (HTTP header), FastAPI deps
+├── app/      use-case orchestration (see §A19.8)
+├── domain/   algorithm (compute_massing), domain models (Room, RoomBox,
+│             SiteFootprint, ExtractedProgram), slug, summary — framework-free
+└── infra/    serializer (rhino3dm adapter), ArchOutput (SQLAlchemy) +
+              persistence, schema.sql
+```
+`shared_kernel/` (ADR-19 §D1 / Phase-2a amendment) stays a peer package;
+infra/app consume its db / clients / config / context / errors.
+
+### §A19.8. `app/` — orchestrator + graph / chains / nodes
+
+```
+app/
+├── workflow.py     orchestrator StateGraph: composes nodes + subgraphs
+├── nodes/          single-step units (fetch_brief, extract, serialize, persist)
+├── graphs/         subgraphs — sub-flows that have (or will have) their own
+│                   branching/loops; composed as nodes in workflow.py
+└── chains/         LCEL chains — single LLM-interaction units (prompt | model | parser)
+```
+
+**Pattern policy (which tool for what):**
+- **node** — one step, no branching. (`fetch_brief`, `serialize`, `persist`,
+  and the `extract` node that invokes the brief-extraction chain.)
+- **chain** (`chains/`, LCEL `Runnable`) — one LLM interaction:
+  `ChatPromptTemplate | model | with_structured_output(...)`.
+- **subgraph** (`graphs/`, compiled `StateGraph` used as a node) — a sub-flow
+  with its **own** branching/loops. Do NOT make a single-step thing a subgraph.
+- **orchestrator** (`workflow.py`) — top-level control flow only; composes the
+  above. The ADR-17/§D3 boundary still holds: graphs/subgraphs are
+  **tool-internal**; they never orchestrate across tool BCs or call back into
+  rag-chat.
+
+### §A19.9. Current decomposition (Phase 2c — behavior preserved at the result level)
+
+| Step | Pattern | Home |
+|---|---|---|
+| brief fetch + extracted/body check | node | `app/nodes/` (uses `shared_kernel.docs_client`) |
+| brief → room program (LLM) | **chain** | `app/chains/brief_extraction.py` |
+| resolve site + compute massing | **subgraph** | `app/graphs/massing.py` (linear now; Phase-3 건폐율/floor-converge loop lands here) |
+| rhino3dm `.3dm` | node | `app/nodes/` (→ `infra/serializer`) |
+| persist + response | node | `app/nodes/` (→ `infra` ArchOutput + `shared_kernel.database`) |
+
+### §A19.10. langchain-openai adoption
+
+`shared_kernel` exposes a `ChatOpenAI` factory pointed at the
+spark-inference-gateway (OpenAI-compatible; `base_url`, `api_key`, model
+`qwen3-vl-30b-a3b`). Chains compose `prompt | model | with_structured_output`.
+This **retires the hand-rolled httpx `llm_client` for the extraction path**.
+
+**Not behavior-identical in the LLM path** (the call mechanism changes from
+`response_format: json_object` + in-prompt schema to `with_structured_output`).
+The result type (`ExtractedProgram`) is unchanged. Because the spark gateway
+already proved OpenAI-compatible **function-calling** in M7 (rag-chat), either
+`method="function_calling"` or `method="json_mode"` is viable — the
+implementer pins whichever reproduces the M8 extraction, and the change is
+**gated on a real-gateway E2E** showing extraction parity before merge.
+
+### §A19.11. Deferred
+Hexagonal **ports** (`DocsPort` / `LlmPort` / `MassingRepositoryPort` in `app`,
+implemented in `infra`/`shared_kernel`) are deferred to Phase 3, when the
+re-prompt + converge loops make the indirection pay off. Env-var renames and
+the `config` host/BC split remain deferred (Phase-2a note).
