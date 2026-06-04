@@ -1,5 +1,8 @@
-# M8 massing-gen BC — Python 3.12 + FastAPI + rhino3dm.py per ADR-18 §A18.3.
-# Build context: backend/fastapi/massing-gen/. Invoked via infra/docker-compose.yml.
+# agent-tools — Python 3.12 + FastAPI host for LLM-tool BCs (ADR-19);
+# first BC `architecture` uses rhino3dm.py in-process (ADR-18 §A18.3).
+# Build context: backend/fastapi/agent-tools/. Invoked via infra/docker-compose.yml.
+# Phase 1 (ADR-19) is rename-only: the cohesive `app` package is preserved;
+# the host/BC package split (app + architecture) is Phase 2.
 
 FROM python:3.12-slim AS base
 WORKDIR /app
@@ -18,8 +21,8 @@ COPY app ./app
 COPY schema.sql ./schema.sql
 
 # Non-root user (security baseline)
-RUN useradd -m -u 1000 massing && chown -R massing:massing /app
-USER massing
+RUN useradd -m -u 1000 agent && chown -R agent:agent /app
+USER agent
 
 EXPOSE 18083
 

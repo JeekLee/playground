@@ -61,8 +61,7 @@ include(":metrics:metrics-app")
 include(":metrics:metrics-domain")
 include(":metrics:metrics-infra")
 
-// M8 — `massing-gen` BC implemented in Python/FastAPI (ADR-18 §1 flipped
-// 2026-05-22). Lives at services/massing-gen/, not part of the Gradle
-// multi-project tree. Gateway route /api/arch/** → massing-gen-api:18083
-// stays (compose service name unchanged; only the implementation language
-// flipped from Java/Spring quadruplet to single-container FastAPI).
+// M8 — the `architecture` BC (was `massing-gen`) implemented in Python/FastAPI
+// (ADR-18 §1 flip 2026-05-22; renamed per ADR-19 §D2). Lives at
+// backend/fastapi/agent-tools/ (the agent-tools Python host), not part of the
+// Gradle multi-project tree. Gateway route /api/arch/** → agent-tools:18083.

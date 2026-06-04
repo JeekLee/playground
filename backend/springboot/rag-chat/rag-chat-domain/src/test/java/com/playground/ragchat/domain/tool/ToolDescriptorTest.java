@@ -24,14 +24,14 @@ class ToolDescriptorTest {
                 "generate_massing",
                 "Generate a massing model from a brief PDF",
                 "{\"type\":\"object\"}",
-                URI.create("http://massing-gen-api:18086/internal/tools/generate-massing"),
+                URI.create("http://agent-tools:18086/internal/tools/generate-massing"),
                 Duration.ofSeconds(30));
 
         assertThat(d.name()).isEqualTo("generate_massing");
         assertThat(d.description()).isEqualTo("Generate a massing model from a brief PDF");
         assertThat(d.parameterSchema()).isEqualTo("{\"type\":\"object\"}");
         assertThat(d.endpoint()).isEqualTo(URI.create(
-                "http://massing-gen-api:18086/internal/tools/generate-massing"));
+                "http://agent-tools:18086/internal/tools/generate-massing"));
         assertThat(d.timeout()).isEqualTo(Duration.ofSeconds(30));
     }
 

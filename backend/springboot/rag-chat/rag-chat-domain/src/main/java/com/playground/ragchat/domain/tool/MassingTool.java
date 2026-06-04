@@ -6,14 +6,15 @@ import java.time.Duration;
 /**
  * M8 — the first concrete tool descriptor registered in the
  * {@link ToolCatalog}. Per ADR-18 §A18.1 the BC behind this descriptor
- * is implemented in Python/FastAPI (services/massing-gen/); the
+ * is implemented in Python/FastAPI; per ADR-19 §D2 it is the
+ * {@code architecture} BC hosted by the {@code agent-tools} service. The
  * HTTP contract is language-neutral so rag-chat's
  * {@code ToolDispatcher} reaches it the same way as any future tool.
  *
  * <p>Endpoint default is the compose-internal hostname
- * {@code http://massing-gen-api:18083/internal/tools/generate-massing}
- * (ADR-08 §A08.11 Exception 4 sub-row). Override via
- * {@code PLAYGROUND_MASSING_GEN_TOOL_URL} env var if the BC moves.
+ * {@code http://agent-tools:18083/internal/tools/generate-massing}
+ * (ADR-08 §A08.11 Exception 4 sub-row; host renamed per ADR-19 §D2).
+ * Override via {@code PLAYGROUND_MASSING_GEN_TOOL_URL} env var if the BC moves.
  *
  * <p>Timeout is 60 s — brief extraction is LLM-bound (~30 s for a long
  * Korean brief) plus algorithm + .3dm serialization (~1 s), so 60 s
@@ -66,7 +67,7 @@ public final class MassingTool {
 
     /** Default endpoint hostname — overridden by env var when set. */
     private static final URI DEFAULT_ENDPOINT =
-            URI.create("http://massing-gen-api:18083/internal/tools/generate-massing");
+            URI.create("http://agent-tools:18083/internal/tools/generate-massing");
 
     /** Singleton descriptor instance — registered in {@link ToolCatalog#descriptors()}. */
     public static final ToolDescriptor MASSING = new ToolDescriptor(

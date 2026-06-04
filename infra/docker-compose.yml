@@ -394,20 +394,23 @@ services:
     # NO `ports:` block — rag-chat-api is compose-internal only (ADR-08).
     # Browser traffic reaches it via gateway:18080 → /api/rag/chat/** → http://rag-chat-api:18084.
 
-  # --- M8 (ADR-18 §A18.1): massing-gen BC — Python/FastAPI ---
-  # First polyglot BC (ADR-01 §A01.11 polyglot policy). Single FastAPI
-  # container; rhino3dm.py is imported in-process (no sidecar). Reaches
-  # docs-api over compose-internal HTTP (Exception 5) for brief body
-  # reads, spark-inference-gateway via `spark-inference-net` for the LLM
-  # extraction call. Owner-only `.3dm` download mounted at the gateway's
-  # /api/arch/** route per ADR-18 §21 (StripPrefix=2 → /outputs/{id}).
-  massing-gen-api:
+  # --- agent-tools: Python multi-BC host (ADR-19 §D1) — first BC: architecture ---
+  # Single FastAPI host for small LLM-tool BCs (ADR-19 supersedes ADR-18's
+  # single-service `massing-gen` framing). First BC is `architecture`
+  # (tool: generate_massing); rhino3dm.py is imported in-process (no
+  # sidecar). Reaches docs-api over compose-internal HTTP (Exception 5)
+  # for brief body reads, spark-inference-gateway via `spark-inference-net`
+  # for the LLM extraction call. Owner-only `.3dm` download mounted at the
+  # gateway's /api/arch/** route per ADR-18 §21 (StripPrefix=2 → /outputs/{id}).
+  # Phase 1 (rename only) keeps the cohesive `app` package; the host/BC
+  # package split (agent-tools/app + agent-tools/architecture) is Phase 2.
+  agent-tools:
     build:
-      context: ../backend/fastapi/massing-gen
+      context: ../backend/fastapi/agent-tools
       dockerfile: Dockerfile
-    image: playground/massing-gen-api:dev
-    container_name: massing-gen-api
-    hostname: massing-gen-api
+    image: playground/agent-tools:dev
+    container_name: agent-tools
+    hostname: agent-tools
     depends_on:
       postgres-playground:
         condition: service_healthy
