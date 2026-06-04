@@ -145,8 +145,32 @@ function parseFrame(rawFrame: string): ChatStreamEvent | null {
       return { type: 'error', payload: parsed as ErrorEventPayload };
     case 'tool_call':
       return { type: 'tool_call', payload: parsed as ToolCallEventPayload };
-    case 'tool_result':
-      return { type: 'tool_result', payload: parsed as ToolResultEventPayload };
+    case 'tool_result': {
+      // Backend wire shape is {id, name, result: <tool-body>} per ADR-17 §3.
+      // Flatten result.* into the ToolResultEventPayload and map
+      // result.fileUrl → outputUrl (rag-chat enriches the body with fileUrl
+      // per ADR-20 §D4 before emitting the SSE event).
+      const raw = parsed as { id: string; name: string; result?: unknown };
+      const body =
+        typeof raw.result === 'object' && raw.result !== null
+          ? (raw.result as Record<string, unknown>)
+          : {};
+      const payload: ToolResultEventPayload = {
+        id: raw.id,
+        name: raw.name,
+        summary: typeof body.summary === 'string' ? body.summary : undefined,
+        outputUrl: typeof body.fileUrl === 'string' ? body.fileUrl : undefined,
+        programJson:
+          typeof body.programJson === 'object' && body.programJson !== null
+            ? (body.programJson as Record<string, unknown>)
+            : undefined,
+        metadata:
+          typeof body.metadata === 'object' && body.metadata !== null
+            ? (body.metadata as Record<string, unknown>)
+            : undefined,
+      };
+      return { type: 'tool_result', payload };
+    }
     case 'tool_error':
       return { type: 'tool_error', payload: parsed as ToolErrorEventPayload };
     default:
