@@ -14,6 +14,8 @@ fake chain is reused verbatim. The node bumps `extract_attempts`.
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
@@ -23,6 +25,8 @@ from architecture.app.chains.brief_extraction import (
     extract_brief_analysis,
 )
 from architecture.app.state import MassingState
+
+logger = logging.getLogger(__name__)
 from shared_kernel.config import Settings
 from shared_kernel.llm import get_chat_model
 
@@ -58,6 +62,17 @@ def make_extract_node(
         attempts = state.get("extract_attempts", 0)
         active = base_chain if attempts == 0 else _reprompt_chain()
         analysis = extract_brief_analysis(active, state["excerpt"])
+        # Observability (Phase 3a-3): log extraction granularity per run so we
+        # can see whether sub-spaces (e.g. Middle Lab) were captured vs only
+        # zone-level — the driver of floor-count stability.
+        logger.info(
+            "extracted attempt=%d program=%s zones_gross=%s site_area=%s coverage=%s",
+            attempts,
+            [(p.name, p.area_m2, p.grade, p.parent_zone) for p in analysis.program],
+            [(z.name, z.area_m2, z.grade) for z in (analysis.zones_gross or [])],
+            analysis.site_area_m2,
+            analysis.coverage_ratio_max,
+        )
         return {"analysis": analysis, "extract_attempts": attempts + 1}
 
     return extract
