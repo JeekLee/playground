@@ -185,21 +185,20 @@ export interface ToolCallEventPayload {
 /**
  * `event: tool_result` — tool returned successfully (M7).
  *
- * `outputUrl` is a *relative* path per ADR-17 §3 — the gateway-issued
- * session cookie carries `X-User-Id` to the BC's download endpoint, so
- * the browser hits `<a href={outputUrl} download>` directly with no JS
- * fetch involved. For M8 the URL is `/api/arch/outputs/{uuid}` per
- * ADR-18 §21.
+ * Wire shape from the backend is `{id, name, result: <tool-body>}`.
+ * The SSE parser in `chat.sse.ts` flattens `result.*` into this payload
+ * and maps `result.fileUrl` → `outputUrl`. For M8 the download URL is
+ * `/api/rag/chat/attachments/{uuid}` per ADR-20 §D4.
  *
- * `programJson` / `metadata` are tool-specific opaque blobs the
- * dispatcher forwards verbatim from the BC. For M8 `programJson`
- * matches the JSON Schema pinned in ADR-18 §9.
+ * `programJson` / `metadata` are tool-specific opaque blobs extracted
+ * from the result body. For M8 `programJson` matches the JSON Schema
+ * pinned in ADR-18 §9.
  */
 export interface ToolResultEventPayload {
   id: string;
   name: string;
-  /** One-line user-facing summary. M8 emits Korean per ADR-18 §5. */
-  summary: string;
+  /** One-line user-facing summary. M8 emits Korean per ADR-18 §5. Optional for plain M7 tools. */
+  summary?: string;
   /** Relative download URL for file-producing tools. */
   outputUrl?: string;
   /** Tool-specific structured payload. M8: see {@link MassingProgramJson}. */
