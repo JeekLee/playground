@@ -12,8 +12,8 @@ import logging
 
 from fastapi import APIRouter
 
-from ..deps import UserContextDep, WorkflowDep
-from ..models import GenerateMassingRequest, GenerateMassingResponse
+from architecture.api.deps import UserContextDep, WorkflowDep
+from architecture.api.dtos import GenerateMassingRequest, GenerateMassingResponse
 
 logger = logging.getLogger(__name__)
 

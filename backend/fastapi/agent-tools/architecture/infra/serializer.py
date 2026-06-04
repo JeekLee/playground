@@ -18,7 +18,7 @@ import binascii
 import rhino3dm  # type: ignore[import-not-found]
 
 from shared_kernel.errors import MassingError, MassingErrorCode
-from .models import RoomBox
+from architecture.domain.models import RoomBox
 
 
 def serialize_massing(boxes: list[RoomBox]) -> bytes:
