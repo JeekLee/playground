@@ -28,9 +28,8 @@ from shared_kernel.config import get_settings
 from shared_kernel.database import get_engine
 from shared_kernel.docs_client import DocsClient
 from shared_kernel.errors import MassingError
-from shared_kernel.llm_client import LlmClient
-from architecture.routers import outputs, tools
-from architecture.workflow import MassingWorkflow
+from architecture.api.routers import outputs, tools
+from architecture.app.workflow import MassingWorkflow
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -60,11 +59,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001 — log + continue so /health stays up
         logger.error("schema bootstrap failed: %s", exc)
     docs_client = DocsClient(settings)
-    llm_client = LlmClient(settings)
-    workflow = MassingWorkflow(settings, docs_client, llm_client)
+    workflow = MassingWorkflow(settings, docs_client)
     app.state.settings = settings
     app.state.docs_client = docs_client
-    app.state.llm_client = llm_client
     app.state.workflow = workflow
     logger.info(
         "massing-gen started",
@@ -78,7 +75,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         docs_client.close()
-        llm_client.close()
 
 
 app = FastAPI(

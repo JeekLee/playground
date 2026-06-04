@@ -23,7 +23,7 @@ from math import ceil, sqrt
 from typing import Iterable
 
 from shared_kernel.errors import MassingError, MassingErrorCode
-from .models import Room, RoomBox, SiteFootprint
+from architecture.domain.models import Room, RoomBox, SiteFootprint
 
 
 def compute_massing(

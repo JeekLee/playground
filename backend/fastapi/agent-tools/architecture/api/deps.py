@@ -21,7 +21,7 @@ from shared_kernel.context import (
 )
 from shared_kernel.docs_client import DocsClient
 
-from .workflow import MassingWorkflow
+from architecture.app.workflow import MassingWorkflow
 
 __all__ = [
     "Settings",

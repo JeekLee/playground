@@ -17,11 +17,11 @@ from uuid import UUID
 from fastapi import APIRouter, Response
 from sqlalchemy import select
 
-from ..content_disposition import content_disposition_attachment
-from ..deps import UserContextDep
+from architecture.api.content_disposition import content_disposition_attachment
+from architecture.api.deps import UserContextDep
 from shared_kernel.database import session_scope
 from shared_kernel.errors import MassingError, MassingErrorCode
-from ..models import ArchOutput
+from architecture.infra.persistence import ArchOutput
 
 router = APIRouter(prefix="/outputs", tags=["outputs"])
 

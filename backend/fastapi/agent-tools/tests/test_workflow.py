@@ -1,10 +1,11 @@
-"""MassingWorkflow LangGraph behavior test (ADR-19 Phase 2b).
+"""MassingWorkflow LangGraph behavior test (ADR-19 §A19.8 / Phase 2c).
 
-Proves the graph sequences fetch_brief → extract → massing → serialize →
-persist and produces the expected GenerateMassingResponse, using stubbed
-docs/LLM clients and a fake DB session (no real Postgres). This is the
-behavior-identical guard for the linear→graph migration; the real LLM/docs/DB
-path is covered by the container E2E.
+Proves the orchestrator sequences fetch_brief → extract → massing(subgraph) →
+serialize → persist and produces the expected GenerateMassingResponse, using a
+stubbed docs client, an injected fake extraction chain (no network / no real
+LLM), and a fake DB session (no real Postgres). This is the behavior-identical
+guard at the result level; the real LLM/docs/DB path + extraction parity is
+covered by the real-gateway E2E.
 """
 
 from __future__ import annotations
@@ -13,8 +14,13 @@ import contextlib
 import uuid
 from types import SimpleNamespace
 
-from architecture import workflow as wf
-from architecture.models import GenerateMassingRequest
+from langchain_core.runnables import RunnableLambda
+
+from architecture.app import workflow as wf
+from architecture.app.nodes import persist as persist_node
+from architecture.app.workflow import MassingWorkflow
+from architecture.api.dtos import GenerateMassingRequest
+from architecture.domain.models import ExtractedProgram
 from shared_kernel.config import Settings
 
 
@@ -27,12 +33,22 @@ class _FakeDocs:
         )
 
 
-class _FakeLlm:
-    def complete_json(self, system_prompt: str, user_prompt: str) -> str:
-        return (
-            '{"site": {"width": 20.0, "depth": 10.0}, '
-            '"rooms": [{"name": "로비", "areaM2": 40.0}, {"name": "사무실", "areaM2": 30.0}]}'
-        )
+# Fixed extracted program — site 20x10, two rooms totalling 70 m².
+_FIXED_PROGRAM = ExtractedProgram.model_validate(
+    {
+        "site": {"width": 20.0, "depth": 10.0},
+        "rooms": [
+            {"name": "로비", "areaM2": 40.0},
+            {"name": "사무실", "areaM2": 30.0},
+        ],
+    }
+)
+
+
+def _fake_extraction_chain() -> RunnableLambda:
+    """Stands in for the LCEL extraction chain: yields a fixed ExtractedProgram
+    regardless of the {"brief_body": ...} input."""
+    return RunnableLambda(lambda _inputs: _FIXED_PROGRAM)
 
 
 _FIXED_ID = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
@@ -52,10 +68,18 @@ def _fake_session_scope():
     yield _FakeSession()
 
 
-def test_graph_runs_linear_path_and_builds_response(monkeypatch):
-    monkeypatch.setattr(wf, "session_scope", _fake_session_scope)
+def _build_workflow() -> MassingWorkflow:
+    return MassingWorkflow(
+        Settings(),
+        _FakeDocs(),
+        extraction_chain=_fake_extraction_chain(),
+    )
 
-    flow = wf.MassingWorkflow(Settings(), _FakeDocs(), _FakeLlm())
+
+def test_graph_runs_path_and_builds_response(monkeypatch):
+    monkeypatch.setattr(persist_node, "session_scope", _fake_session_scope)
+
+    flow = _build_workflow()
     req = GenerateMassingRequest.model_validate(
         {"briefDocId": "11111111-1111-1111-1111-111111111111"}
     )
@@ -70,7 +94,13 @@ def test_graph_runs_linear_path_and_builds_response(monkeypatch):
     assert resp.summary == "2실 · 1층 · 총 70 m²"
 
 
-def test_graph_has_expected_linear_nodes():
-    flow = wf.MassingWorkflow(Settings(), _FakeDocs(), _FakeLlm())
+def test_graph_has_expected_nodes_and_massing_subgraph():
+    flow = _build_workflow()
     nodes = set(flow._graph.get_graph().nodes)
+    # orchestrator nodes (massing is the subgraph-as-node)
     assert {"fetch_brief", "extract", "massing", "serialize", "persist"} <= nodes
+
+    # the massing subgraph is itself a compiled graph composed as a node
+    subgraph = wf.build_massing_subgraph(Settings())
+    sub_nodes = set(subgraph.get_graph().nodes)
+    assert {"resolve_site", "compute"} <= sub_nodes
