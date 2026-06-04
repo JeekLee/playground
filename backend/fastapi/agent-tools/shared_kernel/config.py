@@ -50,6 +50,17 @@ class Settings(BaseSettings):
         alias="PLAYGROUND_MASSING_GEN_MAX_FLOORS",
     )
 
+    # --- Resolve defaults (ADR-19 Phase 3a — BriefAnalysis -> MassingInputs) ---
+    # Applied only when the brief does not state the value.
+    default_coverage_cap: float = Field(
+        default=0.6,
+        alias="PLAYGROUND_ARCHITECTURE_DEFAULT_COVERAGE_CAP",
+    )
+    default_target_floors_above: int = Field(
+        default=4,
+        alias="PLAYGROUND_ARCHITECTURE_DEFAULT_TARGET_FLOORS_ABOVE",
+    )
+
     # --- Server ---
     port: int = Field(default=18083, alias="PLAYGROUND_MASSING_GEN_PORT")
 
