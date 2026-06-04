@@ -15,12 +15,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
-    # --- Database (Postgres shared with the rest of the stack) ---
-    postgres_host: str = Field(default="postgres-playground")
-    postgres_port: int = Field(default=5432)
-    postgres_db: str = Field(default="playground")
-    postgres_user: str = Field(default="playground")
-    postgres_password: str = Field(default="playground")
+    # ADR-20 §D4 — the architecture BC is now a stateless generator: no
+    # arch.outputs store, no Postgres. The DB settings + db_url were retired
+    # along with the persist node and shared_kernel.database.
 
     # --- Cross-BC HTTP (docs-api body fetch per ADR-08 Exception 5) ---
     docs_api_base_url: str = Field(default="http://docs-api:18082")
@@ -61,16 +58,20 @@ class Settings(BaseSettings):
         alias="PLAYGROUND_ARCHITECTURE_DEFAULT_TARGET_FLOORS_ABOVE",
     )
 
+    # --- MinIO (ADR-20 §D3 revised — architecture BC owns write path) ---
+    minio_endpoint: str = Field(
+        default="http://minio-playground:9000",
+        alias="PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT",
+    )
+    minio_access_key: str = Field(default="playground", alias="MINIO_ROOT_USER")
+    minio_secret_key: str = Field(default="playground-secret", alias="MINIO_ROOT_PASSWORD")
+    minio_bucket: str = Field(
+        default="rag-chat-attachments",
+        alias="PLAYGROUND_ARCHITECTURE_MINIO_BUCKET",
+    )
+
     # --- Server ---
     port: int = Field(default=18083, alias="PLAYGROUND_MASSING_GEN_PORT")
-
-    @property
-    def db_url(self) -> str:
-        """SQLAlchemy psycopg URL (sync driver — single uvicorn worker per ADR-18 §A18.3)."""
-        return (
-            f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
 
 
 @lru_cache

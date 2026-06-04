@@ -23,7 +23,7 @@ from architecture.domain.models import (
 
 
 class MassingState(TypedDict, total=False):
-    """Channels threaded through the 9-node pipeline (ADR-19 Phase 3a-2).
+    """Channels threaded through the massing pipeline (ADR-19 Phase 3a-2).
 
     Each node writes a disjoint subset, so the default last-write merge is
     correct. The interpretation stages produce one channel each:
@@ -45,5 +45,6 @@ class MassingState(TypedDict, total=False):
     extract_attempts: int  # re-prompt loop counter (ADR-19 Phase 3a)
     boxes: list[RoomBox]
     file_bytes: bytes
+    storage_key: str  # set by the store node after MinIO upload (ADR-20 §D3 revised)
     # output
     response: GenerateMassingResponse

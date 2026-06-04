@@ -47,6 +47,10 @@ dependencies {
     // M3 uses for chunk inserts.
     implementation("com.pgvector:pgvector:0.1.6")
 
+    // ADR-20 §D3 — MinIO Java SDK for the message-attachment blob store
+    // (mirrors docs-api ADR-12 §A12.4). Version pinned in libs.versions.toml.
+    implementation(libs.minio)
+
     // Micrometer metrics surface — Resilience4j circuit breaker metrics
     // (`resilience4j_circuitbreaker_*`) per ADR-14 §4 register here.
     implementation("io.micrometer:micrometer-core")

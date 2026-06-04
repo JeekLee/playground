@@ -1,0 +1,82 @@
+"""MinIO upload adapter for the architecture BC (ADR-20 §D3 revised).
+
+agent-tools owns the write path: the `store` node calls `upload_artifact`
+which puts the .3dm bytes into MinIO and returns the object key that
+rag-chat's dispatcher will record in `chat.message_attachments`.
+
+The bucket is shared with rag-chat's download adapter — both services
+use `PLAYGROUND_ARCHITECTURE_MINIO_BUCKET` / `PLAYGROUND_RAGCHAT_MINIO_BUCKET`
+defaulting to `rag-chat-attachments`, so rag-chat can serve downloads
+using the same storageKey.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+import uuid
+from datetime import datetime, timezone
+
+from minio import Minio
+from minio.error import S3Error
+
+from shared_kernel.config import Settings
+
+logger = logging.getLogger(__name__)
+
+_client: Minio | None = None
+_bucket: str | None = None
+
+
+def _get_client(settings: Settings) -> tuple[Minio, str]:
+    global _client, _bucket
+    if _client is None:
+        endpoint = settings.minio_endpoint
+        # Strip scheme — Minio SDK takes host[:port] only.
+        endpoint = endpoint.removeprefix("https://").removeprefix("http://")
+        secure = settings.minio_endpoint.startswith("https://")
+        _client = Minio(
+            endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=secure,
+        )
+        _bucket = settings.minio_bucket
+        _ensure_bucket(_client, _bucket)
+    return _client, _bucket  # type: ignore[return-value]
+
+
+def _ensure_bucket(client: Minio, bucket: str) -> None:
+    try:
+        if not client.bucket_exists(bucket):
+            client.make_bucket(bucket)
+            logger.info("Created MinIO bucket %s", bucket)
+    except S3Error as exc:
+        logger.warning("MinIO bucket bootstrap failed (will retry on first upload): %s", exc)
+
+
+def upload_artifact(
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+    settings: Settings,
+) -> str:
+    """Upload bytes to MinIO and return the object key.
+
+    Key format: ``architecture/massing/{uuid}/{filename}``
+    so the rag-chat download endpoint can serve it using the stored key.
+    """
+    client, bucket = _get_client(settings)
+
+    date_prefix = datetime.now(timezone.utc).strftime("%Y%m%d")
+    object_key = f"architecture/massing/{date_prefix}/{uuid.uuid4()}/{filename}"
+
+    client.put_object(
+        bucket_name=bucket,
+        object_name=object_key,
+        data=io.BytesIO(file_bytes),
+        length=len(file_bytes),
+        content_type=content_type or "application/octet-stream",
+    )
+    logger.info("Uploaded artifact to MinIO key=%s size=%d", object_key, len(file_bytes))
+    return object_key

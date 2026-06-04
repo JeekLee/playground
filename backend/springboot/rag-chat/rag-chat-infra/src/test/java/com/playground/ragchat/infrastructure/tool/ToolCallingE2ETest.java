@@ -165,6 +165,40 @@ class ToolCallingE2ETest {
                 n -> n.equals(desc.name()) ? Optional.of(desc) : Optional.empty());
     }
 
+    /** In-memory fakes for the ADR-20 attachment path (captured for assertions). */
+    private final java.util.List<com.playground.ragchat.domain.model.Attachment> savedAttachments =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+    private com.playground.ragchat.application.repository.AttachmentRepository attachmentRepository() {
+        return new com.playground.ragchat.application.repository.AttachmentRepository() {
+            @Override
+            public com.playground.ragchat.domain.model.Attachment save(
+                    com.playground.ragchat.domain.model.Attachment attachment) {
+                savedAttachments.add(attachment);
+                return attachment;
+            }
+
+            @Override
+            public void saveAll(java.util.List<com.playground.ragchat.domain.model.Attachment> attachments) {
+                savedAttachments.addAll(attachments);
+            }
+
+            @Override
+            public java.util.Optional<com.playground.ragchat.domain.model.Attachment> findOwned(
+                    com.playground.ragchat.domain.model.id.AttachmentId id,
+                    com.playground.ragchat.domain.model.id.UserId callerId) {
+                return savedAttachments.stream().filter(a -> a.id().equals(id)).findFirst();
+            }
+
+            @Override
+            public java.util.List<com.playground.ragchat.domain.model.Attachment> findByMessages(
+                    java.util.List<com.playground.ragchat.domain.model.id.MessageId> messageIds) {
+                return savedAttachments.stream()
+                        .filter(a -> messageIds.contains(a.messageId())).toList();
+            }
+        };
+    }
+
     private ChatTurnService service(WebClientToolDispatcher dispatcher, ToolDescriptor desc,
             RagChatProperties props) {
         return new ChatTurnService(
@@ -174,6 +208,7 @@ class ToolCallingE2ETest {
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), dispatcher,
                 (userId, limit) -> java.util.List.of(),
+                attachmentRepository(),
                 objectMapper, props,
                 Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
                 () -> List.of(desc));
@@ -403,5 +438,65 @@ class ToolCallingE2ETest {
         wireMock.verify(postRequestedFor(urlPathEqualTo("/internal/tools/echo"))
                 .withHeader("X-User-Id", equalTo(caller.value().toString()))
                 .withHeader("X-User-Sub", equalTo(googleSub)));
+    }
+
+    @Test
+    void artifactEnvelope_splitsResultFromArtifact_persistsAttachment_andEnrichesSse() {
+        // ADR-20 §D3 revised — agent-tools already stored the file in MinIO.
+        // The tool returns {result, artifact} where artifact carries metadata only
+        // (storageKey, sizeBytes — no base64). rag-chat records the Attachment row
+        // using the storageKey without touching MinIO.
+        String storageKey = "architecture/massing/20260604/abc-uuid/massing-테스트-20260604.3dm";
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"result\":{\"summary\":\"2실 · 지상 4층\",\"floorCount\":4},"
+                                + "\"artifact\":{\"filename\":\"massing-테스트-20260604.3dm\","
+                                + "\"contentType\":\"application/octet-stream\","
+                                + "\"sizeBytes\":32,"
+                                + "\"storageKey\":\"" + storageKey + "\"}}")));
+
+        RagChatProperties props = RagChatProperties.defaults();
+        ToolDescriptor desc = echoDescriptor(Duration.ofSeconds(5));
+        ChatTurnService svc = service(dispatcher(desc, props), desc, props);
+
+        mockChatStreamWithTools(1, "Here is your massing.");
+        ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, googleSub, "generate massing");
+        List<ChatStreamEvent> events = svc.stream(req).collectList().block();
+        assertThat(events).isNotNull();
+
+        // Exactly one Attachment persisted, linked to the assistant message id.
+        assertThat(savedAttachments).hasSize(1);
+        com.playground.ragchat.domain.model.Attachment att = savedAttachments.get(0);
+        assertThat(att.filename()).isEqualTo("massing-테스트-20260604.3dm");
+        assertThat(att.kind()).isEqualTo(
+                com.playground.ragchat.domain.model.Attachment.KIND_TOOL_ARTIFACT);
+        assertThat(att.toolName()).isEqualTo("echo");
+        assertThat(att.sizeBytes()).isEqualTo(32L);
+        // storageKey is preserved verbatim from the agent-tools response.
+        assertThat(att.storageKey()).isEqualTo(storageKey);
+
+        // tool_result `result` is the LLM-visible result ONLY — no storageKey
+        // leaks into the SSE/LLM path, but it IS enriched with the FE attachment
+        // object + fileUrl (ADR-20 §D4).
+        ChatStreamEvent.ToolResult tr = (ChatStreamEvent.ToolResult) events.stream()
+                .filter(e -> e instanceof ChatStreamEvent.ToolResult).findFirst().orElseThrow();
+        JsonNode result = (JsonNode) tr.result();
+        assertThat(result.has("storageKey")).isFalse();
+        assertThat(result.path("floorCount").asInt()).isEqualTo(4);
+        assertThat(result.path("fileUrl").asText()).isEqualTo(
+                "/api/rag/chat/attachments/" + att.id());
+        assertThat(result.path("attachment").path("id").asText()).isEqualTo(att.id().toString());
+        assertThat(result.path("attachment").path("downloadUrl").asText())
+                .isEqualTo("/api/rag/chat/attachments/" + att.id());
+
+        // The terminal done event also carries the attachment + fileUrl (§D4).
+        ChatStreamEvent.Done done = (ChatStreamEvent.Done) events.get(events.size() - 1);
+        assertThat(done.citations()).isInstanceOf(java.util.Map.class);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> donePayload = (java.util.Map<String, Object>) done.citations();
+        assertThat(donePayload.get("fileUrl")).isEqualTo("/api/rag/chat/attachments/" + att.id());
+        assertThat(donePayload).containsKey("attachment");
     }
 }

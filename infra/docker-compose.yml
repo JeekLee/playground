@@ -354,6 +354,8 @@ services:
         condition: service_healthy
       redis-playground:
         condition: service_healthy
+      minio-playground:
+        condition: service_healthy     # ADR-20: chat attachment blob store
       gateway:
         condition: service_started     # gateway must be up for /api/rag/chat/** routing
     networks:
@@ -384,6 +386,13 @@ services:
       # and metrics-api — shared spark-inference-gateway endpoint.
       SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
+      # ADR-20: MinIO blob store for chat message attachments (tool artifacts,
+      # e.g. the .3dm). Mirrors docs-api's MinIO wiring (ADR-12 §A12.4); same
+      # minio-playground on playground-net. Bucket is made-if-absent at startup.
+      PLAYGROUND_RAGCHAT_MINIO_ENDPOINT: ${PLAYGROUND_RAGCHAT_MINIO_ENDPOINT:-http://minio-playground:9000}
+      PLAYGROUND_RAGCHAT_MINIO_BUCKET: ${PLAYGROUND_RAGCHAT_MINIO_BUCKET:-rag-chat-attachments}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
       # Retrieval K (ADR-14 §7) — overridable for experiments without recompile.
       PLAYGROUND_RAG_CHAT_RETRIEVAL_K: ${PLAYGROUND_RAG_CHAT_RETRIEVAL_K:-6}
     healthcheck:
@@ -412,8 +421,8 @@ services:
     container_name: agent-tools
     hostname: agent-tools
     depends_on:
-      postgres-playground:
-        condition: service_healthy
+      minio-playground:
+        condition: service_healthy   # ADR-20 §D3 revised: agent-tools owns MinIO write
       gateway:
         condition: service_started
     networks:
@@ -422,17 +431,18 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_DB: ${POSTGRES_DB:-playground}
-      POSTGRES_USER: ${POSTGRES_USER:-playground}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
       DOCS_API_BASE_URL: ${DOCS_API_BASE_URL:-http://docs-api:18082}
       # spark-inference-gateway — shared with the other LLM-touching BCs.
       SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
       PLAYGROUND_MASSING_GEN_LLM_MODEL: ${PLAYGROUND_MASSING_GEN_LLM_MODEL:-qwen3-vl-30b-a3b}
       PLAYGROUND_MASSING_GEN_MAX_FLOORS: ${PLAYGROUND_MASSING_GEN_MAX_FLOORS:-10}
+      # ADR-20 §D3 revised — agent-tools owns MinIO write; same bucket as rag-chat
+      # so rag-chat's download adapter can GET using the returned storageKey.
+      PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT: ${PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT:-http://minio-playground:9000}
+      PLAYGROUND_ARCHITECTURE_MINIO_BUCKET: ${PLAYGROUND_ARCHITECTURE_MINIO_BUCKET:-rag-chat-attachments}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:18083/actuator/health || exit 1"]
       interval: 15s

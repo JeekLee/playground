@@ -23,6 +23,11 @@ public enum RagChatErrorCode implements ErrorCode {
     @MappedTo(NotFoundException.class)
     SESSION_NOT_FOUND("CHAT-NOT-FOUND-001", "Session not found"),
 
+    // ADR-20 §D4 — owner-only attachment download. Non-owner OR missing → 404
+    // (tenant isolation; don't leak existence, ADR-14 §6.5 style).
+    @MappedTo(NotFoundException.class)
+    ATTACHMENT_NOT_FOUND("CHAT-NOT-FOUND-002", "Attachment not found"),
+
     @MappedTo(BadRequestException.class)
     MESSAGE_TOO_LARGE("CHAT-VALIDATION-001", "Message exceeds 4 KB"),
 
@@ -40,6 +45,10 @@ public enum RagChatErrorCode implements ErrorCode {
 
     @MappedTo(ServiceUnavailableException.class)
     GATEWAY_DOWN("CHAT-GATEWAY-DOWN-001", "AI service unavailable"),
+
+    // ADR-20 §D3 — MinIO attachment blob store transient error / unreachable.
+    @MappedTo(ServiceUnavailableException.class)
+    BLOB_STORAGE_UNAVAILABLE("CHAT-BLOB-001", "Attachment storage unavailable"),
 
     @MappedTo(InternalServerErrorException.class)
     RETRIEVAL_FAILED("CHAT-RETRIEVAL-001", "Retrieval failed: {0}"),

@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY main.py ./main.py
 COPY shared_kernel ./shared_kernel
 COPY architecture ./architecture
-COPY schema.sql ./schema.sql
+# ADR-20: agent-tools is a stateless generator — no Postgres, no schema.sql
+# bootstrap (arch.outputs retired; rag-chat owns attachment persistence).
 
 # Non-root user (security baseline)
 RUN useradd -m -u 1000 agent && chown -R agent:agent /app

@@ -26,7 +26,12 @@ public class RedissonConcurrentStreamLockAdapter implements ConcurrentStreamLock
     private static final Logger log = LoggerFactory.getLogger(RedissonConcurrentStreamLockAdapter.class);
 
     private static final String KEY_FMT = "rag-chat:lock:user:%s";
-    private static final long LEASE_SECONDS = 35L;
+    // Lock lease must outlast the longest legitimate turn. A tool-calling turn can
+    // run up to the tool budget (MassingTool 60s) + generation, so a 35s lease would
+    // auto-expire mid-turn and let a concurrent stream slip past the 1-stream cap
+    // (ADR-14 §D). 120s covers the slow-tool turn; normal cap enforcement still uses
+    // explicit latest-wins release, faster than the lease.
+    private static final long LEASE_SECONDS = 120L;
 
     private final RedissonClient redisson;
 
