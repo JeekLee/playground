@@ -1,134 +1,137 @@
-"""M8 massing algorithm per ADR-18 §8 — rectangular first-fit + area balance.
+"""Massing algorithm (ADR-19 Phase 3a) — deterministic, brief-grounded.
 
-Pure-Python, no I/O, deterministic.
+Pure-Python, no I/O. Consumes the validated `MassingInputs` contract and
+produces `list[RoomBox]`. The coverage gate is enforced upstream by
+`MassingInputs` validation, so this function may assume a feasible massing.
 
-Inputs: room program (List[Room]) + site footprint + floor height +
-optional max_floors cap.
+Pipeline (replaces the M8 `ceil(total / site_area)` bug):
 
-Output: List[RoomBox] with floor / x / y / z / width / depth / height set.
+1. Split zones by grade (above / below).
+2. Above-grade footprint area = sum(above areas) / target_floors_above.
+   The site rectangle is a square of side sqrt(footprint_area) — the brief
+   gives areas, not dimensions. Each above-grade zone's per-floor share is
+   packed across floors 1..N (z = (floor-1) * h).
+3. Below-grade zones are packed into `basement_levels` levels. Level k
+   (1..basement_levels) is labelled floor = -k (B1 = -1) with z = -k * h.
+4. Within a floor/level, zones are shelf-first-fit packed as rectangles
+   derived from area (square aspect), matching the M8 shelf packer.
 
-Algorithm:
-1. Total floor area = sum of room areas.
-2. floor_count = ceil(total_area / site_area).
-3. If floor_count > max_floors → raise MASSING_ALGORITHM_FAILED.
-4. Sort rooms by area desc; balance allocation across floors greedy
-   (smallest-floor-first).
-5. Per floor, derive per-room rectangle (width × depth) from room area
-   using the site aspect ratio; pack via shelf-first-fit.
+Floor / level indices:
+- above-grade: floor 1..target_floors_above, z >= 0
+- below-grade: floor -1..-basement_levels (B1 = -1), z < 0
 """
 
 from __future__ import annotations
 
-from math import ceil, sqrt
-from typing import Iterable
+from math import sqrt
 
 from shared_kernel.errors import MassingError, MassingErrorCode
-from architecture.domain.models import Room, RoomBox, SiteFootprint
+from architecture.domain.models import MassingInputs, RoomBox, Zone
 
 
-def compute_massing(
-    rooms: Iterable[Room],
-    site: SiteFootprint,
-    floor_height: float,
-    max_floors: int,
-) -> list[RoomBox]:
-    """Allocate rooms across floors and return per-room boxes."""
+def compute_massing(inputs: MassingInputs) -> list[RoomBox]:
+    """Allocate zones across above-grade floors + basement levels."""
 
-    room_list = list(rooms)
-    if not room_list:
-        raise MassingError(
-            MassingErrorCode.BRIEF_EXTRACTION_FAILED,
-            "no rooms in extracted program",
-        )
-
-    total_area = sum(r.area_m2 for r in room_list)
-    if total_area <= 0:
-        raise MassingError(
-            MassingErrorCode.BRIEF_EXTRACTION_FAILED,
-            "total room area is non-positive",
-        )
-    if site.area_m2 <= 0:
-        raise MassingError(
-            MassingErrorCode.MASSING_ALGORITHM_FAILED,
-            "site area is non-positive",
-        )
-
-    floor_count = max(1, ceil(total_area / site.area_m2))
-    if floor_count > max_floors:
-        raise MassingError(
-            MassingErrorCode.MASSING_ALGORITHM_FAILED,
-            (
-                f"required {floor_count} floors exceeds max_floors={max_floors}"
-                f" (total area {total_area:.1f} m², site {site.area_m2:.1f} m²)"
-            ),
-        )
-
-    # Greedy balanced allocation: largest-first into smallest-current-floor.
-    sorted_rooms = sorted(room_list, key=lambda r: r.area_m2, reverse=True)
-    floors: list[list[Room]] = [[] for _ in range(floor_count)]
-    floor_load: list[float] = [0.0] * floor_count
-    for room in sorted_rooms:
-        idx = min(range(floor_count), key=lambda i: floor_load[i])
-        floors[idx].append(room)
-        floor_load[idx] += room.area_m2
+    above = [z for z in inputs.zones if z.grade == "above"]
+    below = [z for z in inputs.zones if z.grade == "below"]
 
     boxes: list[RoomBox] = []
-    site_aspect = site.width / site.depth
-    for floor_index, floor_rooms in enumerate(floors, start=1):
-        boxes.extend(
-            _pack_floor(
-                floor_rooms,
-                site=site,
-                site_aspect=site_aspect,
-                floor=floor_index,
-                z=(floor_index - 1) * floor_height,
-                height=floor_height,
+
+    # --- Above-grade: square footprint, split each zone per floor ---
+    above_area = sum(z.area_m2 for z in above)
+    if above_area > 0:
+        footprint_area = above_area / inputs.target_floors_above
+        side = sqrt(footprint_area)
+        # Each above-grade floor carries an equal share of every zone, so the
+        # program is distributed uniformly across the stacked footprint.
+        per_floor_zones = [
+            Zone(
+                name=z.name,
+                area_m2=z.area_m2 / inputs.target_floors_above,
+                grade="above",
             )
+            for z in above
+        ]
+        for floor in range(1, inputs.target_floors_above + 1):
+            boxes.extend(
+                _pack_level(
+                    per_floor_zones,
+                    side=side,
+                    floor=floor,
+                    z=(floor - 1) * inputs.floor_height_m,
+                    height=inputs.floor_height_m,
+                )
+            )
+
+    # --- Below-grade: square footprint sized to the largest single level ---
+    below_area = sum(z.area_m2 for z in below)
+    if below_area > 0:
+        levels = max(1, inputs.basement_levels)
+        level_footprint_area = below_area / levels
+        side = sqrt(level_footprint_area)
+        per_level_zones = [
+            Zone(
+                name=z.name,
+                area_m2=z.area_m2 / levels,
+                grade="below",
+            )
+            for z in below
+        ]
+        # B1 = level 1 = floor -1 = z -h; B2 = floor -2 = z -2h; ...
+        for level in range(1, levels + 1):
+            boxes.extend(
+                _pack_level(
+                    per_level_zones,
+                    side=side,
+                    floor=-level,
+                    z=-level * inputs.floor_height_m,
+                    height=inputs.floor_height_m,
+                )
+            )
+
+    if not boxes:
+        raise MassingError(
+            MassingErrorCode.MASSING_ALGORITHM_FAILED,
+            "no zones produced any boxes",
         )
     return boxes
 
 
-def _pack_floor(
-    floor_rooms: list[Room],
+def _pack_level(
+    zones: list[Zone],
     *,
-    site: SiteFootprint,
-    site_aspect: float,
+    side: float,
     floor: int,
     z: float,
     height: float,
 ) -> list[RoomBox]:
-    """Shelf-first-fit pack of axis-aligned rectangles within the site footprint.
-
-    Each room gets a rectangle whose aspect ratio matches the site (so
-    pack rate is roughly proportional to area). When a shelf runs out of
-    width, start a new shelf at the next y. If a room overflows the site
-    depth, the algorithm clamps the rectangle within the site bounds —
-    the room is still recorded; over-area handling is the caller's job.
+    """Shelf-first-fit pack of square-aspect rectangles within a `side`×`side`
+    footprint. Carried over from the M8 packer, generalized to a square site.
     """
-    if not floor_rooms:
+    if not zones:
         return []
 
     boxes: list[RoomBox] = []
     shelf_y = 0.0
     shelf_x = 0.0
-    shelf_height = 0.0  # tallest room depth on the current shelf
+    shelf_height = 0.0  # tallest zone depth on the current shelf
 
-    for room in sorted(floor_rooms, key=lambda r: r.area_m2, reverse=True):
-        # Derive room rectangle from area + site aspect ratio.
-        depth = sqrt(room.area_m2 / site_aspect)
-        width = room.area_m2 / depth
-        # Clamp to site dimensions to avoid silently exiting the footprint.
-        width = min(width, site.width)
-        depth = min(depth, site.depth - shelf_y if shelf_y < site.depth else site.depth)
+    for zone in sorted(zones, key=lambda zz: zz.area_m2, reverse=True):
+        # Square-aspect rectangle from area.
+        w = sqrt(zone.area_m2)
+        d = zone.area_m2 / w if w > 0 else 0.0
+        width = min(w, side)
+        remaining_depth = side - shelf_y if shelf_y < side else side
+        depth = min(d, remaining_depth)
 
-        if shelf_x + width > site.width + 1e-6:
+        if shelf_x + width > side + 1e-6:
             shelf_y += shelf_height
             shelf_x = 0.0
             shelf_height = 0.0
 
         boxes.append(
             RoomBox(
-                name=room.name,
+                name=zone.name,
                 floor=floor,
                 x=shelf_x,
                 y=shelf_y,

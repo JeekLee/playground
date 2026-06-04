@@ -1,79 +1,113 @@
-"""Massing algorithm tests per ADR-18 §A18.9."""
+"""Massing algorithm tests (ADR-19 Phase 3a) — compute_massing(MassingInputs)."""
 
 from __future__ import annotations
 
+import math
+
 import pytest
+from pydantic import ValidationError
 
 from architecture.domain.algorithm import compute_massing
-from shared_kernel.errors import MassingError, MassingErrorCode
-from architecture.domain.models import Room, SiteFootprint
+from architecture.domain.models import MassingInputs, Zone
 
 
-def _site(width: float = 20.0, depth: float = 10.0) -> SiteFootprint:
-    return SiteFootprint(width=width, depth=depth)
+def _inputs(**over) -> MassingInputs:
+    base = dict(
+        zones=[
+            Zone(name="업무", area_m2=20000.0, grade="above"),
+            Zone(name="시험", area_m2=6500.0, grade="above"),
+            Zone(name="지하주차", area_m2=4500.0, grade="below"),
+        ],
+        site_area_m2=8000.0,
+        coverage_cap=0.9,
+        target_floors_above=4,
+        basement_levels=1,
+        floor_height_m=3.5,
+    )
+    base.update(over)
+    return MassingInputs(**base)
 
 
-def test_single_floor_happy_path() -> None:
-    rooms = [Room("로비", 40.0), Room("카페테리아", 30.0), Room("화장실", 6.0)]
-    boxes = compute_massing(rooms, _site(), floor_height=3.5, max_floors=10)
-    assert len(boxes) == 3
-    assert all(b.floor == 1 for b in boxes)
-    assert all(b.z == 0.0 for b in boxes)
-    assert all(b.height == 3.5 for b in boxes)
+def test_above_and_below_split() -> None:
+    inputs = _inputs()
+    boxes = compute_massing(inputs)
 
+    above_floors = sorted({b.floor for b in boxes if b.floor > 0})
+    below_floors = sorted({b.floor for b in boxes if b.floor < 0})
 
-def test_multi_floor_when_total_exceeds_site() -> None:
-    # site = 20 × 10 = 200 m²; total = 220 m² → 2 floors.
-    rooms = [Room("R1", 100.0), Room("R2", 100.0), Room("R3", 20.0)]
-    boxes = compute_massing(rooms, _site(), floor_height=3.5, max_floors=10)
-    floors = {b.floor for b in boxes}
-    assert floors == {1, 2}
-    # z stacks: floor 2 → z = 3.5.
+    # 4 above-grade floors (1..4) + 1 basement (B1 = -1).
+    assert above_floors == [1, 2, 3, 4]
+    assert below_floors == [-1]
+
+    # above-grade z stacks from 0; basement z is negative.
     for b in boxes:
-        assert pytest.approx(b.z) == (b.floor - 1) * 3.5
+        if b.floor > 0:
+            assert pytest.approx(b.z) == (b.floor - 1) * 3.5
+        else:
+            assert pytest.approx(b.z) == b.floor * 3.5  # -1 * 3.5
 
 
-def test_over_area_raises() -> None:
-    # site = 20 × 10 = 200; total = 2200 → would need 11 floors > max_floors=10
-    rooms = [Room(f"R{i}", 200.0) for i in range(11)]
-    with pytest.raises(MassingError) as ei:
-        compute_massing(rooms, _site(), floor_height=3.5, max_floors=10)
-    assert ei.value.code == MassingErrorCode.MASSING_ALGORITHM_FAILED
+def test_footprint_area_matches_coverage_math() -> None:
+    # above total = 26,500 / 4 floors = 6,625 m² footprint; side = sqrt(6625).
+    inputs = _inputs()
+    assert inputs.above_footprint_area == pytest.approx(6625.0)
+    side = math.sqrt(6625.0)
+    above_boxes = [b for b in compute_massing(inputs) if b.floor == 1]
+    for b in above_boxes:
+        assert b.x >= 0 and b.y >= 0
+        assert b.x + b.width <= side + 1e-3
 
 
-def test_empty_rooms_raises() -> None:
-    with pytest.raises(MassingError) as ei:
-        compute_massing([], _site(), floor_height=3.5, max_floors=10)
-    assert ei.value.code == MassingErrorCode.BRIEF_EXTRACTION_FAILED
+def test_every_above_floor_carries_full_program() -> None:
+    inputs = _inputs()
+    boxes = compute_massing(inputs)
+    names_floor1 = {b.name for b in boxes if b.floor == 1}
+    names_floor4 = {b.name for b in boxes if b.floor == 4}
+    assert names_floor1 == {"업무", "시험"}
+    assert names_floor4 == {"업무", "시험"}
 
 
-def test_zero_site_raises() -> None:
-    with pytest.raises(MassingError) as ei:
-        compute_massing(
-            [Room("R", 10.0)],
-            SiteFootprint(width=0.0, depth=0.0),
-            floor_height=3.5,
-            max_floors=10,
+def test_basement_carries_below_zones() -> None:
+    boxes = compute_massing(_inputs())
+    b1 = {b.name for b in boxes if b.floor == -1}
+    assert b1 == {"지하주차"}
+
+
+def test_coverage_gate_violation_raises() -> None:
+    # above 26,500 / 4 = 6,625 footprint; site 5,000 × 0.6 = 3,000 allowed → fail.
+    with pytest.raises(ValidationError):
+        _inputs(site_area_m2=5000.0, coverage_cap=0.6)
+
+
+def test_below_grade_requires_basement_level() -> None:
+    with pytest.raises(ValidationError):
+        MassingInputs(
+            zones=[Zone(name="지하", area_m2=100.0, grade="below")],
+            site_area_m2=1000.0,
+            coverage_cap=0.6,
+            target_floors_above=1,
+            basement_levels=0,
         )
-    # site.area_m2 == 0 triggers MASSING_ALGORITHM_FAILED branch.
-    assert ei.value.code == MassingErrorCode.MASSING_ALGORITHM_FAILED
 
 
 def test_determinism() -> None:
-    rooms = [Room("A", 50.0), Room("B", 30.0), Room("C", 70.0)]
-    site = _site()
-    r1 = compute_massing(rooms, site, floor_height=3.5, max_floors=10)
-    r2 = compute_massing(rooms, site, floor_height=3.5, max_floors=10)
-    assert [(b.name, b.x, b.y, b.floor) for b in r1] == [
-        (b.name, b.x, b.y, b.floor) for b in r2
+    inputs = _inputs()
+    r1 = compute_massing(inputs)
+    r2 = compute_massing(inputs)
+    assert [(b.name, b.floor, b.x, b.y) for b in r1] == [
+        (b.name, b.floor, b.x, b.y) for b in r2
     ]
 
 
-def test_room_box_within_site_bounds() -> None:
-    rooms = [Room("R1", 60.0), Room("R2", 60.0), Room("R3", 60.0)]
-    site = _site(20, 10)
-    boxes = compute_massing(rooms, site, floor_height=3.5, max_floors=10)
-    for b in boxes:
-        assert b.x >= 0 and b.y >= 0
-        assert b.width > 0 and b.depth > 0
-        assert b.x + b.width <= site.width + 1e-3
+def test_above_only_no_basement() -> None:
+    inputs = MassingInputs(
+        zones=[Zone(name="로비", area_m2=400.0, grade="above")],
+        site_area_m2=1000.0,
+        coverage_cap=0.6,
+        target_floors_above=2,
+        basement_levels=0,
+        floor_height_m=3.5,
+    )
+    boxes = compute_massing(inputs)
+    assert sorted({b.floor for b in boxes}) == [1, 2]
+    assert all(b.floor > 0 for b in boxes)

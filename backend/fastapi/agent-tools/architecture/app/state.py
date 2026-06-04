@@ -13,7 +13,7 @@ from uuid import UUID
 from shared_kernel.models import DocsDetailSubset
 
 from architecture.api.dtos import GenerateMassingRequest, GenerateMassingResponse
-from architecture.domain.models import ExtractedProgram, RoomBox, SiteFootprint
+from architecture.domain.models import BriefAnalysis, MassingInputs, RoomBox
 
 
 class MassingState(TypedDict, total=False):
@@ -23,9 +23,9 @@ class MassingState(TypedDict, total=False):
     user_sub: str | None
     # intermediates
     detail: DocsDetailSubset
-    extracted: ExtractedProgram
-    site: SiteFootprint
-    floor_height: float
+    analysis: BriefAnalysis  # open, LLM-extracted facts
+    inputs: MassingInputs  # tight, validated algorithm contract
+    extract_attempts: int  # re-prompt loop counter (ADR-19 Phase 3a)
     boxes: list[RoomBox]
     file_bytes: bytes
     # output
