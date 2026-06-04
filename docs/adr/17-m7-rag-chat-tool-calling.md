@@ -943,3 +943,54 @@ No new diagrams. The M7 dependency graph is `rag-chat-api` → tool BC
 `-api` (compose-internal HTTP) as the new edge; the existing M4
 diagram in ADR-14 covers everything else. M8's PR set will add the
 massing-gen edge to ADR-00's module-dependency graph when it lands.
+
+---
+
+## Amendment 2026-06-04 (ADR-19) — orchestration boundary reaffirmed + LangGraph guardrail
+
+> ADR-19 introduces the `agent-tools` multi-BC Python host (the former
+> `massing-gen-api`, renamed) and adopts LangGraph for modeling a tool
+> BC's *internal* multi-step flow. This amendment reaffirms ADR-17's
+> orchestration ownership as a hard invariant against the new host and
+> records the LangGraph guardrail. No M7 contract, schema, or call
+> shape changes — this is a boundary clarification.
+
+### §A17.1. Orchestration stays in rag-chat — `agent-tools` BCs are tools, not orchestrators
+
+**Decision (hard invariant): inter-tool / agent orchestration —
+choosing which tool to call, when, and feeding tool results back to the
+model — REMAINS owned by rag-chat (Spring AI function-calling, this
+ADR §1). The `agent-tools` BCs (ADR-19 §D1) are TOOLS — capability
+endpoints reached over ADR-08 Exception 4 — NOT orchestrators.**
+
+A tool BC MAY use an internal graph (LangGraph — ADR-19 §D4) to model
+its OWN multi-step flow, but MUST NOT become a second cross-tool
+orchestrator. Concretely, a tool BC MUST NOT:
+
+- call another tool BC's `/internal/tools/*` endpoint to chain
+  capabilities (cross-tool composition is rag-chat's job);
+- call back into rag-chat to ask the LLM to pick a next tool
+  (model-in-the-loop tool selection lives only in rag-chat);
+- extend its internal graph beyond its single capability.
+
+The only outbound calls a tool BC makes remain the ADR-08-sanctioned
+ones (the LLM via spark-inference-gateway; the docs-api body read via
+Exception 5). Any new cross-BC HTTP edge requires a new ADR-08
+exception, exactly as for Java BCs (ADR-08 §A08.10). This keeps the
+system at **exactly one orchestrator** (rag-chat) and prevents the
+`agent-tools` host from accreting a competing control plane.
+
+### §A17.2. LangGraph guardrail — tool-internal only, no gold-plating
+
+**Decision: LangGraph (ADR-19 §D4) is for a tool BC's internal
+non-linear flow only — branching / looping / retry / refine. It is NOT
+a substitute for, nor an extension of, the rag-chat orchestrator. Do
+NOT wrap a still-linear pipeline in LangGraph as an end in itself.**
+
+`ToolDispatcher`, the `ToolCatalog`, the per-tool circuit breaker, the
+depth cap, and the SSE event grammar (§3–§6) are unchanged — they sit
+on the rag-chat side of the boundary and are oblivious to whether a
+tool BC's internals are a straight line or a LangGraph graph.
+
+See `docs/adr/19-agent-tools-host-and-architecture-bc.md` §D3–§D4 for
+the full specification.

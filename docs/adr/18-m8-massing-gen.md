@@ -1854,3 +1854,51 @@ The Java-side `MassingToolDescriptorTest` + `ToolCatalogIntegrationTest`
 on the Java side and verify the descriptor that points at
 `massing-gen-api:18083/internal/tools/generate-massing`. The descriptor
 URL is language-neutral.
+
+## Amendment 2026-06-04 (ADR-19) — single-service `massing-gen` framing superseded; BC → `architecture`, service → `agent-tools`
+
+> The body of ADR-18 (incl. the §A18.1–§A18.9 Python-flip block) frames
+> M8 as a **single Python service `massing-gen-api`** that *is* the BC.
+> ADR-19 supersedes that framing on two points: (1) the BC is renamed
+> `massing-gen` → `architecture`, and (2) the service is no longer
+> one-per-BC — it becomes a directory module inside the new multi-BC
+> Python host `agent-tools`. Everything else in ADR-18 (the HTTP
+> contract, the `arch` schema, the port 18083, the box-coordinate
+> convention, the Korean summary format, the BYTEA storage, the error
+> codes, the prompt structure) is **preserved verbatim** — only the
+> service/BC names and the hosting model move. This amendment is
+> forward-only; the ADR-18 body is left intact as the audit record.
+
+### §A18.10. Supersession map — names and hosting
+
+| ADR-18 element | Status under ADR-19 | Replacement / note |
+|---|---|---|
+| BC name `massing-gen` (§14) | **Superseded** | Renamed to **`architecture`**. The capability/tool inside it stays `generate_massing` ("a tool inside the `architecture` BC"). |
+| Single-service hosting (§A18.1, §A18.4 — "the `massing-gen` BC is a single Python/FastAPI service") | **Superseded** | The BC is now a directory module inside the multi-BC host `agent-tools` (ADR-19 §D1 / ADR-01 §A01.15). One container hosts multiple LLM-tool BCs; `architecture` is its first occupant. |
+| Service / container / hostname / image `massing-gen-api` | **Superseded** | → **`agent-tools`** (ADR-19 §D2 change-set items 1–4; ADR-01 §A01.16). |
+| Directory `backend/fastapi/massing-gen/` (§A18.4) | **Superseded** | → `backend/fastapi/agent-tools/architecture/` (BC) + `backend/fastapi/agent-tools/app/` (host-shared plumbing). |
+| Healthcheck `…/actuator/health` (compose) | **Preserved** | The FastAPI app deliberately exposes `@app.get("/actuator/health")` (`main.py`) for cross-service uniformity with every Java BC's `/actuator/health`; it is intentional and working (container healthy), NOT a stale Java path. Unchanged by the rename. |
+| Port **18083** (§2 / §A18.5) | **Preserved** | `agent-tools` binds 18083. |
+| Schema `arch` + `arch.outputs` table (§12 / §18 / A05.6) | **Preserved** | Name-stable; keys on `arch`, not on the service name — rename is data-migration-free. (Phase-3 may add columns — future ADR.) |
+| Gateway route prefix `/api/arch/**` (§21) | **Preserved** | Prefix unchanged; only the route `uri` host and route `id` move (ADR-19 §D2 items 10–11). |
+| Tool dispatch path `/internal/tools/generate-massing` (§20) | **Preserved** | Only the hostname in `MassingTool.DEFAULT_ENDPOINT` moves `massing-gen-api` → `agent-tools` (ADR-19 §D2 item 8). |
+| Download path `/outputs/{id}` (§13 / §21) | **Preserved** | Unchanged. |
+| ADR-08 Exception 4 sub-row (rag-chat → the tool BC) | **Preserved (host string moves)** | The sanctioned channel is unchanged; only the target hostname string is `agent-tools`. |
+| ADR-08 Exception 5 (BC → docs-api body read) | **Preserved** | The host-side `agent-tools` makes the call on behalf of the `architecture` BC; semantics unchanged. |
+| `RectangularFirstFitMassingAlgorithm` floor-count formula (§8) | **Superseded in direction (Phase 3)** | The `ceil(total ÷ full-lot-area)` formula is the source of the M8 KFI-brief bug ("3 rooms · 1 floor · 31,000 m²"). ADR-19 §D5 Phase 3 applies 건폐율 and separates basement uses; the corrected formula lands in a Phase-3 ADR amendment. **Phase 1 preserves the buggy behavior** (rename only). |
+| BYTEA storage in `arch.outputs.file_bytes` (§12) | **Preserved now; Phase-3 direction = MinIO** | ADR-19 §D5 Phase 3 Option A moves the `.3dm` to MinIO (object key in `arch.outputs`) and persists the extracted inputs for auditability — detailed DDL deferred to the Phase-3 ADR. ADR-18 §12 already documented the BYTEA→MinIO hook. |
+| Internal flow = linear `MassingWorkflow.run` 8-step | **Superseded in direction (Phase 2/3)** | ADR-19 §D4 adopts LangGraph for the BC's internal flow. Phase 2 migrates the current linear flow to a behavior-identical minimal graph (de-risk); Phase 3 adds the real branching/looping. |
+
+### §A18.11. What ADR-19 does NOT change in ADR-18
+
+The brief-extraction prompt structure (§10), the JSON-Schema/Pydantic
+validation (§9 / §A18.5), the `MassingErrorCode` enum + HTTP mapping
+(§7), the `<CODE>: <message>` tool-error prefix grammar (§6), the
+Korean summary format (§5), the box-coordinate convention (§11 table),
+the in-process `rhino3dm` serialization (§A18.2), and the descriptor
+parameter schema (§15 / `MassingTool` `INPUT_SCHEMA`) all carry over
+verbatim. They migrate into `backend/fastapi/agent-tools/architecture/`
+unchanged.
+
+See `docs/adr/19-agent-tools-host-and-architecture-bc.md` §D2 for the
+full rename change-set and §D5 for the Phase-2/Phase-3 roadmap.
