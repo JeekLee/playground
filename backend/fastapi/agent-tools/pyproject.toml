@@ -14,6 +14,7 @@ dependencies = [
     "rhino3dm==8.17.0",
     "structlog==24.4.0",
     "prometheus-fastapi-instrumentator==7.0.0",
+    "langgraph==0.2.60",
 ]
 
 [project.optional-dependencies]
