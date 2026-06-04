@@ -1,9 +1,8 @@
-"""FastAPI dependency providers — singletons + per-request user context.
+"""BC-neutral per-request user context + settings DI.
 
-Singletons (docs client, llm client, workflow) are cached on the app
-state in main.py; this module exposes Depends() helpers that retrieve
-them. UserContext is built per-request from X-User-Id / X-User-Sub
-headers per M7 ToolDispatcher's forwarding contract.
+UserContext is built per-request from X-User-Id / X-User-Sub headers per
+M7 ToolDispatcher's forwarding contract. This is cross-cutting plumbing
+reusable by any BC hosted on this service, so it lives in shared_kernel.
 """
 
 from __future__ import annotations
@@ -12,13 +11,10 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Header
 
 from .config import Settings, get_settings
-from .docs_client import DocsClient
 from .errors import MassingError, MassingErrorCode
-from .llm_client import LlmClient
-from .workflow import MassingWorkflow
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,15 +44,5 @@ def get_user_context(
     return UserContext(user_id=user_id, user_sub=x_user_sub)
 
 
-def get_workflow(request: Request) -> MassingWorkflow:
-    return request.app.state.workflow
-
-
-def get_docs_client(request: Request) -> DocsClient:
-    return request.app.state.docs_client
-
-
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 UserContextDep = Annotated[UserContext, Depends(get_user_context)]
-WorkflowDep = Annotated[MassingWorkflow, Depends(get_workflow)]
-DocsClientDep = Annotated[DocsClient, Depends(get_docs_client)]

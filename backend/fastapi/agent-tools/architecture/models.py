@@ -126,24 +126,6 @@ class RoomBox:
     height: float
 
 
-# --- DocsApi DTO subset (only what M8 needs from the detail response) ---
-
-
-class DocsDetailSubset(BaseModel):
-    """Subset of docs-api's DocumentDetailResponse — only the fields M8
-    actually consumes. Permissive on extra fields so M6/M6.1+ doc-side
-    additions don't break us."""
-
-    id: UUID
-    author_id: UUID = Field(alias="authorId")
-    title: str
-    body: str | None = None
-    visibility: str  # "public" | "private"
-    extraction_status: str | None = Field(default=None, alias="extractionStatus")
-
-    model_config = {"populate_by_name": True, "extra": "ignore"}
-
-
 # --- SQLAlchemy ORM ---
 
 

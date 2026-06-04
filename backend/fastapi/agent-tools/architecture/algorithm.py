@@ -22,7 +22,7 @@ from __future__ import annotations
 from math import ceil, sqrt
 from typing import Iterable
 
-from .errors import MassingError, MassingErrorCode
+from shared_kernel.errors import MassingError, MassingErrorCode
 from .models import Room, RoomBox, SiteFootprint
 
 

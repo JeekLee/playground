@@ -17,7 +17,9 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
-COPY app ./app
+COPY main.py ./main.py
+COPY shared_kernel ./shared_kernel
+COPY architecture ./architecture
 COPY schema.sql ./schema.sql
 
 # Non-root user (security baseline)
@@ -32,4 +34,4 @@ ENV PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:18083/actuator/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "18083"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "18083"]

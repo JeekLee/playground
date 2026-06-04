@@ -24,13 +24,13 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 
-from .config import get_settings
-from .database import get_engine
-from .docs_client import DocsClient
-from .errors import MassingError
-from .llm_client import LlmClient
-from .routers import outputs, tools
-from .workflow import MassingWorkflow
+from shared_kernel.config import get_settings
+from shared_kernel.database import get_engine
+from shared_kernel.docs_client import DocsClient
+from shared_kernel.errors import MassingError
+from shared_kernel.llm_client import LlmClient
+from architecture.routers import outputs, tools
+from architecture.workflow import MassingWorkflow
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")

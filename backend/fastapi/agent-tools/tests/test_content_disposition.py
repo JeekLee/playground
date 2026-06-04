@@ -10,7 +10,7 @@ Korean-titled brief). The header must follow RFC 6266: an ASCII
 
 from __future__ import annotations
 
-from app.content_disposition import content_disposition_attachment
+from architecture.content_disposition import content_disposition_attachment
 
 
 def test_latin1_safe_for_korean_filename() -> None:

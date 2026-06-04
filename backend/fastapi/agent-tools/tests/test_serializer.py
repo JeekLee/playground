@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import rhino3dm
 
-from app.models import RoomBox
-from app.serializer import serialize_massing
+from architecture.models import RoomBox
+from architecture.serializer import serialize_massing
 
 
 def _boxes() -> list[RoomBox]:

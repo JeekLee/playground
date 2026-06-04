@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.summary import format_summary
+from architecture.summary import format_summary
 
 
 def test_canonical_example() -> None:
