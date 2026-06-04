@@ -14,6 +14,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.playground.ragchat.application.properties.RagChatProperties;
+import com.playground.ragchat.application.tool.ToolArtifact;
 import com.playground.ragchat.application.tool.ToolInvocationResult;
 import com.playground.ragchat.application.tool.UserContext;
 import com.playground.ragchat.domain.model.id.UserId;
@@ -332,6 +333,65 @@ class WebClientToolDispatcherTest {
         wireMock.verify(postRequestedFor(urlPathEqualTo("/internal/tools/echo"))
                 .withHeader("X-User-Id", equalTo(ctx.userId().value().toString()))
                 .withHeader("X-User-Sub", absent()));
+    }
+
+    @Test
+    void artifactEnvelope_splitsResultFromArtifact_resultIsLlmVisibleOnly() {
+        // ADR-20 §D3 revised — {result, artifact} envelope: body() carries ONLY
+        // result (LLM-visible); artifact() carries metadata (storageKey, sizeBytes).
+        // agent-tools already stored the file in MinIO before returning this response.
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/gen"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"result\":{\"summary\":\"s\",\"floorCount\":4},"
+                                + "\"artifact\":{\"filename\":\"massing-한글-1.3dm\","
+                                + "\"contentType\":\"application/octet-stream\","
+                                + "\"sizeBytes\":28,"
+                                + "\"storageKey\":\"architecture/massing/20260604/abc-uuid/massing-한글-1.3dm\"}}")));
+
+        ToolDescriptor desc = new ToolDescriptor(
+                "gen", "Gen tool", null,
+                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/gen"),
+                Duration.ofSeconds(5));
+
+        ToolInvocationResult result = dispatcher(desc).invoke("call_1", "gen", null, userCtx());
+
+        assertThat(result).isInstanceOf(ToolInvocationResult.Success.class);
+        ToolInvocationResult.Success s = (ToolInvocationResult.Success) result;
+        // body() == result ONLY — no artifact/storageKey leaks into the LLM path.
+        assertThat(s.body().has("storageKey")).isFalse();
+        assertThat(s.body().has("artifact")).isFalse();
+        assertThat(s.body().get("floorCount").asInt()).isEqualTo(4);
+        // artifact() carries the storageKey + filename + content type + sizeBytes.
+        ToolArtifact artifact = s.artifact();
+        assertThat(artifact).isNotNull();
+        assertThat(artifact.filename()).isEqualTo("massing-한글-1.3dm");
+        assertThat(artifact.contentTypeOrDefault()).isEqualTo("application/octet-stream");
+        assertThat(artifact.sizeBytes()).isEqualTo(28L);
+        assertThat(artifact.storageKey()).isEqualTo("architecture/massing/20260604/abc-uuid/massing-한글-1.3dm");
+    }
+
+    @Test
+    void plainToolWithoutArtifact_treatedAsWholeBodyResult_noArtifact() {
+        // Back-compat (ADR-20 §D2): a response without `artifact` → whole body
+        // is the result, artifact() is null (M7 behaviour unchanged).
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"result\":{\"x\":1}}")));  // has `result` but NO `artifact`
+
+        ToolDescriptor desc = new ToolDescriptor(
+                "echo", "Echo", null,
+                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
+                Duration.ofSeconds(5));
+
+        ToolInvocationResult.Success s = (ToolInvocationResult.Success)
+                dispatcher(desc).invoke("call_1", "echo", null, userCtx());
+        // No artifact key → not an envelope → whole body preserved.
+        assertThat(s.artifact()).isNull();
+        assertThat(s.body().path("result").path("x").asInt()).isEqualTo(1);
     }
 
     @Test

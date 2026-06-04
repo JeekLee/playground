@@ -47,7 +47,26 @@ public record Message(
             Integer tokensOut,
             Integer retrievalK,
             Instant now) {
+        return newAssistantTurn(
+                MessageId.generate(), sessionId, userId, content, tokensIn, tokensOut, retrievalK, now);
+    }
+
+    /**
+     * New assistant turn with an explicit, pre-allocated id. Used by the
+     * tool-attachment flow (ADR-20 §D3): the assistant {@code messageId} is
+     * allocated up-front so a tool callback can link an {@code Attachment} to it
+     * mid-stream, before the assistant message text is finalized + persisted.
+     */
+    public static Message newAssistantTurn(
+            MessageId id,
+            SessionId sessionId,
+            UserId userId,
+            String content,
+            Integer tokensIn,
+            Integer tokensOut,
+            Integer retrievalK,
+            Instant now) {
         return new Message(
-                MessageId.generate(), sessionId, userId, Role.ASSISTANT, content, tokensIn, tokensOut, retrievalK, now);
+                id, sessionId, userId, Role.ASSISTANT, content, tokensIn, tokensOut, retrievalK, now);
     }
 }

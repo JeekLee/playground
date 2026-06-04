@@ -16,6 +16,7 @@ dependencies = [
     "prometheus-fastapi-instrumentator==7.0.0",
     "langgraph==0.2.60",
     "langchain-openai==0.2.14",
+    "minio==7.2.15",
 ]
 
 [project.optional-dependencies]

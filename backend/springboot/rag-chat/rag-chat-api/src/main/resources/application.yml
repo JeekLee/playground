@@ -98,6 +98,14 @@ playground:
       # envelope so the model knows the result was clipped.
       max-result-bytes: ${PLAYGROUND_RAG_CHAT_TOOL_MAX_RESULT_BYTES:16384}
 
+# ADR-20 §D3 — MinIO attachment blob store. The MinioClientConfig +
+# MinioBlobStorageAdapter read these env vars directly (with code defaults), so
+# rag-chat boots against the compose-internal minio-playground sidecar without
+# explicit wiring. Secrets stay in infra/.env (gitignored), never in YAML.
+#   PLAYGROUND_RAGCHAT_MINIO_ENDPOINT  (default http://minio-playground:9000)
+#   MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
+#   PLAYGROUND_RAGCHAT_MINIO_BUCKET    (default rag-chat-attachments)
+
 # ADR-14 §4 — Resilience4j breaker config (resilience4j-spring-boot3 reads
 # this and registers the breaker, which our SparkGatewayCircuitBreakerConfig
 # bean then specializes/replaces). The instance entry mirrors the @Bean

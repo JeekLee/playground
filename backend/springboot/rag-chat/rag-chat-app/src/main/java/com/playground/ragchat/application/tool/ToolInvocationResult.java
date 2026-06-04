@@ -30,12 +30,31 @@ public sealed interface ToolInvocationResult {
     /** Tool descriptor name (matches the originating {@code tool_call.name}). */
     String name();
 
-    /** Successful tool invocation — body is the parsed (and possibly truncated) JSON. */
-    record Success(String id, String name, JsonNode body) implements ToolInvocationResult {
+    /**
+     * Successful tool invocation.
+     *
+     * <p>{@code body} is the LLM-visible result — the parsed (and possibly
+     * truncated) JSON fed back to the model and into the {@code tool_result}
+     * SSE event.
+     *
+     * <p>{@code artifact} is an optional NON-LLM file artifact per ADR-20 §D2.
+     * When the tool emits a {@code {result, artifact}} envelope, the dispatcher
+     * sets {@code body = result} and {@code artifact = }(decoded bytes); the
+     * use-case routes the artifact to MinIO + a {@code chat.message_attachments}
+     * row. A plain tool (no envelope) leaves {@code artifact} null and
+     * {@code body} = the whole response body (M7 back-compat).
+     */
+    record Success(String id, String name, JsonNode body, ToolArtifact artifact)
+            implements ToolInvocationResult {
         public Success {
             Objects.requireNonNull(id, "Success.id must not be null");
             Objects.requireNonNull(name, "Success.name must not be null");
             Objects.requireNonNull(body, "Success.body must not be null");
+        }
+
+        /** Back-compat convenience: a success with no artifact. */
+        public Success(String id, String name, JsonNode body) {
+            this(id, name, body, null);
         }
     }
 

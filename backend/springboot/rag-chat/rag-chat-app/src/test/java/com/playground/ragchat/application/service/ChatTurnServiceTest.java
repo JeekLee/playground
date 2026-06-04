@@ -95,6 +95,7 @@ class ChatTurnServiceTest {
                 new ActiveTurnRegistry(),
                 toolDispatcherPort,
                 (userId, limit) -> java.util.List.of(),
+                mock(com.playground.ragchat.application.repository.AttachmentRepository.class),
                 new ObjectMapper(),
                 RagChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC),

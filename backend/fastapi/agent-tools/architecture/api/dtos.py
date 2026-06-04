@@ -54,18 +54,55 @@ class ProgramJsonWire(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class GenerateMassingResponse(BaseModel):
-    """Tool endpoint response shape per ADR-18 §10 + PRD §wire-shape.
+class MassingResult(BaseModel):
+    """The LLM-visible tool result per ADR-20 §D2.
+
+    This is the `result` half of the `{result, artifact}` envelope — the only
+    payload fed back to the LLM and into the `tool_result` SSE event. It carries
+    NO `fileUrl`: ADR-20 retires agent-tools storage, so the bytes travel
+    out-of-band in `artifact` (NON-LLM) and rag-chat owns persistence + download.
 
     `floorCount` is the above-grade floor count (ADR-19 Phase 3a); below-grade
     levels are carried in `basementLevels` (and rendered in `summary`).
     """
 
-    file_url: str = Field(alias="fileUrl")
     program_json: ProgramJsonWire = Field(alias="programJson")
     total_area_m2: float = Field(alias="totalAreaM2")
     floor_count: int = Field(alias="floorCount")  # above-grade
     basement_levels: int = Field(default=0, alias="basementLevels")
     summary: str  # Korean fixed format per ADR-18 §5 + §A18.5
+
+    model_config = {"populate_by_name": True}
+
+
+class MassingArtifact(BaseModel):
+    """The NON-LLM file artifact per ADR-20 §D3 revised.
+
+    agent-tools owns the MinIO write path: the `store` node uploaded the .3dm
+    before this DTO is built, so only metadata travels in the HTTP response.
+    No bytes / no base64 here — rag-chat records `storageKey` in
+    `chat.message_attachments` and serves downloads via its own MinIO GET.
+    """
+
+    filename: str  # slug-based .3dm name, e.g. massing-<slug>-<ts>.3dm
+    content_type: str = Field(default="application/octet-stream", alias="contentType")
+    size_bytes: int = Field(alias="sizeBytes")
+    storage_key: str = Field(alias="storageKey")
+
+    model_config = {"populate_by_name": True}
+
+
+class GenerateMassingResponse(BaseModel):
+    """Tool endpoint envelope per ADR-20 §D2 + §D3 revised — `{result, artifact}`.
+
+    `result` is the LLM-visible payload (the massing summary); `artifact`
+    carries metadata only (filename, contentType, sizeBytes, storageKey) — the
+    bytes are already in MinIO. The dispatcher detects the envelope by the
+    presence of BOTH keys and records the storageKey as a chat.message_attachments
+    row without touching MinIO.
+    """
+
+    result: MassingResult
+    artifact: MassingArtifact
 
     model_config = {"populate_by_name": True}

@@ -12,18 +12,23 @@ import com.playground.ragchat.application.port.EmbeddingPort;
 import com.playground.ragchat.application.port.TokenBucketPort;
 import com.playground.ragchat.application.port.UserDocumentManifestPort;
 import com.playground.ragchat.application.properties.RagChatProperties;
+import com.playground.ragchat.application.repository.AttachmentRepository;
 import com.playground.ragchat.application.repository.MessageRepository;
 import com.playground.ragchat.application.repository.SessionRepository;
+import com.playground.ragchat.application.tool.ToolArtifact;
 import com.playground.ragchat.application.tool.ToolBinding;
 import com.playground.ragchat.application.tool.ToolDispatcherPort;
 import com.playground.ragchat.application.tool.ToolInvocationResult;
 import com.playground.ragchat.application.tool.UserContext;
 import com.playground.ragchat.domain.exception.RagChatErrorCode;
+import com.playground.ragchat.domain.model.Attachment;
 import com.playground.ragchat.domain.model.ChatSession;
 import com.playground.ragchat.domain.model.Message;
 import com.playground.ragchat.domain.model.MessageCitation;
 import com.playground.ragchat.domain.model.RetrievedChunk;
 import com.playground.ragchat.domain.model.UserDocumentRef;
+import com.playground.ragchat.domain.model.id.AttachmentId;
+import com.playground.ragchat.domain.model.id.MessageId;
 import com.playground.ragchat.domain.model.id.SessionId;
 import com.playground.ragchat.domain.model.id.UserId;
 import com.playground.ragchat.domain.model.vo.TokenCount;
@@ -83,9 +88,13 @@ public class ChatTurnService {
     private final ActiveTurnRegistry activeTurnRegistry;
     private final ToolDispatcherPort toolDispatcherPort;
     private final UserDocumentManifestPort userDocumentManifestPort;
+    private final AttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final RagChatProperties properties;
     private final Clock clock;
+
+    /** Download URL prefix for message attachments (ADR-20 §D4). FE-facing, gateway-routed. */
+    static final String ATTACHMENT_DOWNLOAD_PREFIX = "/api/rag/chat/attachments/";
 
     /**
      * Cap on the document manifest injected into the prompt's [YOUR DOCUMENTS]
@@ -111,13 +120,15 @@ public class ChatTurnService {
             ActiveTurnRegistry activeTurnRegistry,
             ToolDispatcherPort toolDispatcherPort,
             UserDocumentManifestPort userDocumentManifestPort,
+            AttachmentRepository attachmentRepository,
             ObjectMapper objectMapper,
             RagChatProperties properties,
             Clock clock) {
         this(sessionRepository, messageRepository, tokenBucketPort, lockPort, embeddingPort,
                 chunkRetrievalPort, chatGenerationPort, historyTruncator, tokenCounter,
                 promptTemplate, autoTitleService, activeTurnRegistry, toolDispatcherPort,
-                userDocumentManifestPort, objectMapper, properties, clock, ToolCatalog::descriptors);
+                userDocumentManifestPort, attachmentRepository,
+                objectMapper, properties, clock, ToolCatalog::descriptors);
     }
 
     /**
@@ -142,6 +153,7 @@ public class ChatTurnService {
             ActiveTurnRegistry activeTurnRegistry,
             ToolDispatcherPort toolDispatcherPort,
             UserDocumentManifestPort userDocumentManifestPort,
+            AttachmentRepository attachmentRepository,
             ObjectMapper objectMapper,
             RagChatProperties properties,
             Clock clock,
@@ -160,6 +172,7 @@ public class ChatTurnService {
         this.activeTurnRegistry = activeTurnRegistry;
         this.toolDispatcherPort = toolDispatcherPort;
         this.userDocumentManifestPort = userDocumentManifestPort;
+        this.attachmentRepository = attachmentRepository;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.clock = clock;
@@ -270,6 +283,18 @@ public class ChatTurnService {
         final java.util.concurrent.atomic.AtomicBoolean errored =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
 
+        // ADR-20 §D3 (messageId↔attachment timing): the assistant messageId is
+        // allocated UP-FRONT so a tool callback can store the artifact bytes to
+        // MinIO under chat/{sessionId}/{messageId}/{attachmentId}-{filename} and
+        // build the Attachment row mid-stream, before the assistant text is
+        // finalized. The staged attachments are persisted in
+        // persistAssistantAndDone alongside the assistant message, which reuses
+        // this same id — so every attachment links to the assistant message of
+        // the turn (the invariant).
+        final MessageId assistantMessageId = MessageId.generate();
+        final List<Attachment> stagedAttachments =
+                java.util.Collections.synchronizedList(new ArrayList<>());
+
         // ADR-17 §1 — branch on whether any tools are registered. The document
         // manifest is only useful for resolving a tool argument (briefDocId), so
         // the [YOUR DOCUMENTS] section is injected ONLY when tools are present.
@@ -300,7 +325,8 @@ public class ChatTurnService {
 
         List<ToolBinding> bindings = descriptors.isEmpty()
                 ? List.of()
-                : buildBindings(descriptors, toolEventSink, depth, userCtx);
+                : buildBindings(descriptors, toolEventSink, depth, userCtx,
+                        prep.session().id(), assistantMessageId, stagedAttachments);
 
         Flux<String> rawDeltas = bindings.isEmpty()
                 ? chatGenerationPort.stream(prompt, properties.maxCompletionTokens())
@@ -311,7 +337,13 @@ public class ChatTurnService {
         // internal tool-calling round-trips done by Spring AI). When it
         // terminates, close the tool-event sink so the merge completes.
         Flux<ChatStreamEvent> tokens = rawDeltas
-                .timeout(java.time.Duration.ofSeconds(35))
+                // Inactivity timeout between upstream items. A tool-calling turn
+                // emits no token until the tool round-trip finishes, and a tool may
+                // legitimately take up to its 60s budget (e.g. generate_massing's
+                // LLM brief extraction). So this MUST exceed the max tool budget
+                // (MassingTool 60s + 2s block) — 35s was shorter than the tool
+                // budget and timed out slow massing turns. 90s gives margin.
+                .timeout(java.time.Duration.ofSeconds(90))
                 .doOnNext(accumulated::append)
                 .map(delta -> (ChatStreamEvent) new ChatStreamEvent.Token(delta))
                 .onErrorResume(err -> {
@@ -338,7 +370,8 @@ public class ChatTurnService {
             if (errored.get()) {
                 return Mono.empty();
             }
-            return persistAssistantAndDone(prep, accumulated.toString(), request);
+            return persistAssistantAndDone(
+                    prep, accumulated.toString(), request, assistantMessageId, stagedAttachments);
         });
 
         // Source pipeline — must run to completion on the server even when the
@@ -394,7 +427,8 @@ public class ChatTurnService {
     private static final int MAX_REPLAY_EVENTS = 4096;
 
     private Mono<ChatStreamEvent> persistAssistantAndDone(
-            Preparation prep, String accumulatedText, ChatTurnRequest request) {
+            Preparation prep, String accumulatedText, ChatTurnRequest request,
+            MessageId assistantMessageId, List<Attachment> stagedAttachments) {
         return Mono.fromCallable(() -> {
             if (accumulatedText == null || accumulatedText.isEmpty()) {
                 // The LLM produced no tokens — emit done with empty content so
@@ -417,8 +451,10 @@ public class ChatTurnService {
             int tokensOut = tokenCounter.count(renumber.text).value();
             int retrievalK = prep.retrieved().size();
 
+            // Reuse the UP-FRONT-allocated assistant messageId (ADR-20 §D3) so
+            // any attachments staged mid-stream already point at this row.
             Message assistant = Message.newAssistantTurn(
-                    prep.session().id(), request.caller(), renumber.text,
+                    assistantMessageId, prep.session().id(), request.caller(), renumber.text,
                     tokensIn, tokensOut, retrievalK, clock.instant());
             Message persisted = messageRepository.save(assistant);
 
@@ -439,17 +475,67 @@ public class ChatTurnService {
                 messageRepository.saveCitations(toPersist);
             }
 
+            // ADR-20 §D3 — persist the staged attachments (already in MinIO,
+            // already linked to assistantMessageId). The snapshot copy avoids a
+            // concurrent-modification read while the (now-terminated) tool
+            // callbacks could in theory still be appending.
+            List<Attachment> attachments;
+            synchronized (stagedAttachments) {
+                attachments = new ArrayList<>(stagedAttachments);
+            }
+            if (!attachments.isEmpty()) {
+                attachmentRepository.saveAll(attachments);
+            }
+
             log.info("stream_end sessionId=" + prep.session().id()
                     + " userId=" + request.caller()
                     + " userSub=" + maskSub(request.userSub())
                     + " messageId=" + persisted.id()
                     + " tokensIn=" + tokensIn
                     + " tokensOut=" + tokensOut
-                    + " cited=" + toPersist.size());
+                    + " cited=" + toPersist.size()
+                    + " attachments=" + attachments.size());
 
-            return (ChatStreamEvent) new ChatStreamEvent.Done(
-                    persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
+            // ADR-20 §D4 — surface the last produced attachment on `done` so the
+            // FE's MassingResultCard can read fileUrl + the attachment object
+            // even if it joined the stream after the tool_result event.
+            ChatStreamEvent.Done done = !attachments.isEmpty()
+                    ? doneWithAttachment(persisted.id(), tokensIn, tokensOut, wireCitations,
+                            attachments.get(attachments.size() - 1))
+                    : new ChatStreamEvent.Done(
+                            persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
+            return (ChatStreamEvent) done;
         }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Build a {@code done} event whose {@code citations} payload is wrapped so
+     * the FE receives both the cited subset AND the ADR-20 §D4 attachment object
+     * + top-level {@code fileUrl} (back-compat for MassingResultCard). The
+     * controller serializes the {@code citations} object verbatim, so we ship a
+     * map carrying {@code {citations, attachment, fileUrl}}.
+     */
+    private ChatStreamEvent.Done doneWithAttachment(
+            MessageId messageId, int tokensIn, int tokensOut,
+            List<CitationDto> wireCitations, Attachment attachment) {
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("citations", wireCitations);
+        payload.put("attachment", attachmentWire(attachment));
+        payload.put("fileUrl", ATTACHMENT_DOWNLOAD_PREFIX + attachment.id());
+        return new ChatStreamEvent.Done(
+                messageId.value().toString(), tokensIn, tokensOut, payload);
+    }
+
+    /** Wire-shape attachment object per ADR-20 §D4 ({id, filename, contentType, sizeBytes, downloadUrl}). */
+    private java.util.Map<String, Object> attachmentWire(Attachment attachment) {
+        String downloadUrl = ATTACHMENT_DOWNLOAD_PREFIX + attachment.id();
+        java.util.Map<String, Object> wire = new java.util.LinkedHashMap<>();
+        wire.put("id", attachment.id().toString());
+        wire.put("filename", attachment.filename());
+        wire.put("contentType", attachment.contentType());
+        wire.put("sizeBytes", attachment.sizeBytes());
+        wire.put("downloadUrl", downloadUrl);
+        return wire;
     }
 
     /**
@@ -528,11 +614,15 @@ public class ChatTurnService {
             List<ToolDescriptor> descriptors,
             Sinks.Many<ChatStreamEvent> sink,
             AtomicInteger depth,
-            UserContext userCtx) {
+            UserContext userCtx,
+            SessionId sessionId,
+            MessageId assistantMessageId,
+            List<Attachment> stagedAttachments) {
         List<ToolBinding> bindings = new ArrayList<>(descriptors.size());
         for (ToolDescriptor d : descriptors) {
             ToolDescriptor desc = d;
-            bindings.add(new ToolBinding(desc, args -> handleToolInvocation(desc, args, sink, depth, userCtx)));
+            bindings.add(new ToolBinding(desc, args -> handleToolInvocation(
+                    desc, args, sink, depth, userCtx, sessionId, assistantMessageId, stagedAttachments)));
         }
         return bindings;
     }
@@ -542,7 +632,10 @@ public class ChatTurnService {
             JsonNode args,
             Sinks.Many<ChatStreamEvent> sink,
             AtomicInteger depth,
-            UserContext userCtx) {
+            UserContext userCtx,
+            SessionId sessionId,
+            MessageId assistantMessageId,
+            List<Attachment> stagedAttachments) {
         String id = "call_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 24);
         int newDepth = depth.incrementAndGet();
         int maxDepth = properties.toolMaxDepth();
@@ -559,7 +652,20 @@ public class ChatTurnService {
 
         ToolInvocationResult result = toolDispatcherPort.invoke(id, desc.name(), args, userCtx);
         if (result instanceof ToolInvocationResult.Success s) {
-            sink.tryEmitNext(new ChatStreamEvent.ToolResult(s.id(), s.name(), s.body()));
+            // ADR-20 §D3 — if the tool emitted an artifact, store it to MinIO
+            // and stage an Attachment linked to the (pre-allocated) assistant
+            // message. Only the LLM-visible `body` (result) reaches the LLM +
+            // the tool_result SSE result field; the bytes never enter context.
+            Attachment attachment = null;
+            if (s.artifact() != null) {
+                attachment = storeArtifact(
+                        s.artifact(), desc.name(), sessionId, assistantMessageId, stagedAttachments);
+            }
+            // tool_result SSE result carries the LLM result PLUS (per ADR-20 §D4)
+            // an `attachment` object + top-level `fileUrl` for the FE. The
+            // LLM-bound feedback below is the bare `body` only.
+            sink.tryEmitNext(new ChatStreamEvent.ToolResult(
+                    s.id(), s.name(), enrichResultForSse(s.body(), attachment)));
             // Truncate the body to the configured cap if needed for the
             // LLM-bound feedback. The dispatcher already truncates at its
             // own boundary (ADR-17 §4) but we re-cap here defensively
@@ -582,6 +688,80 @@ public class ChatTurnService {
         err.put("code", f.code().name());
         err.put("message", f.message() == null ? "" : f.message());
         return err;
+    }
+
+    /**
+     * Stage an {@link Attachment} from the tool artifact per ADR-20 §D3 revised.
+     *
+     * <p>agent-tools owns the MinIO write path and already stored the file before
+     * returning its response. This method just records the pointer — allocates an
+     * {@link AttachmentId}, creates the domain object with the pre-existing
+     * {@code storageKey}, and adds it to {@code stagedAttachments} for batch
+     * persist in {@code persistAssistantAndDone}.
+     */
+    private Attachment storeArtifact(
+            ToolArtifact artifact,
+            String toolName,
+            SessionId sessionId,
+            MessageId assistantMessageId,
+            List<Attachment> stagedAttachments) {
+        try {
+            AttachmentId attachmentId = AttachmentId.generate();
+            Attachment attachment = Attachment.toolArtifact(
+                    attachmentId,
+                    assistantMessageId,
+                    artifact.filename(),
+                    artifact.contentTypeOrDefault(),
+                    artifact.sizeBytes(),
+                    artifact.storageKey(),
+                    toolName,
+                    clock.instant());
+            stagedAttachments.add(attachment);
+            log.info("tool_artifact_staged tool=" + toolName
+                    + " attachmentId=" + attachmentId
+                    + " messageId=" + assistantMessageId
+                    + " sizeBytes=" + artifact.sizeBytes()
+                    + " storageKey=" + artifact.storageKey());
+            return attachment;
+        } catch (RuntimeException e) {
+            // Unexpected — staging should be infallible (no I/O). Log and degrade
+            // gracefully so the turn still completes without the attachment.
+            log.warn("tool_artifact_stage_failed tool=" + toolName
+                    + " messageId=" + assistantMessageId + " reason=" + e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * Build the {@code tool_result} SSE result payload (ADR-20 §D4): the
+     * LLM-visible result body, plus — when an artifact was captured — an
+     * {@code attachment} object and a top-level {@code fileUrl} the FE's
+     * MassingResultCard reads. When there's no artifact, the body is returned
+     * unchanged (M7 wire shape, byte-identical for plain tools).
+     */
+    private Object enrichResultForSse(JsonNode body, Attachment attachment) {
+        if (attachment == null) {
+            return body;
+        }
+        ObjectNode enriched;
+        if (body != null && body.isObject()) {
+            enriched = ((ObjectNode) body).deepCopy();
+        } else {
+            // Non-object result (rare for a file-producing tool) — nest it under
+            // `result` so the attachment fields have somewhere to live.
+            enriched = objectMapper.createObjectNode();
+            enriched.set("result", body == null ? objectMapper.nullNode() : body.deepCopy());
+        }
+        String downloadUrl = ATTACHMENT_DOWNLOAD_PREFIX + attachment.id();
+        ObjectNode attachmentNode = objectMapper.createObjectNode();
+        attachmentNode.put("id", attachment.id().toString());
+        attachmentNode.put("filename", attachment.filename());
+        attachmentNode.put("contentType", attachment.contentType());
+        attachmentNode.put("sizeBytes", attachment.sizeBytes());
+        attachmentNode.put("downloadUrl", downloadUrl);
+        enriched.set("attachment", attachmentNode);
+        enriched.put("fileUrl", downloadUrl);
+        return enriched;
     }
 
     /**
