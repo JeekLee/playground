@@ -107,6 +107,12 @@ M2 or M3. The cross-BC reads in M4 are SQL-shaped, not event-shaped; the
 schema coupling at SQL layer is governed by §3 below and the ADR-08
 amendment in §G.4. No event POJO mirroring in `rag-chat-domain`.
 
+> Amendment (2026-06-01, ADR-14): the M8 cycle adds a **third**
+> SQL-shaped cross-schema read into `docs.documents` (the document
+> manifest for `[YOUR DOCUMENTS]`) — see §3's table and the
+> bottom-of-ADR amendment §A14M8. It is still SQL-shaped, not
+> event-shaped; no event POJO mirroring is introduced.
+
 ### 2. Port assignment — 18084, gateway-routable
 
 **Decision:** `rag-chat-api` binds **port 18084** on
@@ -155,6 +161,7 @@ fork: read-only cross-schema SELECT, no HTTP hop, for three predicates.
 | `rag-chat-api` → `rag.document_chunks` | `WHERE visibility='public' OR (user_id=? AND visibility='private') ORDER BY embedding <=> :q LIMIT :k` per spec §6.1 step 6 | Already sanctioned by ADR-05's amendment: "rag-chat reads `rag.document_chunks`" is the canonical retrieval primitive per ADR-13 §G.4. An HTTP retrieval RPC would force every per-turn vector search through a service hop — defeats the purpose of pgvector's HNSW being a sub-millisecond primitive. |
 | `rag-chat-api` → `docs.documents` | `SELECT id, title, visibility FROM docs.documents WHERE id IN (:retrieved_doc_ids)` for citation enrichment (spec §6.1 step 7) | Tight latency budget — citation enrichment runs inside the TTFT P95 ≤ 2.0 s envelope per spec §10. Batched single-query JOIN is sub-millisecond; the alternative is a per-citation HTTP fan-out via docs-api's `/internal/docs/public/{id}` route (ADR-12 §2), which would burn ~6 × ~5 ms RTT = 30 ms per turn for no schema-coupling benefit (the SELECT is `(id, title, visibility)` — three stable columns; M2 has not shipped a column rename in the docs BC). |
 | `rag-chat-api` → `identity.users` | `SELECT display_name, avatar_url FROM identity.users WHERE id = :user_id` for chat-header rendering (spec §3) | Single-row, single-column-set, called once per session-page-load (not per turn). Could equally well go through identity-api's `/internal/users/by-id/{id}` HTTP route — but that route **does not exist yet** (the existing one is `/internal/users/by-google-sub/{sub}` per ADR-12 §8, lookup by Google sub not by UUID). Adding a new `/internal/**` route to identity-api just for the display-name lookup would be a second amendment to ADR-08; SELECT is the lower-coupling choice given M4 already reads `docs.documents` cross-schema. |
+| `rag-chat-api` → `docs.documents` (manifest) | `SELECT id, title, mime_type, extraction_status FROM docs.documents WHERE user_id = ? ORDER BY created_at ASC LIMIT 30` for the `[YOUR DOCUMENTS]` prompt section — **added by the 2026-06-01 (M8) amendment below.** | Third sanctioned SELECT; same SQL-layer posture as the citation-enrichment row above (rag-chat already reads `docs.documents` cross-schema). See the bottom-of-ADR amendment §A14M8 for the full rationale + trade-offs. |
 
 **Considered alternative for display name (spec §11 Q3):** add a new
 identity-api `GET /internal/users/by-id/{id}` route and reuse the M2
@@ -1470,6 +1477,14 @@ Streaming response continues unaffected.
 - ADR-13 §F — `rag.document_chunks` DDL (M4 SELECTs against it)
 - ADR-13 §G.2 — `SET LOCAL hnsw.ef_search = 40` runtime hint (M4 owns
   the SET; ADR-13 documents the contract)
+- ADR-17 (amended above — A14.1–A14.7) — M7 tool-calling SSE grammar
+  reconciliation
+- ADR-18 §Exception 5 — `massing-gen-api` → `docs-api` HTTP brief-body
+  read. Contrasted in the 2026-06-01 amendment §A14M8.1: that is a
+  fresh ADR-08 HTTP exception because massing-gen has no cross-schema
+  posture; rag-chat's manifest read is a SELECT because rag-chat
+  already holds the `chat,docs,rag,identity` search path. Not amended
+  by this ADR.
 - `docs/prd/M4-rag-chat.md` — M4 PRD (the user-stories surface this
   ADR resolves §11 against)
 - `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md` — M4 spec
@@ -1651,3 +1666,158 @@ between them.
 
 See `docs/adr/17-m7-rag-chat-tool-calling.md` §1 + §2 + §3 + §5 +
 §8 + §10 for the full M7 specification.
+
+## Amendment 2026-06-01 (ADR-14, M8) — document manifest injection for multi-turn tool-arg resolution
+
+The M8 PR set (PR #207, merged `fc0a7b7`) makes natural-language
+document references resolve to a tool's `briefDocId`. Before this,
+the model was never shown any document UUID, so `generate_massing`'s
+required `briefDocId: uuid` argument was model-invented on a turn like
+"두 번째 문서로 매스 만들어줘" (an ordinal reference with no UUID) →
+hallucinated UUID → `massing-gen` 404. The fix injects the caller's
+document manifest into the prompt; E2E-proven to emit the real UUID of
+the second-uploaded document. This amendment is **additive** — every
+shipped M4 invariant (§3, §10, §12) and the M7 SSE grammar (A14.1–A14.7)
+are preserved; the M4 no-tool prompt stays byte-identical.
+
+### A14M8.1. A third sanctioned cross-schema SELECT into `docs.documents`
+
+**Decision: `rag-chat-api` reads `docs.documents` a second way — a
+per-user document manifest — via cross-schema SELECT, extending §3's
+table.** This is the **third** sanctioned SELECT (after `rag.document_chunks`
+retrieval and `docs.documents` citation enrichment), and the **second**
+predicate into `docs.documents`.
+
+| Concern | Pin |
+|---|---|
+| Port (in `rag-chat-app`) | `UserDocumentManifestPort.recentForUser(UserId, int limit)` |
+| Domain record (in `rag-chat-domain`) | `UserDocumentRef(int ordinal, UUID documentId, String title, String mimeType, String extractionStatus)` — `ordinal` 1-indexed, Spring-free |
+| Adapter (in `rag-chat-infra`) | `CrossSchemaUserDocumentManifestAdapter` — `SELECT id, title, mime_type, extraction_status FROM docs.documents WHERE user_id = ? ORDER BY created_at ASC LIMIT ?`, `JdbcTemplate`, fully-qualified table name |
+| Posture | Identical to `CrossSchemaCitationResolverAdapter` (citation enrichment) and `IdentityDisplayNameAdapter` (display name) — same `chat,docs,rag,identity` search path (§3.1), same `JdbcTemplate` blocking-read wrapped on bounded-elastic per §17 |
+
+**Why SELECT, not HTTP — and why this is NOT an ADR-08 exception:** the
+same lower-coupling rationale §3 already gives for the citation-enrichment
+read. rag-chat already opens a connection to `docs.documents`; the manifest
+is a second predicate on a table the BC already reads cross-schema, not a
+new BC boundary crossing. ADR-08's two HTTP exceptions are not extended and
+no new one is added — the read stays at the SQL layer.
+
+**Contrast with ADR-18 Exception 5 (massing-gen → docs HTTP).** ADR-18
+introduced a *fresh ADR-08 HTTP exception* for `massing-gen-api → docs-api`
+brief-body read precisely because `massing-gen` is a **different BC with no
+cross-schema posture** — it owns no schema-search-path into `docs`, so the
+proportionate channel there is HTTP. rag-chat is the opposite case: it
+*already* holds the `chat,docs,rag,identity` search path (§3.1) and already
+SELECTs `docs.documents` for citations, so a SELECT is strictly lower-coupling
+than minting an HTTP route. The two reads touch the same source table from
+two different BCs by two different channels for sound reasons — this is not
+an inconsistency.
+
+### A14M8.2. Prompt contract — the optional `[YOUR DOCUMENTS]` section
+
+**Decision: `PromptTemplate` gains a 5-arg `assemble(retrieved, history,
+currentUserMessage, perChunkTokenBudget, documents)` overload that renders a
+`[YOUR DOCUMENTS]` section between `[RETRIEVED CONTEXT]` and `[CONVERSATION
+SO FAR]`. The original 4-arg overload delegates to it with `List.of()`.**
+
+Section shape (verbatim per the shipped template):
+
+```
+[YOUR DOCUMENTS]
+The caller's uploaded documents, in upload order. When you call a tool that
+needs a document id (e.g. briefDocId), pick the exact id from this list that
+matches the document the user refers to — by ordinal ("두 번째"/"second"), by
+title, or by type. Never invent an id; if none matches, ask the user.
+1. "<title>" [<mimeType>, <extractionStatus>] id=<uuid>
+2. "<title>" [<mimeType>, <extractionStatus>] id=<uuid>
+...
+```
+
+**Invariant (preserves §10/§12 and the PromptTemplate fixtures): an empty or
+null `documents` list renders NOTHING — no header, no blank line — so the M4
+no-tool prompt is byte-identical to the pre-M8 output.** The existing
+`rag-chat-domain` `PromptTemplate` fixtures (§16) that assert exact string
+output for the 4-arg path remain green unchanged; the new section is covered
+by separate fixtures driven through the 5-arg overload.
+
+`MassingTool`'s `briefDocId` JSON-schema `description` is updated to instruct
+the model to "Copy the exact id from the `[YOUR DOCUMENTS]` list … Never
+invent a uuid." — the prompt section and the tool-arg schema reinforce each
+other.
+
+### A14M8.3. Ordering = `created_at ASC` (upload order), deliberately
+
+**Decision: the manifest is ordered `created_at ASC` (upload order), NOT the
+`updated_at DESC` that `GET /api/docs?scope=mine` uses.** The `ordinal` field
+is the 1-indexed position in that ASC order, so "두 번째 문서" resolves to the
+document the user *uploaded second* — a stable, user-intuitive anchor that
+does not shuffle when a document is later edited (which would bump
+`updated_at`). The two orderings are intentionally different and serve
+different surfaces: the docs list is "what did I touch most recently", the
+chat manifest is "the Nth thing I uploaded".
+
+**Limit: 30** (`DOCUMENT_MANIFEST_LIMIT` in `ChatTurnService`). Bounds the
+token cost of the section and the per-turn read.
+
+**Cost:** one extra indexed SELECT in the prepare phase (`guardAndPrepare`).
+The query filters `user_id = ?` and orders `created_at ASC`; the existing
+docs index `ix_docs_user_updated` is on `(user_id, updated_at)`, so this
+query is a per-user scan + sort on `created_at` rather than an index-ordered
+read. At personal scale (≤30 rows per user after the `LIMIT`, small per-user
+partition) this is a sub-millisecond scan well inside the §8 TTFT budget. A
+covering `(user_id, created_at)` index on `docs.documents` would make it an
+index-ordered read, but **this ADR does not change DDL** — `docs.documents`
+is M2-owned (ADR-12 / ADR-05) and the current cost does not warrant a
+migration. Flagged here for the M2/docs owner to consider only if a future
+profile shows it material; M4/M8 does not require it.
+
+### A14M8.4. Injection gating — manifest enters the prompt only when tools are registered
+
+**Decision: `ChatTurnService` fetches the manifest in `guardAndPrepare` and
+carries it in `Preparation`, but passes it to `assemble(...)` ONLY when the
+tool-descriptor list is non-empty (the ADR-17 §1 tool branch).** When no
+tools are registered, `promptDocuments = List.of()` and the §A14M8.2 empty
+invariant keeps the M4 path inert and byte-identical.
+
+```java
+List<ToolDescriptor> descriptors = toolDescriptorSupplier.get();
+List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : prep.documents();
+```
+
+This bounds the token cost to turns that can actually use a `briefDocId` and
+keeps the no-tool path's prompt unchanged.
+
+**Graceful degradation:** the manifest fetch is wrapped in try/catch in
+`guardAndPrepare`; a lookup failure logs `document_manifest_lookup_failed` at
+WARN and substitutes an empty list. An empty manifest (lookup failed, or the
+user has uploaded nothing) omits the `[YOUR DOCUMENTS]` section and the turn
+proceeds — the model simply cannot resolve an ordinal/title reference and (per
+the prompt instruction) asks the user. The manifest is non-critical, mirroring
+the display-name read's graceful-degrade posture in §3.
+
+### A14M8.5. Security / tenant — caller-scoped, own ids only
+
+**Decision: the SELECT is scoped `WHERE user_id = ?` (the `X-User-Id`
+caller), so the manifest exposes only the caller's own documents** — the same
+tenant invariant as M4 retrieval (§3.2) and consistent with ADR-09's
+"backends trust the header" rule. Raw document UUIDs now appear in the model's
+context, which is acceptable: they are the caller's own ids, and tool dispatch
+downstream (ADR-17 / ADR-18) re-enforces `X-User-Id` ownership when the brief
+is fetched — a model that copied an id it was shown cannot reach another
+user's document because the downstream owner check still gates the read.
+
+### A14M8.6. Files + identifiers
+
+| Concern | Identifier |
+|---|---|
+| Domain record | `UserDocumentRef` (`rag-chat-domain`) |
+| App port | `UserDocumentManifestPort.recentForUser(UserId, int)` (`rag-chat-app`) |
+| Infra adapter | `CrossSchemaUserDocumentManifestAdapter` (`rag-chat-infra`) |
+| Prompt assembler | `PromptTemplate.assemble(...)` 5-arg overload → `[YOUR DOCUMENTS]` (`rag-chat-domain`) |
+| Orchestration | `ChatTurnService.guardAndPrepare` / `Preparation.documents()` / `DOCUMENT_MANIFEST_LIMIT = 30` (`rag-chat-app`) |
+| Tool-arg reinforcement | `MassingTool` `briefDocId` schema `description` (`rag-chat-domain`) |
+
+This amendment supersedes nothing; ADR-08 is **not** amended (no new HTTP
+exception), and ADR-18's Exception 5 is untouched (the contrast in §A14M8.1 is
+explanatory, not a change). The §3 cross-schema table and §1.5 note carry
+inline pointers here.
