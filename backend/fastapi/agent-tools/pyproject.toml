@@ -1,7 +1,7 @@
 [project]
-name = "massing-gen"
+name = "agent-tools"
 version = "0.1.0"
-description = "M8 massing-gen BC — brief-to-massing tool (Python/FastAPI)"
+description = "agent-tools — Python host for LLM-tool BCs (ADR-19); first BC: architecture (brief-to-massing)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi==0.115.5",

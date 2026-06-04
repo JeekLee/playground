@@ -1,14 +1,21 @@
-# massing-gen — M8 brief-to-massing tool BC
+# agent-tools — Python host for LLM-tool BCs (first BC: `architecture`)
 
-First polyglot BC in the playground project. Python 3.12 + FastAPI per
-ADR-18 §A18.1 — flipped from the originally-planned Java/Spring quadruplet
-because `.3dm` serialization requires the rhino3dm library, which has a
-first-class Python binding (`pip install rhino3dm`) and no Java binding.
+`agent-tools` is the playground's single Python/FastAPI host for small
+LLM-tool bounded contexts (ADR-19 §D1). Its first BC is `architecture`
+(brief → massing → `.3dm`; tool `generate_massing`), originally shipped as
+`massing-gen` in M8 and renamed per ADR-19 §D2. Python per ADR-18 §A18.1 —
+flipped from the originally-planned Java/Spring quadruplet because `.3dm`
+serialization requires the rhino3dm library, which has a first-class Python
+binding (`pip install rhino3dm`) and no Java binding.
+
+> Phase 1 (ADR-19) is **rename only** — the cohesive `app` package is kept.
+> The host/BC package split (`agent-tools/app` + `agent-tools/architecture`)
+> and LangGraph adoption are Phase 2.
 
 ## Layout
 
 ```
-backend/fastapi/massing-gen/
+backend/fastapi/agent-tools/
 ├── Dockerfile          — multi-stage Python 3.12-slim + pip install
 ├── pyproject.toml      — deps + tooling pins
 ├── schema.sql          — arch.outputs DDL (hand-rolled, P0)
@@ -46,7 +53,7 @@ backend/fastapi/massing-gen/
 ## Tests
 
 ```bash
-cd backend/fastapi/massing-gen
+cd backend/fastapi/agent-tools
 pip install -e ".[test]"
 pytest
 ```
