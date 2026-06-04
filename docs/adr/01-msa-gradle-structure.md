@@ -545,3 +545,99 @@ three-pronged test.
 
 See `docs/adr/18-m8-massing-gen.md` §A18.1–§A18.9 for the full M8
 Python flip specification.
+
+## Amendment 2026-06-04 (ADR-19) — `agent-tools` multi-BC Python host + Python-side BC-per-service divergence
+
+> This amendment is appended to ADR-01 following the M8 Python-flip
+> block (§A01.11–§A01.14) above. ADR-19 pivots the Python side from
+> "one container per Python BC" (the §A01.14 framing) to a single
+> multi-BC host service, `agent-tools`. The §A01.11–§A01.14 block is
+> **not rewritten** — it remains the audit record of the
+> one-container-per-Python-BC intent at M8 ship. This amendment
+> supersedes §A01.13's `massing-gen-api` service/hostname row and
+> refines §A01.14's "future polyglot BC pattern" for the LLM-tool
+> sub-case. The Java side is **untouched** — Java BCs remain
+> one-quadruplet-per-BC per §A01.2.
+
+### §A01.15. `agent-tools` — single Python host for multiple LLM-tool BCs
+
+**Decision: the Python/FastAPI runtime is no longer one-service-per-BC.
+A single deployable host service, `agent-tools`, hosts multiple
+LLM-tool bounded contexts as self-contained directory modules under
+`backend/fastapi/agent-tools/<bc>/`. This is a deliberate divergence
+from ADR-01's "one BC = one deployable service" invariant (§A01.2),
+scoped to the Python side and to small LLM-tool BCs only. Java BCs are
+unaffected.** (See ADR-19 §D1 for the full rationale and trade-offs.)
+
+| Concern | Decision |
+|---|---|
+| Host service name | **`agent-tools`** (compose service / `container_name` / `hostname` / image `playground/agent-tools:dev`) |
+| Port | **18083** (unchanged; reclaims the slot `massing-gen-api` held under §A01.13) |
+| Runtime | Python 3.12 + FastAPI + uvicorn — single ASGI app, per-BC routers mounted under their own prefixes |
+| Repo layout | `backend/fastapi/agent-tools/` is the host; each BC is a directory module `backend/fastapi/agent-tools/<bc>/`; host-shared plumbing lives at `backend/fastapi/agent-tools/app/` (LLM client, docs-api client, config, app factory, observability) |
+| Per-BC ownership | each BC owns its own DB schema (schema-per-BC per ADR-05 still holds), own gateway route prefix, own `ToolCatalog` descriptor(s), own prompts/LLM code; BCs do not import each other's domain modules |
+
+**Divergence trade-off (honest statement):** the co-located BCs share
+one process, one container, one deploy unit, one failure domain, and
+one scaling unit. A crash / OOM / CPU-bound request / dependency bump
+in one BC affects all BCs in `agent-tools`. Accepted in exchange for
+**not duplicating the Python / LLM / LangGraph stack per tiny tool BC**
+and for keeping the polyglot footprint bounded to exactly one Python
+service — the strongest reading of §A01.11's "polyglot risk is
+bounded". Qualifies only for small LLM-tool BCs with no independent
+SLA; a Python BC that outgrows co-location graduates to its own
+container under a future ADR amendment.
+
+### §A01.16. `massing-gen-api` service retired → `agent-tools`; port table
+
+**Decision: the `massing-gen-api` compose service / hostname (pinned
+under §A01.13) is **retired** and replaced by `agent-tools` on the same
+port 18083. The `massing-gen` BC is renamed to `architecture` and
+relocates to `backend/fastapi/agent-tools/architecture/` (see ADR-19
+§D2 for the full rename change-set and ADR-18 §A18.10).**
+
+Java module count is **unchanged** (still 22 — the Python host is not a
+Gradle module). Total runnable backend containers is **unchanged at 6**
+(gateway + 4 Java BC `-api`s + 1 Python host) — the Python host count
+stays 1; it now carries multiple BCs instead of one.
+
+Port table (supersedes §A01.13's `massing-gen-api` row):
+
+| Module / host | Port | Host-exposed? | Runtime |
+|---|---|---|---|
+| `gateway` | **18080** | yes (single ingress) | Java (Spring Boot 3.3) |
+| `identity-api` | **18081** | no | Java |
+| `docs-api` | **18082** | no | Java |
+| **`agent-tools`** | **18083** | **no** | **Python 3.12 (FastAPI + uvicorn)** — multi-BC host; hosts the `architecture` BC (was `massing-gen-api`) |
+| `rag-chat-api` | **18084** | no | Java |
+| (reserved) | 18085 | reserved for next Java BC | — |
+| `metrics-api` | **18086** | no | Java |
+
+Top-level Python layout (supersedes §A01.12's `backend/fastapi/`
+sketch):
+
+```
+backend/fastapi/
+└── agent-tools/            # single Python host service (port 18083)
+    ├── pyproject.toml      # one dependency set for all hosted BCs (incl. LangGraph from Phase 2)
+    ├── Dockerfile          # python:3.12-slim + uvicorn agent_tools.main:app
+    ├── app/                # host-shared plumbing (LLM client, docs client, config, observability, app factory)
+    └── architecture/       # the architecture BC (was massing-gen): schema arch, /api/arch/**, generate_massing
+        └── (future sibling architecture tools land as new BC modules here)
+```
+
+### §A01.17. Future Python LLM-tool BC pattern (refines §A01.14)
+
+**Decision: a future Python LLM-tool BC defaults to a **new directory
+module inside `agent-tools`** (`backend/fastapi/agent-tools/<bc>/`),
+NOT a new container. §A01.14's single-container-per-polyglot-BC pattern
+still applies to non-tool Python BCs and to any Python BC needing
+independent isolation / scaling — those graduate to their own container
+under a per-milestone ADR.**
+
+The §A01.11 three-pronged polyglot test still gates *adding Python at
+all*. Once a Python LLM-tool BC qualifies, §A01.15 makes its default
+home `agent-tools` rather than a fresh container.
+
+See `docs/adr/19-agent-tools-host-and-architecture-bc.md` for the full
+specification.
