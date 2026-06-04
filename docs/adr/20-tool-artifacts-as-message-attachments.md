@@ -69,7 +69,8 @@ A tool's HTTP response to the dispatcher MAY carry an optional `artifact`
 {
   "result":   { "summary": "...", "programJson": {...}, "floorCount": 4, ... },
   "artifact": { "filename": "...", "contentType": "application/octet-stream",
-                "base64": "<bytes>" }
+                "sizeBytes": 20480,
+                "storageKey": "architecture/massing/20260604/<uuid>/massing-<slug>.3dm" }
 }
 ```
 
@@ -77,27 +78,35 @@ A tool's HTTP response to the dispatcher MAY carry an optional `artifact`
   SSE event — **`artifact` never enters the LLM context** (D-context #3).
 - `artifact` is optional; tools that produce no file omit it (M7 behaviour
   unchanged for them).
-- 20 KB base64 over the internal `rag-chat → agent-tools` HTTP hop is fine
-  (it is not the LLM context). If artifacts grow large later, a streaming /
-  fetch-by-reference variant can replace the inline base64 — out of scope now.
+- **No bytes in the HTTP response** — see D3 revised. The artifact object
+  carries only metadata (filename, contentType, sizeBytes, storageKey).
 
-### D3 — rag-chat owns MinIO storage (mirrors docs-api ADR-12 §A12.4)
+### D3 — agent-tools owns MinIO write; rag-chat owns download (revised 2026-06-04)
 
-- New `BlobStoragePort` (rag-chat-app) + `MinioBlobStorageAdapter`
-  (rag-chat-infra), `libs.minio`, configured for `minio-playground` (already
-  on `playground-net`). rag-chat gains `MINIO_*` env (same pattern as docs).
-- Object key convention: `chat/{sessionId}/{messageId}/{attachmentId}-{filename}`.
-- Flow inside the turn: the ToolDispatcher receives `{result, artifact}` →
-  if `artifact` present → `BlobStoragePort.put(key, bytes)` → build an
-  `Attachment(messageId=<assistant message>, storageKey=key, …)` → persist in
-  `chat.message_attachments`. The `tool_result` / `done` payload carries the
-  attachment **download URL** (see D4), not a tool-BC URL.
+**Revised:** initial design had rag-chat receive base64 bytes and upload to MinIO.
+Revised so that **agent-tools owns the write path** — the `store` LangGraph node
+uploads the bytes to MinIO before returning the response, then puts the
+`storageKey` in `artifact`. This keeps the storage concern cohesive with the
+generator.
+
+- **agent-tools (`architecture` BC)**: new `store` node (after `serialize`,
+  before `respond`) calls `infra/blob_storage.upload_artifact()` → MinIO PUT.
+  Gains `PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT/BUCKET` + `MINIO_ROOT_*` env.
+  Object key convention: `architecture/massing/{date}/{uuid}/{filename}`.
+- **rag-chat dispatcher**: receives `{result, artifact}` with metadata only →
+  if `artifact` present → allocate `AttachmentId` → build
+  `Attachment(messageId=<assistant message>, storageKey=artifact.storageKey, …)`
+  → stage for persist. **No `BlobStoragePort.put()`** call from rag-chat.
+- **rag-chat** still needs `BlobStoragePort.get()` for the download endpoint
+  (D4). `PLAYGROUND_RAGCHAT_MINIO_ENDPOINT/BUCKET` + `MINIO_ROOT_*` remain in
+  rag-chat's env for the GET path. Both services share the same bucket
+  (`rag-chat-attachments`) so GET works with the storageKey agent-tools produced.
 
 **Integration note (timing):** the tool dispatch happens mid-stream (Spring AI
 function-calling callback) before the assistant message is persisted. The
-assistant `messageId` must therefore be allocated up-front (or the attachment
-staged and linked at `persistAssistantAndDone`). The implementer pins the
-exact sequencing; the invariant is: an attachment is always linked to the
+assistant `messageId` must therefore be allocated up-front; the `Attachment`
+staging runs in `handleToolInvocation`, and batch-persist runs in
+`persistAssistantAndDone`. Invariant: an attachment is always linked to the
 assistant message of the turn that produced it.
 
 ### D4 — Download relocates to rag-chat; agent-tools store retired
