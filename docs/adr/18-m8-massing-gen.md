@@ -1902,3 +1902,14 @@ unchanged.
 
 See `docs/adr/19-agent-tools-host-and-architecture-bc.md` §D2 for the
 full rename change-set and §D5 for the Phase-2/Phase-3 roadmap.
+
+## Amendment 2026-06-04 (ADR-20) — `arch.outputs` BYTEA store + `/api/arch/outputs/{id}` retired
+
+ADR-20 supersedes ADR-18 §12/§21 storage+download: the `architecture` BC
+(agent-tools) becomes a **stateless generator** — `generate_massing` returns
+`{result, artifact}` (the `.3dm` as `artifact` bytes) and no longer writes
+`arch.outputs` or serves `/outputs/{id}`. The `.3dm` is persisted by rag-chat
+as a message attachment in MinIO (ADR-20 §D3/§D4). The `arch` schema +
+`arch.outputs` table are dropped. `/internal/tools/generate-massing`, the
+`generate_massing` tool name, the brief→massing algorithm, and the Korean
+summary are unchanged.

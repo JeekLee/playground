@@ -1821,3 +1821,16 @@ This amendment supersedes nothing; ADR-08 is **not** amended (no new HTTP
 exception), and ADR-18's Exception 5 is untouched (the contrast in §A14M8.1 is
 explanatory, not a change). The §3 cross-schema table and §1.5 note carry
 inline pointers here.
+
+## Amendment 2026-06-04 (ADR-20) — message attachments + MinIO blob store in rag-chat
+
+ADR-20 adds tool-artifact persistence to rag-chat: a new `Attachment` domain
+entity (rag-chat-domain; the `Message` aggregate references it) + table
+**`chat.message_attachments`** (id, messageId, kind, filename, contentType,
+sizeBytes, storageKey, toolName, createdAt — **MinIO key + metadata only, no
+bytes**). New `BlobStoragePort` (rag-chat-app) + `MinioBlobStorageAdapter`
+(rag-chat-infra, `libs.minio`, `minio-playground`) mirroring docs-api ADR-12
+§A12.4; rag-chat gains `MINIO_*` env. New owner-only download
+`GET /api/rag/chat/attachments/{id}` (X-User-Id match → else 404; RFC-6266
+Content-Disposition). `contentType` is stored to drive type-aware FE previews
+(ADR-20 §D5), not just download. This is the first time rag-chat writes a blob store.

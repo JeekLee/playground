@@ -994,3 +994,14 @@ tool BC's internals are a straight line or a LangGraph graph.
 
 See `docs/adr/19-agent-tools-host-and-architecture-bc.md` §D3–§D4 for
 the full specification.
+
+## Amendment 2026-06-04 (ADR-20) — tool→dispatcher contract gains an optional non-LLM `artifact`
+
+ADR-20 extends the tool result contract: a tool's HTTP response MAY carry
+`{result, artifact?}` where `artifact` = `{filename, contentType, base64}`.
+The ToolDispatcher feeds **only `result`** to the LLM + the `tool_result` SSE
+(M7 unchanged for tools without an artifact); when present, `artifact` bytes
+are routed **off the LLM path** to MinIO and recorded as a `chat.message_attachments`
+row bound to the assistant message (see ADR-20 §D2/§D3). The orchestration
+boundary (§D3 / ADR-19) still holds — the dispatcher merely persists what a
+tool emitted; tools do not orchestrate. `generate_massing` is the first emitter.

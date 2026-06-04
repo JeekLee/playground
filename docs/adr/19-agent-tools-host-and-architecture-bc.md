@@ -480,3 +480,14 @@ Hexagonal **ports** (`DocsPort` / `LlmPort` / `MassingRepositoryPort` in `app`,
 implemented in `infra`/`shared_kernel`) are deferred to Phase 3, when the
 re-prompt + converge loops make the indirection pay off. Env-var renames and
 the `config` host/BC split remain deferred (Phase-2a note).
+
+## Amendment 2026-06-04 (ADR-20) — architecture BC is a stateless generator; download moves to rag-chat
+
+ADR-20 retires the `/api/arch/**` download route + `arch.outputs` BYTEA store
+that ADR-19 §D2 preserved. The `architecture` BC now returns the `.3dm` as a
+tool-result `artifact` (ADR-20 §D2); rag-chat stores it in MinIO + serves the
+download as a message attachment (`GET /api/rag/chat/attachments/{id}`). The
+gateway `/api/arch/**` route is removed. The `infra` layer's persistence
+(ArchOutput) is dropped; serialization (rhino3dm) stays — it just feeds the
+returned `artifact` instead of a DB row. Port 18083, `/internal/tools/
+generate-massing`, and the 7-node interpretation pipeline are unchanged.
