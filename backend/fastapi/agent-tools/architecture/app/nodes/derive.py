@@ -30,6 +30,7 @@ which triggers the program-resolution re-prompt loop.
 
 from __future__ import annotations
 
+import logging
 from math import ceil
 
 from pydantic import ValidationError
@@ -39,6 +40,8 @@ from architecture.app.state import MassingState
 from architecture.domain.models import ClassifiedBrief, MassingInputs, Zone
 from shared_kernel.config import Settings
 from shared_kernel.errors import MassingError, MassingErrorCode
+
+logger = logging.getLogger(__name__)
 
 
 def derive_inputs(
@@ -133,7 +136,21 @@ def make_derive_node(settings: Settings):
     """Build the derive node: classified + req -> inputs."""
 
     def derive(state: MassingState) -> dict:
-        inputs = derive_inputs(state["classified"], state["req"], settings)
+        classified = state["classified"]
+        inputs = derive_inputs(classified, state["req"], settings)
+        above_gross = sum(z.area_m2 for z in inputs.zones if z.grade == "above")
+        footprint = above_gross / inputs.target_floors_above if inputs.target_floors_above else 0
+        logger.info(
+            "derived footprint_driver=%s above_gross=%.0f → footprint≈%.0f "
+            "floors_above=%d basements=%d (site=%.0f coverage=%.2f)",
+            classified.footprint_driver_m2,
+            above_gross,
+            footprint,
+            inputs.target_floors_above,
+            inputs.basement_levels,
+            inputs.site_area_m2,
+            inputs.coverage_cap,
+        )
         return {"inputs": inputs}
 
     return derive
