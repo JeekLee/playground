@@ -248,6 +248,16 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
   - **Empty table (massing succeeded but with 0 rooms)** — not visualized; backend semantics make this impossible (the algorithm returns ≥ 1 room or the tool emits `tool_error`).
 - **Spacing tokens used:** `spacing.md` 16 px between accordion header and the table; `spacing.sm` 8 px between adjacent table rows; `spacing.md` 16 px gap between the table and the "and N more" footer; `spacing.lg` 24 px gap between accordion content and the card bottom border.
 
+> **2026-06-05 — 3D 미리보기 (post-M8 iteration):** the result card gained a
+> `▸ 3D 미리보기` accordion above `▸ Program details`. It lazy-loads
+> `@google/model-viewer` and renders the preview `.glb` (uploaded by the
+> architecture BC next to the `.3dm`, same key prefix) from
+> `GET /api/rag/chat/attachments/{id}/preview` — 240px inline viewer,
+> camera-controls + auto-rotate. Legacy attachments without a `.glb` show
+> fallback copy inside the accordion when the fetch 404s ("미리보기를 불러올
+> 수 없습니다…"). Spec:
+> `docs/superpowers/specs/2026-06-05-massing-glb-preview-design.md`.
+
 ### 2.5 M8 — `/chat` with `tool_error` card — frame node-id: `78:1437`
 
 - **Purpose:** the failure path. Architect uploads a non-brief PDF (e.g., a CV or a marketing flyer); the LLM extraction step fails. The card surfaces a `BRIEF_EXTRACTION_FAILED` error in `warning` palette with a user-actionable secondary action.
