@@ -69,6 +69,23 @@ target_floors = min(기존 산정 층수, floors_max_by_rooms)   # ≥ 1
    안 들어가는 경우
 3. `Σ(zone 실 면적) > zone_gross × 0.98` (추출 오류 / net-gross 불일치)
 
+**구현 중 확정된 deviation (2026-06-05 plan):**
+1. classify는 sub_spaces를 graded 사본으로 전달 (등급 판정은 classify 책임).
+2. 강등 트리거 4: FFD 단편화 (Σ는 맞지만 슬롯 패킹 불가) — 알고리즘
+   레벨에서 해당 zone 통짜 강등 (`_assign_rooms_ffd` → None).
+3. `RoomWire.zone`은 신규 페이로드에서 항상 세팅 (미분할 zone 행 포함) —
+   FE zone 색 슬롯 순서를 박스 순서와 일치시키는 키. "실별 모드" 판별은
+   `floor != null`.
+4. 분할 기하는 square-aspect shelf가 아니라 **비례 세로 스트립**
+   (width_i = rect_w × area_i/Σ, depth = rect_d) — shelf 방식은 잔여
+   박스가 풋프린트 밖으로 돌출(KFI 기준 24.7m)하고 다중 zone에서
+   이웃 zone과 입체 교차하는 문제가 리뷰에서 확인돼 교체됨. 스트립은
+   경계 초과·교차가 구조적으로 불가능하다. 많은 실은 얇은 스트립이
+   되는 종횡비 한계가 있다 (v1 수용).
+5. FE zone 팔레트는 hex-리터럴 lint 경계 때문에
+   `src/shared/ui/tokens/color.ts`의 `zonePalette`로 정의된다
+   (glb_serializer._PALETTE 미러 — 주석으로 상호 참조 고정).
+
 ### D5. 색상 = zone hue 유지 + 실별 명도 단계 (브레인스톰 A안)
 
 - zone hue: 기존 5색 팔레트, 등장 순서 배정 (변경 없음)
