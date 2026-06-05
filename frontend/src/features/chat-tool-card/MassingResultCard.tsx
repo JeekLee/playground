@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
 import { ToolResultCard } from './ToolResultCard';
@@ -52,9 +52,9 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
   if (state.kind === 'in_flight') {
     return (
       <ToolResultCard
-        ariaLabel="Tool call in flight: generate_massing"
-        icon={<MassingIcon />}
-        name={<span className="font-mono text-[14px] font-semibold">generate_massing</span>}
+        ariaLabel="Tool call in flight: 매싱 모델"
+        icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
+        name={<span className="text-[14px] font-semibold text-text">매싱 모델</span>}
         summary={
           <span className="inline-flex items-center gap-sm text-text-muted">
             <span>Running…</span>
@@ -74,9 +74,16 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 
   return (
     <ToolResultCard
-      ariaLabel="Tool result: generate_massing"
-      icon={<MassingIcon />}
-      name={<span className="font-mono text-[14px] font-semibold">generate_massing</span>}
+      ariaLabel="Tool result: 매싱 모델"
+      icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
+      name={
+        <span className="text-[14px] font-semibold text-text">
+          매싱 모델
+          {state.toolResult.briefTitle && (
+            <span className="font-normal text-text-muted"> · {state.toolResult.briefTitle}</span>
+          )}
+        </span>
+      }
       summary={
         <span className="font-medium text-text">{state.toolResult.summary}</span>
       }
@@ -117,14 +124,6 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function MassingIcon() {
-  // Emoji glyph per design doc §2.3 — the editorial olive/cream palette
-  // doesn't carry a "massing" iconography slot, and the emoji reads
-  // naturally as "an artifact you can download" without competing
-  // visually with the accent action button.
-  return <span aria-hidden="true">📁</span>;
-}
 
 function Spinner() {
   // Small olive-accent rotating ring — `tool-spinner` keyframe in
