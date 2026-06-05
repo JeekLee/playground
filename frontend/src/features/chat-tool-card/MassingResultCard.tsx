@@ -181,6 +181,7 @@ function PreviewAccordion({
   // Intentionally never reset on close/reopen — a 404 here means the row
   // predates the .glb sibling (permanent), so retrying would just 404 again.
   const [failed, setFailed] = useState(false);
+  const [viewerReady, setViewerReady] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -189,7 +190,7 @@ function PreviewAccordion({
       // and @google/model-viewer touches `customElements` at module scope —
       // a top-level import would crash the server render. The unknown
       // element upgrades in place once the module registers it.
-      void import('@google/model-viewer');
+      void import('@google/model-viewer').then(() => setViewerReady(true));
     }
   }, [open]);
 
@@ -248,25 +249,27 @@ function PreviewAccordion({
             shadow-intensity="1"
             style={{ width: '100%', height: '100%' }}
           >
-            {rooms
-              .filter((r) => r.labelAnchor)
-              .map((r, i) => (
-                <button
-                  key={`${r.zone}-${r.name}-${i}`}
-                  type="button"
-                  slot={`hotspot-room-${i}`}
-                  data-position={`${r.labelAnchor!.x} ${r.labelAnchor!.y} ${r.labelAnchor!.z}`}
-                  data-normal="0 1 0"
-                  className="pointer-events-none inline-flex items-center gap-xs rounded-md bg-surface/90 px-xs py-[2px] text-[11px] font-medium text-text shadow-card"
-                >
-                  <span
+            {/* 업그레이드 전에는 슬롯이 없어 라벨이 좌상단에 쌓여 보인다 — 모듈 등록 후에만 렌더. */}
+            {viewerReady &&
+              rooms
+                .filter((r) => r.labelAnchor)
+                .map((r, i) => (
+                  <div
+                    key={`${r.zone}-${r.name}-${i}`}
                     aria-hidden="true"
-                    className="inline-block h-[8px] w-[8px] rounded-full"
-                    style={{ backgroundColor: zoneColors.get(r.zone ?? '') ?? zonePalette[0] }}
-                  />
-                  {r.name}
-                </button>
-              ))}
+                    slot={`hotspot-room-${i}`}
+                    data-position={`${r.labelAnchor!.x} ${r.labelAnchor!.y} ${r.labelAnchor!.z}`}
+                    data-normal="0 1 0"
+                    className="pointer-events-none inline-flex items-center gap-xs rounded-md bg-surface/90 px-xs py-[2px] text-[11px] font-medium text-text shadow-card"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-[8px] w-[8px] rounded-full"
+                      style={{ backgroundColor: zoneColors.get(r.zone ?? '') ?? zonePalette[0] }}
+                    />
+                    {r.name}
+                  </div>
+                ))}
           </model-viewer>
         </div>
       )}
