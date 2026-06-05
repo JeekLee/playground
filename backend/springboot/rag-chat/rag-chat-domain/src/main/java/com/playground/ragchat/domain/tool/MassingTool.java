@@ -75,7 +75,7 @@ public final class MassingTool {
             DESCRIPTION,
             INPUT_SCHEMA,
             resolveEndpoint(),
-            Duration.ofSeconds(60));
+            Duration.ofSeconds(120));
 
     private MassingTool() {
         // constants class — instantiation disallowed
