@@ -33,12 +33,25 @@ import org.springframework.stereotype.Service;
 @Service
 public class PromptTemplate {
 
-    /** Per spec §6.1 step 10 — the system prompt is exactly this text. */
+    /**
+     * Per spec §6.1 step 10 — the base prompt is exactly the first paragraph.
+     * The tool-honesty paragraph was appended 2026-06-05 after qwen3-vl
+     * answered a "다시 생성해줘" turn by PARROTING the previous tool result
+     * ("재생성했다") without invoking generate_massing — no artifact was
+     * produced. The rule is tool-agnostic so future file-producing tools
+     * inherit it.
+     */
     public static final String SYSTEM_PROMPT =
             "You are a helpful assistant grounded in the user's playground corpus.\n"
                     + "Cite every factual claim with [N] markers where N is the 1-indexed\n"
                     + "position from the RETRIEVED CONTEXT block. If no chunk supports a\n"
-                    + "claim, say so plainly — do not fabricate citations.";
+                    + "claim, say so plainly — do not fabricate citations.\n"
+                    + "When tools are available: a request to create, generate, or\n"
+                    + "REGENERATE an artifact is only satisfied by invoking the matching\n"
+                    + "tool in THIS turn. Never state that a file or model was created,\n"
+                    + "regenerated, or delivered unless the tool ran in this turn — an\n"
+                    + "earlier tool result in the conversation does not satisfy a new\n"
+                    + "request. If you did not invoke the tool, say so instead.";
 
     private final TokenCounter tokenCounter;
     private final CitationExtractor citationExtractor;
