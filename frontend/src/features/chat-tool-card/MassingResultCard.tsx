@@ -12,8 +12,8 @@ import { ToolResultCard } from './ToolResultCard';
  * `78:1392`).
  *
  * Filled slots (per design doc §4.2):
- *   - icon         = `📁`
- *   - name         = `generate_massing`
+ *   - icon         = Lucide `Box` (18 px, strokeWidth 1.75)
+ *   - name         = `매싱 모델 · {briefTitle}` (briefTitle absent → plain `매싱 모델`)
  *   - summary      = backend-emitted `summary` string (Korean-fixed
  *                    per ADR-18 §5 — e.g., `"12실 · 3층 · 총 480 m²"`).
  *                    The FE renders verbatim; no client-side i18n.
@@ -27,10 +27,10 @@ import { ToolResultCard } from './ToolResultCard';
  *
  * In-flight state (when `toolCard.kind === 'in_flight'`):
  *   - Skeleton card per design doc §2.2 lifecycle section.
- *     `📁 generate_massing` + `Running…` summary + small spinner.
- *     No Download button, no accordion. The card lifts to the
- *     populated state in-place when the matching `tool_result` event
- *     lands.
+ *     Box icon + `매싱 모델` + `Running…` summary + small spinner.
+ *     No Download button, no accordion. briefTitle is not available
+ *     yet in the in-flight state; it renders once the tool_result
+ *     event lands.
  *
  * Wire shape contract: see `MassingProgramJson` in
  * `shared/api/chat.ts`. The wire ships only `{name, areaM2}` per room
