@@ -1,8 +1,9 @@
 """MinIO upload adapter for the architecture BC (ADR-20 §D3 revised).
 
-agent-tools owns the write path: the `store` node calls `upload_artifact`
+agent-tools owns the write path: the `store_3dm` node calls `upload_artifact`
 which puts the .3dm bytes into MinIO and returns the object key that
-rag-chat's dispatcher will record in `chat.message_attachments`.
+rag-chat's dispatcher will record in `chat.message_attachments`; the `store_glb`
+node calls `upload_to_key` to place the preview .glb at the same prefix.
 
 The bucket is shared with rag-chat's download adapter — both services
 use `PLAYGROUND_ARCHITECTURE_MINIO_BUCKET` / `PLAYGROUND_RAGCHAT_MINIO_BUCKET`
