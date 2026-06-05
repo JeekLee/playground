@@ -19,6 +19,8 @@ Responsibilities:
 
 `footprint_driver_m2` is None when there are no above-grade named sub-spaces
 (derive then falls back to the GFA/coverage sizing).
+(c) Pass sub-spaces through as graded copies so derive can consume
+    `classified.sub_spaces[].grade` directly without re-inferring.
 """
 
 from __future__ import annotations
@@ -85,8 +87,16 @@ def classify_brief(normalized: NormalizedBrief) -> ClassifiedBrief:
         if driver is None or gross > driver:
             driver = gross
 
+    # Sub-spaces ride to derive as GRADED copies — grading is this node's
+    # job; derive consumes `it.grade` directly (design spec deviation 1).
+    graded_sub_spaces = [
+        it.model_copy(update={"grade": _grade_item(it)})
+        for it in normalized.sub_spaces
+    ]
+
     return ClassifiedBrief(
         zones=graded_zones,
+        sub_spaces=graded_sub_spaces,
         footprint_driver_m2=driver,
         site_area_m2=normalized.site_area_m2,
         coverage_ratio_max=normalized.coverage_ratio_max,

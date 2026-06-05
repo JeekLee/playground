@@ -30,11 +30,26 @@ class GenerateMassingRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class LabelAnchorWire(BaseModel):
+    """Hotspot anchor — glTF Y-up 좌표, 실 박스 상면 중심 (room-split spec D6)."""
+
+    x: float
+    y: float
+    z: float
+
+
 class RoomWire(BaseModel):
-    """Single room entry in the response programJson."""
+    """Single room entry in the response programJson.
+
+    실별 분할(2026-06-05) 이후: 분할 zone의 실/공용 행은 `floor`를 갖고,
+    미분할 zone 행은 floor=None (zone은 항상 세팅 — FE 색 슬롯 순서 일치용).
+    `labelAnchor`는 명명된 실에만 (공용·기타/미분할 zone은 None)."""
 
     name: str = Field(min_length=1)
     area_m2: float = Field(gt=0, alias="areaM2")
+    zone: str | None = None
+    floor: int | None = None
+    label_anchor: LabelAnchorWire | None = Field(default=None, alias="labelAnchor")
 
     model_config = {"populate_by_name": True}
 

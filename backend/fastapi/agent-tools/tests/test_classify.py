@@ -92,3 +92,26 @@ def test_no_above_subspaces_yields_none_driver() -> None:
     )
     classified = classify_brief(norm)
     assert classified.footprint_driver_m2 is None
+
+
+def test_sub_spaces_passed_through_graded() -> None:
+    normalized = NormalizedBrief(
+        zones=[
+            NormalizedZone(name="연구영역", area_m2=26500.0, grade="above"),
+            NormalizedZone(name="지하영역", area_m2=4500.0, grade="unknown"),
+        ],
+        sub_spaces=[
+            ProgramItem(name="Middle Lab", area_m2=5680.0, grade="unknown",
+                        parent_zone="연구영역", is_net=True),
+            ProgramItem(name="지하주차", area_m2=4000.0, grade="unknown"),
+        ],
+        site_area_m2=14000.0,
+    )
+    classified = classify_brief(normalized)
+    by_name = {s.name: s for s in classified.sub_spaces}
+    # 등급이 판정된 사본으로 운반된다 (keyword inference: 지하 → below).
+    assert by_name["Middle Lab"].grade == "above"
+    assert by_name["지하주차"].grade == "below"
+    # 원본 필드 보존.
+    assert by_name["Middle Lab"].parent_zone == "연구영역"
+    assert by_name["Middle Lab"].area_m2 == 5680.0

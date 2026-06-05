@@ -266,6 +266,14 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 > 수 없습니다…"). Spec:
 > `docs/superpowers/specs/2026-06-05-massing-glb-preview-design.md`.
 
+> **2026-06-05 — 실별 분할 (room-split):** 매싱이 zone 통짜에서 실 단위로
+> 세분화됐다. FFD bin-packing으로 각 실이 한 층에 통째 배치되고 잔여는
+> `공용·기타` 박스. `.glb`는 zone hue + 실별 명도 단계 + 공용 저채도 톤,
+> 실명은 model-viewer hotspot 라벨(HTML 어노테이션)로 표시. Program
+> details는 zone 그룹핑 4열(ZONE/ROOM/FLOOR/AREA) 테이블 — 레거시
+> 페이로드는 기존 2열 유지. Spec:
+> `docs/superpowers/specs/2026-06-05-room-split-massing-design.md`.
+
 ### 2.5 M8 — `/chat` with `tool_error` card — frame node-id: `78:1437`
 
 - **Purpose:** the failure path. Architect uploads a non-brief PDF (e.g., a CV or a marketing flyer); the LLM extraction step fails. The card surfaces a `BRIEF_EXTRACTION_FAILED` error in `warning` palette with a user-actionable secondary action.

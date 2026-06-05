@@ -1,4 +1,4 @@
-export { color } from './color';
+export { color, zonePalette } from './color';
 export type { ColorToken } from './color';
 export { fontFamily, fontScale } from './font';
 export type { FontScaleKey } from './font';

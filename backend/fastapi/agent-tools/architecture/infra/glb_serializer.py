@@ -8,6 +8,12 @@ geometry is already plain axis-aligned boxes, so the mesh maps 1:1 — no
 Readability styling (preview-only — none of this touches the .3dm):
 - Each zone gets a deterministic muted color from ``_PALETTE`` keyed by
   first appearance in the box list (algorithm output order is stable).
+- Split rooms within a zone share the zone hue but get distinct lightness
+  steps (``_ROOM_LIGHT_MIN``→``_ROOM_LIGHT_MAX``, up to ``_ROOM_LIGHT_STEPS``
+  slots, cycling) so individual rooms read as separate volumes (design spec D5).
+- ``COMMON_AREA_NAME`` (공용·기타) boxes use a pale desaturated tone derived
+  from the zone hue (``_COMMON_LIGHT`` / ``_COMMON_SAT_SCALE``) (design spec D5).
+- Unsplit boxes (``name == zone``) keep the exact base palette RGB unchanged.
 - Below-grade boxes reuse their zone color dimmed by ``_BELOW_GRADE_DIM``.
 - Every floor box is shortened by ``FLOOR_GAP_M`` at the top so stacked
   floors read as distinct slabs instead of one fused mass.
@@ -21,11 +27,13 @@ the model stands upright in model-viewer: (x, y, z) → (x, z, -y).
 
 from __future__ import annotations
 
+import colorsys
+
 import numpy as np
 import trimesh
 
 from shared_kernel.errors import MassingError, MassingErrorCode
-from architecture.domain.models import RoomBox
+from architecture.domain.models import COMMON_AREA_NAME, RoomBox
 
 # Z-up (Rhino) → Y-up (glTF): rotate -90° about +X.
 _Z_UP_TO_Y_UP = trimesh.transformations.rotation_matrix(-np.pi / 2.0, (1.0, 0.0, 0.0))
@@ -41,6 +49,14 @@ _PALETTE: tuple[tuple[int, int, int], ...] = (
 # Below-grade boxes keep their zone hue, dimmed.
 _BELOW_GRADE_DIM = 0.72
 
+# 실 명도 단계 (D5): zone hue 유지, lightness를 이 구간에 균등 분배.
+_ROOM_LIGHT_MIN = 0.45
+_ROOM_LIGHT_MAX = 0.70
+_ROOM_LIGHT_STEPS = 6
+# 공용·기타: 저채도·고명도 톤.
+_COMMON_LIGHT = 0.78
+_COMMON_SAT_SCALE = 0.35
+
 # Vertical slit carved off the TOP of every floor box (meters) so stacked
 # floors read as separate slabs. The z anchor is untouched.
 FLOOR_GAP_M = 0.15
@@ -51,6 +67,23 @@ _GROUND_MARGIN_RATIO = 0.15
 _GROUND_THICKNESS_M = 0.3
 _GROUND_CLEARANCE_M = 0.05
 _GROUND_RGBA = (0.86, 0.85, 0.80, 0.45)
+
+
+def _with_hls(
+    rgb: tuple[int, int, int], *, light: float, sat_scale: float = 1.0
+) -> tuple[int, int, int]:
+    """Return a new RGB tuple with the given HLS lightness and scaled saturation."""
+    h, _, s = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
+    r, g, b = colorsys.hls_to_rgb(h, light, s * sat_scale)
+    return (round(r * 255), round(g * 255), round(b * 255))
+
+
+def _room_step_color(zone_rgb: tuple[int, int, int], step: int) -> tuple[int, int, int]:
+    """Map a room's first-appearance slot within its zone to a lightness step."""
+    span = _ROOM_LIGHT_MAX - _ROOM_LIGHT_MIN
+    # step % _ROOM_LIGHT_STEPS — 7번째 실부터 명도 순환 재사용 (spec D5 명시).
+    light = _ROOM_LIGHT_MIN + span * ((step % _ROOM_LIGHT_STEPS) / max(_ROOM_LIGHT_STEPS - 1, 1))
+    return _with_hls(zone_rgb, light=light)
 
 
 def serialize_glb(boxes: list[RoomBox]) -> bytes:
@@ -65,7 +98,18 @@ def serialize_glb(boxes: list[RoomBox]) -> bytes:
     # compute_massing emits floors in order with area-sorted zones).
     zone_slot: dict[str, int] = {}
     for box in boxes:
-        zone_slot.setdefault(box.name, len(zone_slot))
+        zone_slot.setdefault(box.zone, len(zone_slot))
+
+    # zone 내 실 슬롯 — 첫 등장 순서 (공용·통짜 제외).
+    room_slot: dict[tuple[str, str], int] = {}
+    rooms_seen: dict[str, int] = {}
+    for box in boxes:
+        if box.name == box.zone or box.name == COMMON_AREA_NAME:
+            continue
+        key = (box.zone, box.name)
+        if key not in room_slot:
+            room_slot[key] = rooms_seen.get(box.zone, 0)
+            rooms_seen[box.zone] = room_slot[key] + 1
 
     scene = trimesh.Scene()
     for i, box in enumerate(boxes):
@@ -80,7 +124,13 @@ def serialize_glb(boxes: list[RoomBox]) -> bytes:
             box.z + render_h / 2.0,
         ))
         mesh.apply_transform(_Z_UP_TO_Y_UP)
-        rgb = _PALETTE[zone_slot[box.name] % len(_PALETTE)]
+        zone_rgb = _PALETTE[zone_slot[box.zone] % len(_PALETTE)]
+        if box.name == COMMON_AREA_NAME:
+            rgb = _with_hls(zone_rgb, light=_COMMON_LIGHT, sat_scale=_COMMON_SAT_SCALE)
+        elif box.name == box.zone:
+            rgb = zone_rgb
+        else:
+            rgb = _room_step_color(zone_rgb, room_slot[(box.zone, box.name)])
         dim = _BELOW_GRADE_DIM if box.floor < 0 else 1.0
         mesh.visual = trimesh.visual.TextureVisuals(material=_solid_material(rgb, dim=dim))
         # Index suffix keeps geometry names unique when room names repeat.

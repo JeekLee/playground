@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
+import { zonePalette } from '@/shared/ui/tokens';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
 import { ToolResultCard } from './ToolResultCard';
 
@@ -40,13 +41,10 @@ import { ToolResultCard } from './ToolResultCard';
  *     event lands.
  *
  * Wire shape contract: see `MassingProgramJson` in
- * `shared/api/chat.ts`. The wire ships only `{name, areaM2}` per room
- * — per-room floor / dimensions live in the algorithm output
- * (`RoomBox`) which is serialized into the `.3dm` file, NOT the JSON
- * response (ADR-18 §9 + §11). The accordion table therefore renders
- * the 2 columns the wire carries today (ROOM / AREA); a future
- * backend amendment that surfaces `RoomBox` data into the response
- * would let M8.1 light up FLOOR / DIMENSIONS.
+ * `shared/api/chat.ts`. The accordion table renders 2 columns (ROOM /
+ * AREA) for legacy zone-only payloads and 4 columns (ZONE / ROOM /
+ * FLOOR / AREA, zone group-headed) for room-split payloads
+ * (2026-06-05). Hotspot labels ride `labelAnchor` on named-room rows.
  */
 
 export interface MassingResultCardProps {
@@ -99,7 +97,10 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
         hasDownloadUrl || hasProgram ? (
           <div className="flex w-full flex-col gap-xs">
             {hasDownloadUrl && (
-              <PreviewAccordion previewUrl={`${state.toolResult.outputUrl}/preview`} />
+              <PreviewAccordion
+                previewUrl={`${state.toolResult.outputUrl}/preview`}
+                rooms={program?.rooms ?? []}
+              />
             )}
             {hasProgram && (
               <button
@@ -139,6 +140,20 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+// `zonePalette` (shared/ui/tokens) mirrors glb_serializer.py's _PALETTE in
+// order/value — zones cycle by first-appearance. The hex literals live in
+// the tokens dir (lint forbids them here); the server emits rooms rows in
+// box zone-appearance order so the index lines up with the .glb colors.
+function zoneColorMap(rooms: MassingProgramJson['rooms']): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const room of rooms) {
+    if (room.zone && !map.has(room.zone)) {
+      map.set(room.zone, zonePalette[map.size % zonePalette.length]!);
+    }
+  }
+  return map;
+}
+
 function Spinner() {
   // Small olive-accent rotating ring — `tool-spinner` keyframe in
   // tailwind.config.ts. The CSS spinner is preferable to a Lucide
@@ -153,13 +168,20 @@ function Spinner() {
   );
 }
 
-function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
+function PreviewAccordion({
+  previewUrl,
+  rooms,
+}: {
+  previewUrl: string;
+  rooms: MassingProgramJson['rooms'];
+}) {
   // Inline 3D preview per design spec 2026-06-05-massing-glb-preview —
   // the backend serves the .glb sibling of the .3dm at `${outputUrl}/preview`.
   const [open, setOpen] = useState(false);
   // Intentionally never reset on close/reopen — a 404 here means the row
   // predates the .glb sibling (permanent), so retrying would just 404 again.
   const [failed, setFailed] = useState(false);
+  const [viewerReady, setViewerReady] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -168,7 +190,7 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
       // and @google/model-viewer touches `customElements` at module scope —
       // a top-level import would crash the server render. The unknown
       // element upgrades in place once the module registers it.
-      void import('@google/model-viewer');
+      void import('@google/model-viewer').then(() => setViewerReady(true));
     }
   }, [open]);
 
@@ -178,6 +200,10 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
     // .glb fetch fails (404 on legacy rows without a preview sibling).
     el?.addEventListener('error', () => setFailed(true), { once: true });
   }, []);
+
+  // One zone→hue map per render (not per hotspot) — first-appearance index
+  // matches the glb's zone color slots (server emits rows in box order).
+  const zoneColors = zoneColorMap(rooms);
 
   return (
     <div className="flex w-full flex-col gap-sm">
@@ -222,7 +248,29 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
             auto-rotate
             shadow-intensity="1"
             style={{ width: '100%', height: '100%' }}
-          />
+          >
+            {/* 업그레이드 전에는 슬롯이 없어 라벨이 좌상단에 쌓여 보인다 — 모듈 등록 후에만 렌더. */}
+            {viewerReady &&
+              rooms
+                .filter((r) => r.labelAnchor)
+                .map((r, i) => (
+                  <div
+                    key={`${r.zone}-${r.name}-${i}`}
+                    aria-hidden="true"
+                    slot={`hotspot-room-${i}`}
+                    data-position={`${r.labelAnchor!.x} ${r.labelAnchor!.y} ${r.labelAnchor!.z}`}
+                    data-normal="0 1 0"
+                    className="pointer-events-none inline-flex items-center gap-xs rounded-md bg-surface/90 px-xs py-[2px] text-[11px] font-medium text-text shadow-card"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-[8px] w-[8px] rounded-full"
+                      style={{ backgroundColor: zoneColors.get(r.zone ?? '') ?? zonePalette[0] }}
+                    />
+                    {r.name}
+                  </div>
+                ))}
+          </model-viewer>
         </div>
       )}
     </div>
@@ -257,21 +305,18 @@ interface ProgramDetailsTableProps {
 }
 
 function ProgramDetailsTable({ program }: ProgramDetailsTableProps) {
-  // Wire shape carries only `{name, areaM2}` per room (ADR-18 §9 — the
-  // JSON Schema). The design doc §2.4 mockup shows a 4-column table
-  // (FLOOR / ROOM / DIMENSIONS / AREA), but FLOOR + DIMENSIONS are
-  // derived from the `RoomBox` algorithm output which is serialized
-  // into the `.3dm` file, NOT the JSON response. We render the 2
-  // columns the wire actually ships; FLOOR / DIMENSIONS would light
-  // up automatically the day the backend extends `tool_result.programJson`
-  // to carry per-room layout fields.
+  // Room-split payloads (2026-06-05) carry per-room `zone` / `floor`. When
+  // any row has a numeric floor we render the 4-column split table (ZONE /
+  // ROOM / FLOOR / AREA, zone group-headed); legacy zone-only payloads fall
+  // through to the 2-column (ROOM / AREA) table unchanged.
   //
   // Footer summary: when there are more rooms than the visible cap,
   // surface `… and N more rooms (총 K실, L m²)` per design doc §2.4 —
   // the parenthetical pieces are computed client-side from the same
   // `programJson` so no backend addition is required.
-  const VISIBLE_CAP = 6;
+  const VISIBLE_CAP = 10;
   const rooms = program.rooms;
+  const isSplit = rooms.some((r) => typeof r.floor === 'number');
   const visible = rooms.slice(0, VISIBLE_CAP);
   const overflow = rooms.length - visible.length;
   const totalArea = rooms.reduce((sum, r) => sum + (Number.isFinite(r.areaM2) ? r.areaM2 : 0), 0);
@@ -286,27 +331,32 @@ function ProgramDetailsTable({ program }: ProgramDetailsTableProps) {
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>
-            <th
-              scope="col"
-              className="pb-xs text-eyebrow text-text-muted"
-            >
-              Room
-            </th>
-            <th
-              scope="col"
-              className="pb-xs text-right text-eyebrow text-text-muted"
-            >
-              Area
-            </th>
+            {isSplit && (
+              <th scope="col" className="pb-xs text-eyebrow text-text-muted">Zone</th>
+            )}
+            <th scope="col" className="pb-xs text-eyebrow text-text-muted">Room</th>
+            {isSplit && (
+              <th scope="col" className="pb-xs text-right text-eyebrow text-text-muted">Floor</th>
+            )}
+            <th scope="col" className="pb-xs text-right text-eyebrow text-text-muted">Area</th>
           </tr>
         </thead>
         <tbody>
           {visible.map((room, idx) => (
-            <tr
-              key={`${room.name}-${idx}`}
-              className="border-t border-border first:border-t-0"
-            >
+            <tr key={`${room.name}-${idx}`} className="border-t border-border first:border-t-0">
+              {isSplit && (
+                <td className="py-[10px] text-[13px] text-text-muted">
+                  {idx === 0 || visible[idx - 1]?.zone !== room.zone ? room.zone ?? '' : ''}
+                </td>
+              )}
               <td className="py-[10px] text-[13px] text-text">{room.name}</td>
+              {isSplit && (
+                <td className="py-[10px] text-right font-mono text-[13px] text-text-muted">
+                  {typeof room.floor === 'number'
+                    ? room.floor > 0 ? `${room.floor}F` : `B${-room.floor}`
+                    : '—'}
+                </td>
+              )}
               <td className="py-[10px] text-right font-mono text-[13px] text-text-muted">
                 {formatAreaM2(room.areaM2)}
               </td>
@@ -340,9 +390,29 @@ function readProgramJson(raw: Record<string, unknown> | undefined): MassingProgr
   if (!Array.isArray(roomsRaw)) return null;
   const rooms = roomsRaw.flatMap((entry): MassingProgramJson['rooms'][number][] => {
     if (!entry || typeof entry !== 'object') return [];
-    const e = entry as { name?: unknown; areaM2?: unknown };
+    const e = entry as {
+      name?: unknown;
+      areaM2?: unknown;
+      zone?: unknown;
+      floor?: unknown;
+      labelAnchor?: unknown;
+    };
     if (typeof e.name !== 'string' || typeof e.areaM2 !== 'number') return [];
-    return [{ name: e.name, areaM2: e.areaM2 }];
+    const anchorRaw = e.labelAnchor as { x?: unknown; y?: unknown; z?: unknown } | undefined;
+    const labelAnchor =
+      anchorRaw &&
+      typeof anchorRaw.x === 'number' &&
+      typeof anchorRaw.y === 'number' &&
+      typeof anchorRaw.z === 'number'
+        ? { x: anchorRaw.x, y: anchorRaw.y, z: anchorRaw.z }
+        : undefined;
+    return [{
+      name: e.name,
+      areaM2: e.areaM2,
+      zone: typeof e.zone === 'string' ? e.zone : undefined,
+      floor: typeof e.floor === 'number' ? e.floor : undefined,
+      labelAnchor,
+    }];
   });
   if (rooms.length === 0) return { rooms: [] };
   return {
