@@ -133,7 +133,11 @@ def _assign_rooms_ffd(
     있다 — 그때 None을 반환하고 호출부가 zone을 통짜로 강등한다 (design
     spec deviation 2).
 
-    rooms가 비어있으면 None 반환 (분할 없음)."""
+    rooms가 비어있으면 None 반환 (분할 없음).
+
+    정렬은 내림차순 stable — 면적이 같은 실은 brief 입력 순서를 유지한다.
+    FFD가 실을 배정하지 못한 층은 _subdivide_zone_rect에서 공용 스트립만
+    생성된다 (비실 면적 전부를 공용으로 표시)."""
     if not rooms:
         return None
     remaining = [slot_area] * n_levels
@@ -162,10 +166,17 @@ def _subdivide_zone_rect(
     z: float,
     height: float,
 ) -> list[RoomBox]:
-    """zone 사각형 내부를 [실들 + 공용 잔여]로 shelf 분할 (D1·D2).
+    """zone 사각형 내부를 [실들 + 공용 잔여]의 비례 스트립으로 분할 (D1·D2).
 
-    실 박스는 square-aspect, zone 사각형 경계로 클램프 — zone 레벨 packer와
-    동일한 관용 의미론. 잔여(슬롯 − Σ실)는 슬롯의 1% 초과일 때만 공용 박스."""
+    각 엔트리는 rect 깊이 전체를 쓰는 세로 스트립 — 폭은 면적 비례
+    (width_i = rect_w × area_i / total). 스트립은 절대 rect를 벗어나지도,
+    서로 겹치지도 않으며 Σ(스트립 면적) == rect 면적이라 이웃 zone과의
+    교차가 원천 차단된다 (square-aspect shelf는 잔여 박스가 풋프린트
+    밖으로 돌출하는 문제가 있었다 — 2026-06-05 리뷰).
+
+    FFD가 실을 배정하지 않은 층은 엔트리가 공용 하나뿐이라 슬롯 전체가
+    공용·기타 스트립이 된다 (분할 zone의 비실(非室) 면적은 전부 공용).
+    """
     entries: list[tuple[str, float]] = [
         (r.name, r.area_m2)
         for r in sorted(rooms, key=lambda r: r.area_m2, reverse=True)
@@ -174,38 +185,25 @@ def _subdivide_zone_rect(
     if remainder > slot_area * 0.01:
         entries.append((COMMON_AREA_NAME, remainder))
 
+    total = sum(area for _, area in entries)
     boxes: list[RoomBox] = []
-    shelf_x = 0.0
-    shelf_y = 0.0
-    shelf_h = 0.0
+    cursor_x = 0.0
     for name, area in entries:
-        w = sqrt(area)
-        d = area / w if w > 0 else 0.0
-        width = min(w, rect_w)
-        if shelf_x + width > rect_w + 1e-6:
-            shelf_y += shelf_h
-            shelf_x = 0.0
-            shelf_h = 0.0
-        # Depth: use the square-root dimension directly — small remainder boxes
-        # may overflow rect_d slightly; this is intentional (관용 의미론,
-        # test checks y+depth ≤ side×1.5). Width is clamped to rect_w.
-        depth = d
+        width = rect_w * (area / total)
         boxes.append(
             RoomBox(
                 name=name,
                 zone=zone_name,
                 floor=floor,
-                x=x0 + shelf_x,
-                y=y0 + shelf_y,
+                x=x0 + cursor_x,
+                y=y0,
                 z=z,
                 width=width,
-                depth=depth,
+                depth=rect_d,
                 height=height,
             )
         )
-        shelf_x += width
-        if depth > shelf_h:
-            shelf_h = depth
+        cursor_x += width
     return boxes
 
 

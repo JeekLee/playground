@@ -171,7 +171,7 @@ def test_split_boxes_stay_inside_zone_rect() -> None:
     for b in boxes:
         assert b.x >= -1e-6 and b.y >= -1e-6
         assert b.x + b.width <= side + 1e-3
-        assert b.y + b.depth <= side * 1.5  # shelf 클램프 관용치 (기존 packer 의미론)
+        assert b.y + b.depth <= side + 1e-3  # 스트립 분할 — rect를 절대 벗어나지 않음
 
 
 def test_zone_without_rooms_unsplit_alongside_split_zone() -> None:
@@ -219,3 +219,27 @@ def test_below_grade_rooms_split_in_basement() -> None:
     assert parking.floor == -1 and parking.zone == "지하"
     common = next(b for b in boxes if b.name == COMMON_AREA_NAME)
     assert common.floor == -1
+
+
+def test_split_zone_boxes_never_cross_into_neighbor_zone() -> None:
+    # 리뷰 가드: 분할 zone의 스트립은 zone rect를 벗어나지 않으므로
+    # 같은 층의 이웃 zone 박스와 절대 교차하지 않는다.
+    inputs = _split_inputs(
+        zones=[
+            Zone(name="연구", area_m2=1200.0, grade="above",
+                 rooms=[Room(name="대실험실", area_m2=500.0),
+                        Room(name="실험실A", area_m2=90.0)]),
+            Zone(name="업무", area_m2=800.0, grade="above"),
+        ],
+    )
+    boxes = compute_massing(inputs)
+    floor1 = [b for b in boxes if b.floor == 1]
+    research = [b for b in floor1 if b.zone == "연구"]
+    work = [b for b in floor1 if b.zone == "업무"]
+    for r in research:
+        for w in work:
+            x_overlap = min(r.x + r.width, w.x + w.width) - max(r.x, w.x)
+            y_overlap = min(r.y + r.depth, w.y + w.depth) - max(r.y, w.y)
+            assert not (x_overlap > 1e-6 and y_overlap > 1e-6), (
+                f"{r.name} intersects {w.name}"
+            )
