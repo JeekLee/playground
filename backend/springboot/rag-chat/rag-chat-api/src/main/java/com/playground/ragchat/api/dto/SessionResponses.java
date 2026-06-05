@@ -55,7 +55,8 @@ public final class SessionResponses {
                                 a.contentType(),
                                 a.sizeBytes(),
                                 ATTACHMENT_DOWNLOAD_PREFIX + a.id().value(),
-                                a.toolName()))
+                                a.toolName(),
+                                a.briefTitle()))
                         .orElse(null);
                 return new MessageDto(
                         m.id().value(),
@@ -89,7 +90,9 @@ public final class SessionResponses {
             String contentType,
             long sizeBytes,
             String downloadUrl,
-            String toolName) {}
+            String toolName,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String briefTitle) {}
 
     /**
      * Wire shape aligned with the SSE {@code done} payload's citation

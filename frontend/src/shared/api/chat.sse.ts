@@ -160,6 +160,7 @@ function parseFrame(rawFrame: string): ChatStreamEvent | null {
         name: raw.name,
         summary: typeof body.summary === 'string' ? body.summary : undefined,
         outputUrl: typeof body.fileUrl === 'string' ? body.fileUrl : undefined,
+        briefTitle: typeof body.briefTitle === 'string' ? body.briefTitle : undefined,
         programJson:
           typeof body.programJson === 'object' && body.programJson !== null
             ? (body.programJson as Record<string, unknown>)

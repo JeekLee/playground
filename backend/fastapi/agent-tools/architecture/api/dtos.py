@@ -71,6 +71,7 @@ class MassingResult(BaseModel):
     floor_count: int = Field(alias="floorCount")  # above-grade
     basement_levels: int = Field(default=0, alias="basementLevels")
     summary: str  # Korean fixed format per ADR-18 §5 + §A18.5
+    brief_title: str = Field(alias="briefTitle")  # document title from docs-api
 
     model_config = {"populate_by_name": True}
 

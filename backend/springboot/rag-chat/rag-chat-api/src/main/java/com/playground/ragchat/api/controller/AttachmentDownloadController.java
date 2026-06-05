@@ -40,6 +40,9 @@ import reactor.core.scheduler.Schedulers;
  * <p>Attachments are small (≤ ~20 KB per ADR-20 §D2), so the blob is read into
  * a {@code byte[]} on a bounded-elastic worker rather than streamed via
  * DataBuffers — simpler, and well within the inline-artifact size budget.
+ *
+ * <p>A sibling {@code GET /attachments/{id}/preview} route streams the derived
+ * .glb inline for the chat card's 3D viewer.
  */
 @RestController
 @RequestMapping("/attachments")
@@ -61,17 +64,62 @@ public class AttachmentDownloadController {
         if (xUserId == null || xUserId.isBlank()) {
             throw ExceptionCreator.of(RagChatErrorCode.AUTH_REQUIRED).build();
         }
-        AttachmentId attachmentId;
-        try {
-            attachmentId = AttachmentId.of(UUID.fromString(id));
-        } catch (IllegalArgumentException e) {
-            // Malformed id reads the same as "not yours / not found".
-            throw ExceptionCreator.of(RagChatErrorCode.ATTACHMENT_NOT_FOUND).build();
-        }
+        AttachmentId attachmentId = parseAttachmentId(id);
         UserId caller = UserId.fromString(xUserId);
 
         return Mono.fromCallable(() -> buildResponse(attachmentId, caller))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * Inline 3D preview — streams the .glb sibling the architecture BC uploads
+     * next to each .3dm (design spec 2026-06-05-massing-glb-preview). Same
+     * owner-only rule as {@link #download}; 415 for attachment types without
+     * a preview representation, 404 when the .glb is absent.
+     */
+    @GetMapping("/{id}/preview")
+    public Mono<ResponseEntity<byte[]>> preview(
+            @PathVariable("id") String id,
+            @RequestHeader(value = "X-User-Id", required = false) String xUserId) {
+
+        if (xUserId == null || xUserId.isBlank()) {
+            throw ExceptionCreator.of(RagChatErrorCode.AUTH_REQUIRED).build();
+        }
+        AttachmentId attachmentId = parseAttachmentId(id);
+        UserId caller = UserId.fromString(xUserId);
+
+        return Mono.fromCallable(() -> buildPreviewResponse(attachmentId, caller))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private static AttachmentId parseAttachmentId(String id) {
+        try {
+            return AttachmentId.of(UUID.fromString(id));
+        } catch (IllegalArgumentException e) {
+            // Malformed id reads the same as "not yours / not found".
+            throw ExceptionCreator.of(RagChatErrorCode.ATTACHMENT_NOT_FOUND).build();
+        }
+    }
+
+    private ResponseEntity<byte[]> buildPreviewResponse(AttachmentId attachmentId, UserId caller) {
+        AttachmentDownloadService.Download preview = downloadService.openPreview(attachmentId, caller);
+        byte[] bytes;
+        try (BlobStoragePort.BlobHandle handle = preview.handle();
+                InputStream in = handle.stream()) {
+            bytes = in.readAllBytes();
+        } catch (IOException e) {
+            log.warn("attachment_preview_stream_failed attachmentId=" + attachmentId + " reason=" + e);
+            throw ExceptionCreator.of(RagChatErrorCode.BLOB_STORAGE_UNAVAILABLE).build();
+        }
+
+        // Inline (no Content-Disposition) — <model-viewer> fetches this URL
+        // directly; it is not a user-facing download.
+        log.info("attachment_preview attachmentId=" + attachmentId + " userId=" + caller
+                + " sizeBytes=" + bytes.length);
+        return ResponseEntity.ok()
+                .contentLength(bytes.length)
+                .contentType(MediaType.parseMediaType("model/gltf-binary"))
+                .body(bytes);
     }
 
     private ResponseEntity<byte[]> buildResponse(AttachmentId attachmentId, UserId caller) {

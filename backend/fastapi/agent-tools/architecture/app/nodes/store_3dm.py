@@ -1,9 +1,13 @@
-"""store node (ADR-20 §D3 revised) — upload .3dm bytes to MinIO.
+"""store_3dm node (ADR-20 §D3 revised) — upload .3dm bytes to MinIO.
 
 agent-tools owns the write path: this node uploads the serialized .3dm
 to MinIO and stashes the object key in `storage_key` for the `respond`
 node to include in the artifact envelope. rag-chat receives the key and
 records it in `chat.message_attachments` without touching MinIO itself.
+
+Split from the former `store` node (design spec
+2026-06-05-massing-glb-preview): the preview .glb upload lives in the
+sibling `store_glb` node.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from shared_kernel.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def store(state: MassingState) -> dict:
+def store_3dm(state: MassingState) -> dict:
     settings = get_settings()
 
     slug = briefslug(state["detail"].title)
@@ -32,5 +36,5 @@ def store(state: MassingState) -> dict:
         content_type="application/octet-stream",
         settings=settings,
     )
-    logger.info("store node: uploaded %s → %s", filename, storage_key)
+    logger.info("store_3dm node: uploaded %s → %s", filename, storage_key)
     return {"storage_key": storage_key}

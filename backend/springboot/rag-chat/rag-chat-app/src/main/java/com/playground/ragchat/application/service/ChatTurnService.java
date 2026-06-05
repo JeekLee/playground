@@ -625,8 +625,12 @@ public class ChatTurnService {
             // the tool_result SSE result field; the bytes never enter context.
             Attachment attachment = null;
             if (s.artifact() != null) {
+                String briefTitle = s.body() != null && s.body().has("briefTitle")
+                        ? s.body().get("briefTitle").asText(null)
+                        : null;
                 attachment = storeArtifact(
-                        s.artifact(), desc.name(), sessionId, assistantMessageId, stagedAttachments);
+                        s.artifact(), desc.name(), briefTitle,
+                        sessionId, assistantMessageId, stagedAttachments);
             }
             // tool_result SSE result carries the LLM result PLUS (per ADR-20 §D4)
             // an `attachment` object + top-level `fileUrl` for the FE. The
@@ -669,6 +673,7 @@ public class ChatTurnService {
     private Attachment storeArtifact(
             ToolArtifact artifact,
             String toolName,
+            String briefTitle,
             SessionId sessionId,
             MessageId assistantMessageId,
             List<Attachment> stagedAttachments) {
@@ -682,6 +687,7 @@ public class ChatTurnService {
                     artifact.sizeBytes(),
                     artifact.storageKey(),
                     toolName,
+                    briefTitle,
                     clock.instant());
             stagedAttachments.add(attachment);
             log.info("tool_artifact_staged tool=" + toolName
@@ -728,6 +734,9 @@ public class ChatTurnService {
         attachmentNode.put("downloadUrl", downloadUrl);
         enriched.set("attachment", attachmentNode);
         enriched.put("fileUrl", downloadUrl);
+        if (attachment.briefTitle() != null) {
+            enriched.put("briefTitle", attachment.briefTitle());
+        }
         return enriched;
     }
 

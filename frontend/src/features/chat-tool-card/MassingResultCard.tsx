@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
 import { ToolResultCard } from './ToolResultCard';
@@ -12,8 +12,8 @@ import { ToolResultCard } from './ToolResultCard';
  * `78:1392`).
  *
  * Filled slots (per design doc §4.2):
- *   - icon         = `📁`
- *   - name         = `generate_massing`
+ *   - icon         = Lucide `Box` (18 px, strokeWidth 1.75)
+ *   - name         = `매싱 모델 · {briefTitle}` (briefTitle absent → plain `매싱 모델`)
  *   - summary      = backend-emitted `summary` string (Korean-fixed
  *                    per ADR-18 §5 — e.g., `"12실 · 3층 · 총 480 m²"`).
  *                    The FE renders verbatim; no client-side i18n.
@@ -24,13 +24,20 @@ import { ToolResultCard } from './ToolResultCard';
  *   - accordion    = `▸ Program details` (collapsed) / `▾ Program
  *                    details` (expanded). Mirrors the M4 citation
  *                    accordion visual pattern verbatim.
+ *   - preview      = `▸ 3D 미리보기` accordion above Program details —
+ *                    lazy-loads @google/model-viewer and renders the .glb
+ *                    from `${outputUrl}/preview` (240px inline viewer,
+ *                    camera-controls + auto-rotate). Absent when there is
+ *                    no outputUrl (in-flight card, failed artifact); a fetch
+ *                    error (legacy rows without .glb) swaps the viewer for
+ *                    fallback copy.
  *
  * In-flight state (when `toolCard.kind === 'in_flight'`):
  *   - Skeleton card per design doc §2.2 lifecycle section.
- *     `📁 generate_massing` + `Running…` summary + small spinner.
- *     No Download button, no accordion. The card lifts to the
- *     populated state in-place when the matching `tool_result` event
- *     lands.
+ *     Box icon + `매싱 모델` + `Running…` summary + small spinner.
+ *     No Download button, no accordion. briefTitle is not available
+ *     yet in the in-flight state; it renders once the tool_result
+ *     event lands.
  *
  * Wire shape contract: see `MassingProgramJson` in
  * `shared/api/chat.ts`. The wire ships only `{name, areaM2}` per room
@@ -52,9 +59,9 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
   if (state.kind === 'in_flight') {
     return (
       <ToolResultCard
-        ariaLabel="Tool call in flight: generate_massing"
-        icon={<MassingIcon />}
-        name={<span className="font-mono text-[14px] font-semibold">generate_massing</span>}
+        ariaLabel="Tool call in flight: 매싱 모델"
+        icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
+        name={<span className="text-[14px] font-semibold text-text">매싱 모델</span>}
         summary={
           <span className="inline-flex items-center gap-sm text-text-muted">
             <span>Running…</span>
@@ -74,35 +81,49 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 
   return (
     <ToolResultCard
-      ariaLabel="Tool result: generate_massing"
-      icon={<MassingIcon />}
-      name={<span className="font-mono text-[14px] font-semibold">generate_massing</span>}
+      ariaLabel="Tool result: 매싱 모델"
+      icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
+      name={
+        <span className="text-[14px] font-semibold text-text">
+          매싱 모델
+          {state.toolResult.briefTitle && (
+            <span className="font-normal text-text-muted"> · {state.toolResult.briefTitle}</span>
+          )}
+        </span>
+      }
       summary={
         <span className="font-medium text-text">{state.toolResult.summary}</span>
       }
       primaryAction={hasDownloadUrl ? <DownloadDotThreeDmButton href={state.toolResult.outputUrl!} /> : null}
       footer={
-        hasProgram ? (
-          <button
-            type="button"
-            onClick={() => setOpen((prev) => !prev)}
-            aria-expanded={open}
-            aria-controls="massing-program-details"
-            className={cn(
-              'inline-flex items-center gap-xs self-start rounded-md px-xs py-[2px] text-[12px] transition-colors duration-[140ms]',
-              'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-              open
-                ? 'font-semibold text-accent hover:bg-accent-soft'
-                : 'font-medium text-text-muted hover:bg-surface-soft hover:text-text',
+        hasDownloadUrl || hasProgram ? (
+          <div className="flex w-full flex-col gap-xs">
+            {hasDownloadUrl && (
+              <PreviewAccordion previewUrl={`${state.toolResult.outputUrl}/preview`} />
             )}
-          >
-            {open ? (
-              <ChevronDown size={12} aria-hidden="true" />
-            ) : (
-              <ChevronRight size={12} aria-hidden="true" />
+            {hasProgram && (
+              <button
+                type="button"
+                onClick={() => setOpen((prev) => !prev)}
+                aria-expanded={open}
+                aria-controls="massing-program-details"
+                className={cn(
+                  'inline-flex items-center gap-xs self-start rounded-md px-xs py-[2px] text-[12px] transition-colors duration-[140ms]',
+                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+                  open
+                    ? 'font-semibold text-accent hover:bg-accent-soft'
+                    : 'font-medium text-text-muted hover:bg-surface-soft hover:text-text',
+                )}
+              >
+                {open ? (
+                  <ChevronDown size={12} aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={12} aria-hidden="true" />
+                )}
+                <span>Program details</span>
+              </button>
             )}
-            <span>Program details</span>
-          </button>
+          </div>
         ) : null
       }
       expanded={
@@ -118,14 +139,6 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function MassingIcon() {
-  // Emoji glyph per design doc §2.3 — the editorial olive/cream palette
-  // doesn't carry a "massing" iconography slot, and the emoji reads
-  // naturally as "an artifact you can download" without competing
-  // visually with the accent action button.
-  return <span aria-hidden="true">📁</span>;
-}
-
 function Spinner() {
   // Small olive-accent rotating ring — `tool-spinner` keyframe in
   // tailwind.config.ts. The CSS spinner is preferable to a Lucide
@@ -137,6 +150,74 @@ function Spinner() {
       aria-hidden="true"
       className="inline-block h-[12px] w-[12px] animate-tool-spinner rounded-full border-2 border-border border-t-accent"
     />
+  );
+}
+
+function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
+  // Inline 3D preview per design spec 2026-06-05-massing-glb-preview —
+  // the backend serves the .glb sibling of the .3dm at `${outputUrl}/preview`.
+  const [open, setOpen] = useState(false);
+  // Intentionally never reset on close/reopen — a 404 here means the row
+  // predates the .glb sibling (permanent), so retrying would just 404 again.
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      // Defer the heavy model-viewer chunk until first open. The component
+      // SSRs (it's a client component, but Next still renders initial HTML),
+      // and @google/model-viewer touches `customElements` at module scope —
+      // a top-level import would crash the server render. The unknown
+      // element upgrades in place once the module registers it.
+      void import('@google/model-viewer');
+    }
+  }, [open]);
+
+  const viewerRef = useCallback((el: HTMLElement | null) => {
+    // React 18 sets `on*` props on custom elements as attributes, not
+    // listeners — attach the DOM `error` event by hand. Fires when the
+    // .glb fetch fails (404 on legacy rows without a preview sibling).
+    el?.addEventListener('error', () => setFailed(true), { once: true });
+  }, []);
+
+  return (
+    <div className="flex w-full flex-col gap-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        aria-controls="massing-3d-preview"
+        className={cn(
+          'inline-flex items-center gap-xs self-start rounded-md px-xs py-[2px] text-[12px] transition-colors duration-[140ms]',
+          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+          open
+            ? 'font-semibold text-accent hover:bg-accent-soft'
+            : 'font-medium text-text-muted hover:bg-surface-soft hover:text-text',
+        )}
+      >
+        {open ? (
+          <ChevronDown size={12} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={12} aria-hidden="true" />
+        )}
+        <span>3D 미리보기</span>
+      </button>
+      {open && failed && (
+        <p className="rounded-md bg-surface-soft px-md py-sm text-[12px] text-text-muted">
+          미리보기를 불러올 수 없습니다 — 이 모델은 3D 미리보기가 제공되기 전에 생성되었습니다.
+        </p>
+      )}
+      {open && !failed && (
+        <model-viewer
+          ref={viewerRef}
+          id="massing-3d-preview"
+          src={previewUrl}
+          camera-controls
+          auto-rotate
+          shadow-intensity="1"
+          className="block h-[240px] w-full rounded-md bg-surface-soft"
+        />
+      )}
+    </div>
   );
 }
 

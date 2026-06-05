@@ -25,6 +25,8 @@ import java.util.Objects;
  * @param sizeBytes   blob size for the Content-Length header + FE size display
  * @param storageKey  MinIO object key — the only pointer to the bytes
  * @param toolName    which tool produced it (e.g. {@code generate_massing})
+ * @param briefTitle  human-readable title of the brief that produced this artifact;
+ *                    {@code null} for legacy rows created before this field was added
  * @param createdAt   creation timestamp
  */
 public record Attachment(
@@ -36,6 +38,7 @@ public record Attachment(
         long sizeBytes,
         String storageKey,
         String toolName,
+        String briefTitle,
         Instant createdAt) {
 
     /** The {@code kind} value for artifacts produced by a tool call (ADR-20 §D1). */
@@ -67,9 +70,10 @@ public record Attachment(
             long sizeBytes,
             String storageKey,
             String toolName,
+            String briefTitle,
             Instant createdAt) {
         return new Attachment(
                 id, messageId, KIND_TOOL_ARTIFACT, filename, contentType,
-                sizeBytes, storageKey, toolName, createdAt);
+                sizeBytes, storageKey, toolName, briefTitle, createdAt);
     }
 }

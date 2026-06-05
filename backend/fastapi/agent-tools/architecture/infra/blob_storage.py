@@ -1,8 +1,9 @@
 """MinIO upload adapter for the architecture BC (ADR-20 §D3 revised).
 
-agent-tools owns the write path: the `store` node calls `upload_artifact`
+agent-tools owns the write path: the `store_3dm` node calls `upload_artifact`
 which puts the .3dm bytes into MinIO and returns the object key that
-rag-chat's dispatcher will record in `chat.message_attachments`.
+rag-chat's dispatcher will record in `chat.message_attachments`; the `store_glb`
+node calls `upload_to_key` to place the preview .glb at the same prefix.
 
 The bucket is shared with rag-chat's download adapter — both services
 use `PLAYGROUND_ARCHITECTURE_MINIO_BUCKET` / `PLAYGROUND_RAGCHAT_MINIO_BUCKET`
@@ -80,3 +81,27 @@ def upload_artifact(
     )
     logger.info("Uploaded artifact to MinIO key=%s size=%d", object_key, len(file_bytes))
     return object_key
+
+
+def upload_to_key(
+    file_bytes: bytes,
+    key: str,
+    content_type: str,
+    settings: Settings,
+) -> None:
+    """Upload bytes to an explicit object key (caller owns key derivation).
+
+    Used by store_glb to place the preview .glb at the same prefix as its
+    .3dm sibling — extension swapped — so rag-chat's preview endpoint can
+    re-derive the key from the stored .3dm storageKey without any new
+    Postgres column (design spec 2026-06-05-massing-glb-preview).
+    """
+    client, bucket = _get_client(settings)
+    client.put_object(
+        bucket_name=bucket,
+        object_name=key,
+        data=io.BytesIO(file_bytes),
+        length=len(file_bytes),
+        content_type=content_type or "application/octet-stream",
+    )
+    logger.info("Uploaded artifact to MinIO key=%s size=%d", key, len(file_bytes))

@@ -3,7 +3,7 @@
 Top-level control flow only; composes nodes + subgraphs (ADR-19 Phase 3a-2):
 
   START → fetch_brief → resolve_program(subgraph) → compute
-        → serialize → store → respond → END
+        → serialize → store_3dm → store_glb → respond → END
 
 - fetch_brief     — docs-api read (X-User-Id-filtered) + readiness check (node).
 - resolve_program — the 5-stage interpretation sub-flow with the bounded
@@ -11,7 +11,8 @@ Top-level control flow only; composes nodes + subgraphs (ADR-19 Phase 3a-2):
                     derive), compiled subgraph composed as one node.
 - compute         — deterministic massing (MassingInputs → boxes) node.
 - serialize       — rhino3dm → .3dm bytes (node → infra/serializer).
-- store           — upload bytes to MinIO, set storage_key in state (ADR-20 §D3 revised).
+- store_3dm       — upload .3dm bytes to MinIO, set storage_key in state (ADR-20 §D3 revised).
+- store_glb       — best-effort preview .glb upload at the same prefix (extension swapped).
 - respond         — build the {result, artifact} envelope where artifact carries
                     metadata only (no base64); rag-chat records the storageKey.
 
@@ -38,7 +39,8 @@ from architecture.app.nodes.compute import compute
 from architecture.app.nodes.fetch_brief import make_fetch_brief_node
 from architecture.app.nodes.respond import respond
 from architecture.app.nodes.serialize import serialize
-from architecture.app.nodes.store import store
+from architecture.app.nodes.store_3dm import store_3dm
+from architecture.app.nodes.store_glb import store_glb
 from architecture.app.state import MassingState
 
 logger = logging.getLogger(__name__)
@@ -70,14 +72,16 @@ class MassingWorkflow:
         )
         g.add_node("compute", compute)
         g.add_node("serialize", serialize)
-        g.add_node("store", store)
+        g.add_node("store_3dm", store_3dm)
+        g.add_node("store_glb", store_glb)
         g.add_node("respond", respond)
         g.add_edge(START, "fetch_brief")
         g.add_edge("fetch_brief", "resolve_program")
         g.add_edge("resolve_program", "compute")
         g.add_edge("compute", "serialize")
-        g.add_edge("serialize", "store")
-        g.add_edge("store", "respond")
+        g.add_edge("serialize", "store_3dm")
+        g.add_edge("store_3dm", "store_glb")
+        g.add_edge("store_glb", "respond")
         g.add_edge("respond", END)
         return g.compile()
 

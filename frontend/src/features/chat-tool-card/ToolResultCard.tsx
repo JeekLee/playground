@@ -101,7 +101,7 @@ export function ToolResultCard({
       )}
       data-tool-card-variant={variant}
     >
-      <header className="flex items-start justify-between gap-md px-md pt-md">
+      <header className={cn('flex items-start justify-between gap-md px-md pt-md', (footer === undefined || footer === null) && 'pb-md')}>
         <div className="flex min-w-0 flex-1 items-start gap-sm">
           <span
             aria-hidden="true"
