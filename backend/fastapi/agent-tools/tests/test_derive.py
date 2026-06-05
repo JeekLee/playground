@@ -220,6 +220,19 @@ def test_below_grade_room_fits_basement_slot_or_degrades() -> None:
     assert below2.rooms == []
 
 
+def test_duplicate_zone_names_skip_attribution() -> None:
+    # 같은 이름의 zone이 둘이면 귀속이 이중 계상되므로 통째 강등 (리뷰 가드).
+    classified = _classified(
+        zones=[
+            Zone(name="연구영역", area_m2=13000.0, grade="above"),
+            Zone(name="연구영역", area_m2=13500.0, grade="above"),
+        ],
+        sub_spaces=[_sub("Middle Lab", 5680.0, parent="연구영역")],
+    )
+    inputs = derive_inputs(classified, _req(), SETTINGS)
+    assert all(z.rooms == [] for z in inputs.zones)
+
+
 def test_kfi_fixture_splits_research_zone() -> None:
     # 기존 KFI 픽스처 + Middle Lab: floors 4 유지(cap floor(26500/5680)=4),
     # slot 6,625 ≥ 5,680 → 연구영역에 귀속.

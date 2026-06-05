@@ -55,16 +55,27 @@ _ROOM_SUM_TOLERANCE = 0.98
 
 def _attribute_rooms(classified: ClassifiedBrief) -> dict[str, list[Room]]:
     """sub_spaces → zone 귀속 (D7): parent_zone 명시 우선, 없으면 같은 grade의
-    zone이 유일할 때만 귀속, 그 외 미배정."""
-    zones_by_name = {z.name: z for z in classified.zones}
+    zone이 유일할 때만 귀속, 그 외 미배정.
+    grade == "unknown" 항목은 unique-grade 규칙에 절대 걸리지 않는다 (안전하게 미배정)."""
+    names = [z.name for z in classified.zones]
+    duplicated = {n for n in names if names.count(n) > 1}
+    if duplicated:
+        logger.warning(
+            "room split skipped for duplicated zone names %s — attribution would double-count",
+            sorted(duplicated),
+        )
+
+    zones_by_name = {z.name: z for z in classified.zones if z.name not in duplicated}
     by_grade: dict[str, list[Zone]] = {"above": [], "below": []}
     for z in classified.zones:
-        by_grade[z.grade].append(z)
+        if z.name not in duplicated:
+            by_grade[z.grade].append(z)
 
     rooms: dict[str, list[Room]] = {z.name: [] for z in classified.zones}
     for it in classified.sub_spaces:
         target = None
         if it.parent_zone and it.parent_zone in zones_by_name:
+            # 명시적 parent_zone이 실의 grade와 모순돼도 우선한다 (D7 — parent가 더 강한 신호).
             target = zones_by_name[it.parent_zone]
         elif it.grade in by_grade and len(by_grade[it.grade]) == 1:
             target = by_grade[it.grade][0]
@@ -161,6 +172,7 @@ def derive_inputs(
             capped = min(target_floors_above, min(caps))
             if capped < target_floors_above:
                 # 층수가 줄면 풋프린트가 커진다 — 건폐율 재검증 (가드 1).
+                # 단일 패스 — capped와 기존값 사이의 중간 층수는 탐색하지 않는다 (spec D4-1).
                 new_footprint = above_gross / capped
                 if new_footprint <= buildable_footprint + 1e-6:
                     target_floors_above = capped
