@@ -45,6 +45,6 @@ class MassingState(TypedDict, total=False):
     extract_attempts: int  # re-prompt loop counter (ADR-19 Phase 3a)
     boxes: list[RoomBox]
     file_bytes: bytes
-    storage_key: str  # set by the store node after MinIO upload (ADR-20 §D3 revised)
+    storage_key: str  # set by the store_3dm node after MinIO upload (ADR-20 §D3 revised)
     # output
     response: GenerateMassingResponse

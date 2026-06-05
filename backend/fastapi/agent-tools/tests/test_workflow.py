@@ -1,7 +1,7 @@
 """MassingWorkflow LangGraph behavior test (ADR-19 §A19.8 / Phase 3a-2).
 
 Proves the orchestrator sequences fetch_brief → resolve_program(subgraph) →
-compute → serialize → respond and produces the expected
+compute → serialize → store_3dm → store_glb → respond and produces the expected
 GenerateMassingResponse `{result, artifact}` envelope (ADR-20 §D2), using a
 stubbed docs client + an injected fake extraction chain (no network). ADR-20
 made the BC stateless — no DB session, no arch.outputs row; the .3dm bytes ride

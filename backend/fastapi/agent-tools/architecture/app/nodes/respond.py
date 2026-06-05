@@ -1,6 +1,6 @@
 """respond node — build the `{result, artifact}` envelope (ADR-20 §D3 revised).
 
-The `store` node has already uploaded the .3dm to MinIO and stashed the
+The `store_3dm` node has already uploaded the .3dm to MinIO and stashed the
 object key in `state["storage_key"]`. This node assembles the response:
 - `result`: LLM-visible massing summary (floors, area, program JSON, Korean summary)
 - `artifact`: metadata only — filename, contentType, sizeBytes, storageKey

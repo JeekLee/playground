@@ -1,8 +1,10 @@
 """store_glb node — derive + upload the preview .glb next to the .3dm.
 
-Same MinIO prefix as the .3dm, extension swapped (design spec
-2026-06-05-massing-glb-preview): rag-chat's /attachments/{id}/preview
-endpoint re-derives the key, so nothing new lands in Postgres.
+Same MinIO prefix as the .3dm, extension swapped — strip the trailing
+``.3dm`` and append ``.glb``; non-.3dm keys have no preview (design spec
+2026-06-05-massing-glb-preview). rag-chat's /attachments/{id}/preview
+endpoint re-derives the key with the same suffix swap, so nothing new
+lands in Postgres.
 
 Preview is best-effort: any failure logs a warning and the workflow
 continues — the .3dm is already stored, only the preview goes missing
