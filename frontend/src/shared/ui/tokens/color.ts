@@ -36,3 +36,13 @@ export const color = {
 } as const;
 
 export type ColorToken = keyof typeof color;
+
+/**
+ * Massing zone-hue palette — MUST mirror `glb_serializer._PALETTE`
+ * (architecture BC) in order/value. Zones are colored by first-appearance
+ * order (box order), cycling at 5. Lives here because hex literals are
+ * forbidden outside this tokens dir (lint-enforced); the massing card's
+ * hotspot dots consume it via `zonePalette`. Mirror reference:
+ * `docs/superpowers/specs/2026-06-05-room-split-massing-design.md` D5.
+ */
+export const zonePalette = ['#8E985A', '#BC8464', '#6E829B', '#C8B280', '#96788C'] as const;

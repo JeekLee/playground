@@ -241,12 +241,10 @@ export interface ToolErrorEventPayload {
  * M8 `programJson` shape per ADR-18 §9 (the
  * `programJson.schema.json` draft 2020-12 file).
  *
- * The wire ships ONLY the extraction output — `rooms[]` is
- * `{name, areaM2}` per room (no per-room floor / dimensions). The
- * `RoomBox` algorithm output (which DOES have floor + x/y/w/d/h)
- * is consumed server-side and serialized into the `.3dm` file; only
- * the high-level program survives onto the wire (see PRD §"Wire-shape
- * contracts" and ADR-18 §11 for the split).
+ * Room-split payloads (2026-06-05) carry per-room `zone` / `floor` /
+ * `labelAnchor` — split-zone rows have `floor`, unsplit-zone rows don't.
+ * Legacy payloads carry `{name, areaM2}` only; every new field is optional
+ * so old cards render unchanged.
  *
  * The optional site / floor-height fields land here when the LLM
  * extracted them from the brief; if absent, they fell back to the
@@ -262,6 +260,12 @@ export interface MassingProgramJson {
 export interface MassingRoom {
   name: string;
   areaM2: number;
+  /** Owning zone — set on all room-split payloads (color-slot ordering key). */
+  zone?: string;
+  /** 1-based floor (negative = basement). Present only on split-zone rows. */
+  floor?: number;
+  /** Hotspot anchor — glTF Y-up coords at the room box's top-face center. */
+  labelAnchor?: { x: number; y: number; z: number };
 }
 
 // -------------------- Result type (mirrors docs.ts) ----------------------
