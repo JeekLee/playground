@@ -24,11 +24,13 @@ def get_chat_model(settings: Settings) -> ChatOpenAI:
     `/chat/completions` to `base_url`, so `base_url` is the gateway root + `/v1`
     (matching the hand-rolled client's `POST /v1/chat/completions`).
     """
-    return ChatOpenAI(
+    kwargs = dict(
         base_url=settings.spring_ai_openai_base_url + "/v1",
         api_key=settings.spring_ai_openai_api_key,
         model=settings.llm_model,
         temperature=settings.llm_temperature,
-        max_tokens=settings.llm_max_tokens,
         timeout=settings.llm_timeout_seconds,
     )
+    if settings.llm_max_tokens is not None:
+        kwargs["max_tokens"] = settings.llm_max_tokens
+    return ChatOpenAI(**kwargs)

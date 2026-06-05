@@ -7,6 +7,7 @@ so the container boots without any operator wiring on a fresh stack.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     # .env.example SPRING_AI_CHAT_MODEL). The stale default 404'd here.
     llm_model: str = Field(default="qwen3-vl-30b-a3b", alias="PLAYGROUND_MASSING_GEN_LLM_MODEL")
     llm_timeout_seconds: float = Field(default=120.0)
-    llm_max_tokens: int = Field(default=2000)
+    llm_max_tokens: Optional[int] = Field(default=None)
     llm_temperature: float = Field(default=0.1)
 
     # --- Algorithm knobs (ADR-18 §8) ---
