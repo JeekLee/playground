@@ -17,14 +17,23 @@ import { ChatEmptyState } from '@/widgets/chat-empty-state';
 import { ConfirmModal } from '@/widgets/confirm-modal';
 import { useChatSessions } from '@/features/chat-sessions';
 import { useChatStream } from '@/features/chat-stream';
-import { fetchSessionMessages } from '@/shared/api/chat';
+import { fetchSessionMessages, type AttachmentWireDto } from '@/shared/api/chat';
 import type {
   ChatSession,
   ErrorPayload,
   Message,
   StreamingTurn,
+  ToolCardState,
+  ToolCallPayload,
+  ToolResultPayload,
 } from '@/entities/chat';
 import { cn } from '@/shared/lib/cn';
+
+function attachmentToToolCard(a: AttachmentWireDto): ToolCardState {
+  const toolCall: ToolCallPayload = { id: a.id, name: a.toolName, args: {} };
+  const toolResult: ToolResultPayload = { id: a.id, name: a.toolName, outputUrl: a.downloadUrl };
+  return { kind: 'result', toolCall, toolResult, calledAt: 0, resolvedAt: 0 };
+}
 
 /**
  * ChatPage — viewport-locked Notion-style chat surface per design doc
@@ -326,6 +335,11 @@ export function ChatPage({
                   content={m.content}
                   citations={m.citations}
                   status="done"
+                  toolCards={
+                    m.role === 'assistant' && m.attachment
+                      ? [attachmentToToolCard(m.attachment)]
+                      : undefined
+                  }
                   accordion={
                     m.role === 'assistant' && m.citations.length > 0
                       ? (focusedN) => (
