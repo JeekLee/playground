@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
@@ -28,7 +28,9 @@ import { ToolResultCard } from './ToolResultCard';
  *                    lazy-loads @google/model-viewer and renders the .glb
  *                    from `${outputUrl}/preview` (240px inline viewer,
  *                    camera-controls + auto-rotate). Absent when there is
- *                    no outputUrl (in-flight card, failed artifact).
+ *                    no outputUrl (in-flight card, failed artifact); a fetch
+ *                    error (legacy rows without .glb) swaps the viewer for
+ *                    fallback copy.
  *
  * In-flight state (when `toolCard.kind === 'in_flight'`):
  *   - Skeleton card per design doc §2.2 lifecycle section.
@@ -155,6 +157,7 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
   // Inline 3D preview per design spec 2026-06-05-massing-glb-preview —
   // the backend serves the .glb sibling of the .3dm at `${outputUrl}/preview`.
   const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -166,6 +169,13 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
       void import('@google/model-viewer');
     }
   }, [open]);
+
+  const viewerRef = useCallback((el: HTMLElement | null) => {
+    // React 18 sets `on*` props on custom elements as attributes, not
+    // listeners — attach the DOM `error` event by hand. Fires when the
+    // .glb fetch fails (404 on legacy rows without a preview sibling).
+    el?.addEventListener('error', () => setFailed(true), { once: true });
+  }, []);
 
   return (
     <div className="flex w-full flex-col gap-sm">
@@ -189,8 +199,14 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
         )}
         <span>3D 미리보기</span>
       </button>
-      {open && (
+      {open && failed && (
+        <p className="rounded-md bg-surface-soft px-md py-sm text-[12px] text-text-muted">
+          미리보기를 불러올 수 없습니다 — 이 모델은 3D 미리보기가 제공되기 전에 생성되었습니다.
+        </p>
+      )}
+      {open && !failed && (
         <model-viewer
+          ref={viewerRef}
           id="massing-3d-preview"
           src={previewUrl}
           camera-controls
