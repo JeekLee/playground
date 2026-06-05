@@ -26,7 +26,7 @@ import { ToolResultCard } from './ToolResultCard';
  *                    accordion visual pattern verbatim.
  *   - preview      = `▸ 3D 미리보기` accordion above Program details —
  *                    lazy-loads @google/model-viewer and renders the .glb
- *                    from `${outputUrl}/preview` (240px inline viewer,
+ *                    from `${outputUrl}/preview` (320px-tall full-width viewer,
  *                    camera-controls + auto-rotate). Absent when there is
  *                    no outputUrl (in-flight card, failed artifact); a fetch
  *                    error (legacy rows without .glb) swaps the viewer for
@@ -207,15 +207,23 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
         </p>
       )}
       {open && !failed && (
-        <model-viewer
-          ref={viewerRef}
-          id="massing-3d-preview"
-          src={previewUrl}
-          camera-controls
-          auto-rotate
-          shadow-intensity="1"
-          className="block h-[240px] w-full rounded-md bg-surface-soft"
-        />
+        // Sizing/decoration live on this plain div: React 18 writes
+        // `className` on CUSTOM elements as a literal `className` attribute
+        // (not `class`), so Tailwind selectors never match the viewer and it
+        // collapses to model-viewer's default 300×150 host size. The wrapper
+        // owns the design tokens; the viewer fills it via inline style
+        // (`style` IS special-cased by React on every element).
+        <div className="h-[320px] w-full overflow-hidden rounded-md bg-surface-soft">
+          <model-viewer
+            ref={viewerRef}
+            id="massing-3d-preview"
+            src={previewUrl}
+            camera-controls
+            auto-rotate
+            shadow-intensity="1"
+            style={{ width: '100%', height: '100%' }}
+          />
+        </div>
       )}
     </div>
   );

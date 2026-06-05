@@ -252,7 +252,10 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 > `▸ 3D 미리보기` accordion above `▸ Program details`. It lazy-loads
 > `@google/model-viewer` and renders the preview `.glb` (uploaded by the
 > architecture BC next to the `.3dm`, same key prefix) from
-> `GET /api/rag/chat/attachments/{id}/preview` — 240px inline viewer,
+> `GET /api/rag/chat/attachments/{id}/preview` — 320px-tall, card-wide
+> inline viewer (sizing lives on a wrapper div — React 18 writes `className`
+> on custom elements as a literal attribute, so Tailwind cannot target
+> `<model-viewer>` directly),
 > camera-controls + auto-rotate. Legacy attachments without a `.glb` show
 > fallback copy inside the accordion when the fetch 404s ("미리보기를 불러올
 > 수 없습니다…"). Spec:
