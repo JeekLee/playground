@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
@@ -24,6 +24,11 @@ import { ToolResultCard } from './ToolResultCard';
  *   - accordion    = `▸ Program details` (collapsed) / `▾ Program
  *                    details` (expanded). Mirrors the M4 citation
  *                    accordion visual pattern verbatim.
+ *   - preview      = `▸ 3D 미리보기` accordion above Program details —
+ *                    lazy-loads @google/model-viewer and renders the .glb
+ *                    from `${outputUrl}/preview` (240px inline viewer,
+ *                    camera-controls + auto-rotate). Absent when there is
+ *                    no outputUrl (in-flight card, failed artifact).
  *
  * In-flight state (when `toolCard.kind === 'in_flight'`):
  *   - Skeleton card per design doc §2.2 lifecycle section.
@@ -89,27 +94,34 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
       }
       primaryAction={hasDownloadUrl ? <DownloadDotThreeDmButton href={state.toolResult.outputUrl!} /> : null}
       footer={
-        hasProgram ? (
-          <button
-            type="button"
-            onClick={() => setOpen((prev) => !prev)}
-            aria-expanded={open}
-            aria-controls="massing-program-details"
-            className={cn(
-              'inline-flex items-center gap-xs self-start rounded-md px-xs py-[2px] text-[12px] transition-colors duration-[140ms]',
-              'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-              open
-                ? 'font-semibold text-accent hover:bg-accent-soft'
-                : 'font-medium text-text-muted hover:bg-surface-soft hover:text-text',
+        hasDownloadUrl || hasProgram ? (
+          <div className="flex w-full flex-col gap-xs">
+            {hasDownloadUrl && (
+              <PreviewAccordion previewUrl={`${state.toolResult.outputUrl}/preview`} />
             )}
-          >
-            {open ? (
-              <ChevronDown size={12} aria-hidden="true" />
-            ) : (
-              <ChevronRight size={12} aria-hidden="true" />
+            {hasProgram && (
+              <button
+                type="button"
+                onClick={() => setOpen((prev) => !prev)}
+                aria-expanded={open}
+                aria-controls="massing-program-details"
+                className={cn(
+                  'inline-flex items-center gap-xs self-start rounded-md px-xs py-[2px] text-[12px] transition-colors duration-[140ms]',
+                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+                  open
+                    ? 'font-semibold text-accent hover:bg-accent-soft'
+                    : 'font-medium text-text-muted hover:bg-surface-soft hover:text-text',
+                )}
+              >
+                {open ? (
+                  <ChevronDown size={12} aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={12} aria-hidden="true" />
+                )}
+                <span>Program details</span>
+              </button>
             )}
-            <span>Program details</span>
-          </button>
+          </div>
         ) : null
       }
       expanded={
@@ -136,6 +148,58 @@ function Spinner() {
       aria-hidden="true"
       className="inline-block h-[12px] w-[12px] animate-tool-spinner rounded-full border-2 border-border border-t-accent"
     />
+  );
+}
+
+function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
+  // Inline 3D preview per design spec 2026-06-05-massing-glb-preview —
+  // the backend serves the .glb sibling of the .3dm at `${outputUrl}/preview`.
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      // Defer the heavy model-viewer chunk until first open. The component
+      // SSRs (it's a client component, but Next still renders initial HTML),
+      // and @google/model-viewer touches `customElements` at module scope —
+      // a top-level import would crash the server render. The unknown
+      // element upgrades in place once the module registers it.
+      void import('@google/model-viewer');
+    }
+  }, [open]);
+
+  return (
+    <div className="flex w-full flex-col gap-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        aria-controls="massing-3d-preview"
+        className={cn(
+          'inline-flex items-center gap-xs self-start rounded-md px-xs py-[2px] text-[12px] transition-colors duration-[140ms]',
+          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+          open
+            ? 'font-semibold text-accent hover:bg-accent-soft'
+            : 'font-medium text-text-muted hover:bg-surface-soft hover:text-text',
+        )}
+      >
+        {open ? (
+          <ChevronDown size={12} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={12} aria-hidden="true" />
+        )}
+        <span>3D 미리보기</span>
+      </button>
+      {open && (
+        <model-viewer
+          id="massing-3d-preview"
+          src={previewUrl}
+          camera-controls
+          auto-rotate
+          shadow-intensity="1"
+          className="block h-[240px] w-full rounded-md bg-surface-soft"
+        />
+      )}
+    </div>
   );
 }
 
