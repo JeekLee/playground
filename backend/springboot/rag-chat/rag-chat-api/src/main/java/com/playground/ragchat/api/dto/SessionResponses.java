@@ -1,7 +1,9 @@
 package com.playground.ragchat.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.playground.ragchat.application.dto.SessionDetailView;
 import com.playground.ragchat.application.repository.SessionRepository;
+import com.playground.ragchat.domain.model.Attachment;
 import com.playground.ragchat.domain.model.ChatSession;
 import java.time.Instant;
 import java.util.List;
@@ -34,22 +36,37 @@ public final class SessionResponses {
         }
     }
 
+    /** Gateway-relative download URL prefix per ADR-20 §D4. */
+    private static final String ATTACHMENT_DOWNLOAD_PREFIX = "/api/rag/chat/attachments/";
+
     public record MessageHistoryResponse(UUID sessionId, String title, List<MessageDto> messages) {
         public static MessageHistoryResponse from(SessionDetailView detail) {
-            List<MessageDto> msgs = detail.messages().stream().map(m -> new MessageDto(
-                    m.id().value(),
-                    m.role().wireValue(),
-                    m.content(),
-                    m.createdAt(),
-                    m.tokensIn(),
-                    m.tokensOut(),
-                    m.citations().stream().map(c -> new CitationDto(
-                            c.position(),
-                            c.documentId().value().toString(),
-                            c.chunkIndex(),
-                            c.deleted() ? null : c.title(),
-                            c.deleted() ? null : c.excerpt())).toList()))
-                    .toList();
+            List<MessageDto> msgs = detail.messages().stream().map(m -> {
+                List<CitationDto> citationDtos = m.citations().stream().map(c -> new CitationDto(
+                        c.position(),
+                        c.documentId().value().toString(),
+                        c.chunkIndex(),
+                        c.deleted() ? null : c.title(),
+                        c.deleted() ? null : c.excerpt())).toList();
+                AttachmentWire attachmentWire = m.attachment()
+                        .map(a -> new AttachmentWire(
+                                a.id().value(),
+                                a.filename(),
+                                a.contentType(),
+                                a.sizeBytes(),
+                                ATTACHMENT_DOWNLOAD_PREFIX + a.id().value(),
+                                a.toolName()))
+                        .orElse(null);
+                return new MessageDto(
+                        m.id().value(),
+                        m.role().wireValue(),
+                        m.content(),
+                        m.createdAt(),
+                        m.tokensIn(),
+                        m.tokensOut(),
+                        citationDtos,
+                        attachmentWire);
+            }).toList();
             return new MessageHistoryResponse(detail.sessionId().value(), detail.title(), msgs);
         }
     }
@@ -61,7 +78,18 @@ public final class SessionResponses {
             Instant createdAt,
             Integer tokensIn,
             Integer tokensOut,
-            List<CitationDto> citations) {}
+            List<CitationDto> citations,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            AttachmentWire attachment) {}
+
+    /** Wire shape for a tool-produced file attachment on a historical message. */
+    public record AttachmentWire(
+            UUID id,
+            String filename,
+            String contentType,
+            long sizeBytes,
+            String downloadUrl,
+            String toolName) {}
 
     /**
      * Wire shape aligned with the SSE {@code done} payload's citation

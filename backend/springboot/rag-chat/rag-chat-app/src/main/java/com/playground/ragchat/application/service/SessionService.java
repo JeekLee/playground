@@ -1,9 +1,11 @@
 package com.playground.ragchat.application.service;
 
 import com.playground.ragchat.application.dto.SessionDetailView;
+import com.playground.ragchat.application.repository.AttachmentRepository;
 import com.playground.ragchat.application.repository.MessageRepository;
 import com.playground.ragchat.application.repository.SessionRepository;
 import com.playground.ragchat.domain.exception.RagChatErrorCode;
+import com.playground.ragchat.domain.model.Attachment;
 import com.playground.ragchat.domain.model.ChatSession;
 import com.playground.ragchat.domain.model.Message;
 import com.playground.ragchat.domain.model.MessageCitation;
@@ -16,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,11 +33,14 @@ public class SessionService {
 
     private final SessionRepository sessionRepository;
     private final MessageRepository messageRepository;
+    private final AttachmentRepository attachmentRepository;
     private final Clock clock;
 
-    public SessionService(SessionRepository sessionRepository, MessageRepository messageRepository, Clock clock) {
+    public SessionService(SessionRepository sessionRepository, MessageRepository messageRepository,
+                          AttachmentRepository attachmentRepository, Clock clock) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
+        this.attachmentRepository = attachmentRepository;
         this.clock = clock;
     }
 
@@ -93,6 +99,15 @@ public class SessionService {
             citationsByMessage.computeIfAbsent(c.messageId(), k -> new ArrayList<>()).add(c);
         }
 
+        // Attachments: one per assistant message (tool-artifact, ADR-20 §D1).
+        List<Attachment> attachments = assistantIds.isEmpty()
+                ? List.of()
+                : attachmentRepository.findByMessages(assistantIds);
+        Map<MessageId, Attachment> attachmentByMessage = new HashMap<>();
+        for (Attachment a : attachments) {
+            attachmentByMessage.put(a.messageId(), a);
+        }
+
         // Enrich each citation with title + excerpt via the resolver (deleted-doc
         // case yields title=null + deleted=true).
         List<SessionDetailView.MessageView> views = new ArrayList<>(messages.size());
@@ -107,7 +122,8 @@ public class SessionService {
             }
             views.add(new SessionDetailView.MessageView(
                     m.id(), m.role(), m.content(), m.createdAt(), m.tokensIn(), m.tokensOut(),
-                    enrichedCitations));
+                    enrichedCitations,
+                    Optional.ofNullable(attachmentByMessage.get(m.id()))));
         }
         return new SessionDetailView(session.id(), session.title(), views);
     }

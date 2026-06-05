@@ -70,6 +70,17 @@ export interface MessageCitationDto {
 
 export type MessageRole = 'user' | 'assistant';
 
+/** Wire shape for a tool-produced file attachment on a historical message (ADR-20 §D4). */
+export interface AttachmentWireDto {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  /** Gateway-relative download URL: `/api/rag/chat/attachments/{id}`. */
+  downloadUrl: string;
+  toolName: string;
+}
+
 export interface MessageDto {
   id: string;
   role: MessageRole;
@@ -81,6 +92,8 @@ export interface MessageDto {
   createdAt: string;
   /** Empty array on user rows. */
   citations: MessageCitationDto[];
+  /** Present on assistant rows that produced a tool artifact (ADR-20 §D4). */
+  attachment?: AttachmentWireDto | null;
 }
 
 export interface SessionMessagesResponse {
