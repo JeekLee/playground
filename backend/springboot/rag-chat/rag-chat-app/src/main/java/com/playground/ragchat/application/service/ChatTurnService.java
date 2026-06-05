@@ -495,46 +495,14 @@ public class ChatTurnService {
                     + " cited=" + toPersist.size()
                     + " attachments=" + attachments.size());
 
-            // ADR-20 §D4 — surface the last produced attachment on `done` so the
-            // FE's MassingResultCard can read fileUrl + the attachment object
-            // even if it joined the stream after the tool_result event.
-            ChatStreamEvent.Done done = !attachments.isEmpty()
-                    ? doneWithAttachment(persisted.id(), tokensIn, tokensOut, wireCitations,
-                            attachments.get(attachments.size() - 1))
-                    : new ChatStreamEvent.Done(
-                            persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
+            // The tool_result SSE event already carries fileUrl for the streaming
+            // card; history loads via loadMessages carry the attachment DTO.
+            // Never put attachment data inside the citations field — the frontend
+            // calls citations.map() and crashes when it receives an object.
+            ChatStreamEvent.Done done = new ChatStreamEvent.Done(
+                    persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
             return (ChatStreamEvent) done;
         }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Build a {@code done} event whose {@code citations} payload is wrapped so
-     * the FE receives both the cited subset AND the ADR-20 §D4 attachment object
-     * + top-level {@code fileUrl} (back-compat for MassingResultCard). The
-     * controller serializes the {@code citations} object verbatim, so we ship a
-     * map carrying {@code {citations, attachment, fileUrl}}.
-     */
-    private ChatStreamEvent.Done doneWithAttachment(
-            MessageId messageId, int tokensIn, int tokensOut,
-            List<CitationDto> wireCitations, Attachment attachment) {
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("citations", wireCitations);
-        payload.put("attachment", attachmentWire(attachment));
-        payload.put("fileUrl", ATTACHMENT_DOWNLOAD_PREFIX + attachment.id());
-        return new ChatStreamEvent.Done(
-                messageId.value().toString(), tokensIn, tokensOut, payload);
-    }
-
-    /** Wire-shape attachment object per ADR-20 §D4 ({id, filename, contentType, sizeBytes, downloadUrl}). */
-    private java.util.Map<String, Object> attachmentWire(Attachment attachment) {
-        String downloadUrl = ATTACHMENT_DOWNLOAD_PREFIX + attachment.id();
-        java.util.Map<String, Object> wire = new java.util.LinkedHashMap<>();
-        wire.put("id", attachment.id().toString());
-        wire.put("filename", attachment.filename());
-        wire.put("contentType", attachment.contentType());
-        wire.put("sizeBytes", attachment.sizeBytes());
-        wire.put("downloadUrl", downloadUrl);
-        return wire;
     }
 
     /**
