@@ -75,12 +75,13 @@ def _with_hls(
     """Return a new RGB tuple with the given HLS lightness and scaled saturation."""
     h, _, s = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
     r, g, b = colorsys.hls_to_rgb(h, light, s * sat_scale)
-    return (int(r * 255), int(g * 255), int(b * 255))
+    return (round(r * 255), round(g * 255), round(b * 255))
 
 
 def _room_step_color(zone_rgb: tuple[int, int, int], step: int) -> tuple[int, int, int]:
     """Map a room's first-appearance slot within its zone to a lightness step."""
     span = _ROOM_LIGHT_MAX - _ROOM_LIGHT_MIN
+    # step % _ROOM_LIGHT_STEPS — 7번째 실부터 명도 순환 재사용 (spec D5 명시).
     light = _ROOM_LIGHT_MIN + span * ((step % _ROOM_LIGHT_STEPS) / max(_ROOM_LIGHT_STEPS - 1, 1))
     return _with_hls(zone_rgb, light=light)
 
