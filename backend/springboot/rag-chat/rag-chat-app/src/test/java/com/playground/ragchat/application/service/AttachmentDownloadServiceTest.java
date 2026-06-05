@@ -171,4 +171,70 @@ class AttachmentDownloadServiceTest {
                 .satisfies(e -> assertThat(((AbstractException) e).errorCode().code())
                         .isEqualTo("CHAT-NOT-FOUND-002"));
     }
+
+    // --- openPreview (design spec 2026-06-05-massing-glb-preview) ---
+
+    @Test
+    void preview_ownerGetsGlbBytes() {
+        FakeAttachmentRepository repo = new FakeAttachmentRepository();
+        FakeBlobStorage blobs = new FakeBlobStorage();
+        AttachmentId id = AttachmentId.generate();
+        String key3dm = "architecture/massing/20260605/u/massing-brief-1.3dm";
+        byte[] glb = "fake-glb".getBytes(StandardCharsets.UTF_8);
+        repo.put(attachment(id, key3dm), owner);
+        // The .glb sibling sits at the same prefix, extension swapped.
+        blobs.put("architecture/massing/20260605/u/massing-brief-1.glb", glb);
+
+        AttachmentDownloadService svc = new AttachmentDownloadService(repo, blobs);
+        AttachmentDownloadService.Download preview = svc.openPreview(id, owner);
+
+        try (var handle = preview.handle(); InputStream in = handle.stream()) {
+            assertThat(in.readAllBytes()).isEqualTo(glb);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @Test
+    void preview_glbMissing_gets404() {
+        // Legacy row or failed store_glb — the .3dm row exists, the .glb doesn't.
+        FakeAttachmentRepository repo = new FakeAttachmentRepository();
+        AttachmentId id = AttachmentId.generate();
+        repo.put(attachment(id, "architecture/massing/20260605/u/m.3dm"), owner);
+
+        AttachmentDownloadService svc = new AttachmentDownloadService(repo, new FakeBlobStorage());
+        assertThatThrownBy(() -> svc.openPreview(id, owner))
+                .isInstanceOf(AbstractException.class)
+                .satisfies(e -> assertThat(((AbstractException) e).errorCode().code())
+                        .isEqualTo("CHAT-NOT-FOUND-002"));
+    }
+
+    @Test
+    void preview_non3dmAttachment_gets415() {
+        FakeAttachmentRepository repo = new FakeAttachmentRepository();
+        AttachmentId id = AttachmentId.generate();
+        repo.put(attachment(id, "architecture/massing/20260605/u/report.pdf"), owner);
+
+        AttachmentDownloadService svc = new AttachmentDownloadService(repo, new FakeBlobStorage());
+        assertThatThrownBy(() -> svc.openPreview(id, owner))
+                .isInstanceOf(AbstractException.class)
+                .satisfies(e -> assertThat(((AbstractException) e).errorCode().code())
+                        .isEqualTo("CHAT-PREVIEW-001"));
+    }
+
+    @Test
+    void preview_nonOwner_gets404() {
+        FakeAttachmentRepository repo = new FakeAttachmentRepository();
+        FakeBlobStorage blobs = new FakeBlobStorage();
+        AttachmentId id = AttachmentId.generate();
+        repo.put(attachment(id, "architecture/massing/20260605/u/m.3dm"), owner);
+        blobs.put("architecture/massing/20260605/u/m.glb", "g".getBytes(StandardCharsets.UTF_8));
+
+        AttachmentDownloadService svc = new AttachmentDownloadService(repo, blobs);
+        // Tenant isolation — reads as not-found, same as the download path.
+        assertThatThrownBy(() -> svc.openPreview(id, stranger))
+                .isInstanceOf(AbstractException.class)
+                .satisfies(e -> assertThat(((AbstractException) e).errorCode().code())
+                        .isEqualTo("CHAT-NOT-FOUND-002"));
+    }
 }

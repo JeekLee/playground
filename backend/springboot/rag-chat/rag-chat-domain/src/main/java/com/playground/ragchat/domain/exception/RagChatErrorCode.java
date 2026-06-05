@@ -7,6 +7,7 @@ import com.playground.shared.error.MappedTo;
 import com.playground.shared.error.NotFoundException;
 import com.playground.shared.error.ServiceUnavailableException;
 import com.playground.shared.error.UnauthorizedException;
+import com.playground.shared.error.UnsupportedMediaTypeException;
 
 /**
  * Rag-Chat BC error-code enum per ADR-11 + ADR-14 §C. Format:
@@ -27,6 +28,11 @@ public enum RagChatErrorCode implements ErrorCode {
     // (tenant isolation; don't leak existence, ADR-14 §6.5 style).
     @MappedTo(NotFoundException.class)
     ATTACHMENT_NOT_FOUND("CHAT-NOT-FOUND-002", "Attachment not found"),
+
+    // Preview is derived from a .3dm storageKey (design spec 2026-06-05);
+    // attachment types without a preview representation answer 415.
+    @MappedTo(UnsupportedMediaTypeException.class)
+    PREVIEW_NOT_SUPPORTED("CHAT-PREVIEW-001", "Preview not supported for this attachment type"),
 
     @MappedTo(BadRequestException.class)
     MESSAGE_TOO_LARGE("CHAT-VALIDATION-001", "Message exceeds 4 KB"),

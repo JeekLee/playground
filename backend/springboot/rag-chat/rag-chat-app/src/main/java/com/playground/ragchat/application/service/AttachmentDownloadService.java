@@ -35,8 +35,7 @@ public class AttachmentDownloadService {
      * caller, or a purged blob.
      */
     public Download open(AttachmentId attachmentId, UserId caller) {
-        Attachment attachment = attachmentRepository.findOwned(attachmentId, caller)
-                .orElseThrow(() -> ExceptionCreator.of(RagChatErrorCode.ATTACHMENT_NOT_FOUND).build());
+        Attachment attachment = resolveOwned(attachmentId, caller);
 
         Optional<BlobStoragePort.BlobHandle> handle = blobStoragePort.get(attachment.storageKey());
         if (handle.isEmpty()) {
@@ -45,6 +44,33 @@ public class AttachmentDownloadService {
             throw ExceptionCreator.of(RagChatErrorCode.ATTACHMENT_NOT_FOUND).build();
         }
         return new Download(attachment, handle.get());
+    }
+
+    /**
+     * Resolve the owned attachment + open its <em>preview</em> blob — the .glb
+     * sibling agent-tools uploads next to the .3dm (same MinIO prefix,
+     * extension swapped; design spec 2026-06-05-massing-glb-preview).
+     * 415 when the attachment type has no preview representation; 404 when
+     * the .glb is absent (legacy rows, failed store_glb).
+     */
+    public Download openPreview(AttachmentId attachmentId, UserId caller) {
+        Attachment attachment = resolveOwned(attachmentId, caller);
+        String key = attachment.storageKey();
+        if (!key.endsWith(".3dm")) {
+            throw ExceptionCreator.of(RagChatErrorCode.PREVIEW_NOT_SUPPORTED).build();
+        }
+        String glbKey = key.substring(0, key.length() - ".3dm".length()) + ".glb";
+        Optional<BlobStoragePort.BlobHandle> handle = blobStoragePort.get(glbKey);
+        if (handle.isEmpty()) {
+            throw ExceptionCreator.of(RagChatErrorCode.ATTACHMENT_NOT_FOUND).build();
+        }
+        return new Download(attachment, handle.get());
+    }
+
+    /** Owner-scoped lookup; missing OR non-owner → 404 (tenant isolation, ADR-14 §6.5). */
+    private Attachment resolveOwned(AttachmentId attachmentId, UserId caller) {
+        return attachmentRepository.findOwned(attachmentId, caller)
+                .orElseThrow(() -> ExceptionCreator.of(RagChatErrorCode.ATTACHMENT_NOT_FOUND).build());
     }
 
     /** Resolved attachment metadata + an open MinIO read handle. */
