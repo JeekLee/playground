@@ -10,6 +10,9 @@ ADR-19 Phase 3a introduces the two-schema extract→resolve→compute pipeline:
   step. Pydantic validators enforce the coverage gate so the algorithm may
   assume a feasible massing.
 - `RoomBox` — pure-Python dataclass for the algorithm's box output.
+- `Room` / `COMMON_AREA_NAME` — room-split additions (2026-06-05): the
+  named sub-spaces a zone is split into, and the per-floor remainder
+  box name shared by algorithm/serializers/respond.
 
 Wire DTOs (request/response) live in `api/dtos.py`; the SQLAlchemy ORM row
 (`ArchOutput`) lives in `infra/persistence.py`.
@@ -109,7 +112,11 @@ class BriefAnalysis(BaseModel):
 
 class Room(BaseModel):
     """A named sub-space placed whole on one floor (net area, 브리프 그대로 —
-    design spec 2026-06-05-room-split-massing D2)."""
+    design spec 2026-06-05-room-split-massing D2).
+
+    `derive` builds these from `ClassifiedBrief.sub_spaces` and attaches them
+    to `Zone.rooms`; the algorithm consumes them to split a zone's per-floor
+    rectangle into room boxes (+ a `COMMON_AREA_NAME` remainder)."""
 
     name: str = Field(min_length=1)
     area_m2: float = Field(gt=0)
