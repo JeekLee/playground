@@ -61,9 +61,12 @@ public final class MassingTool {
                     + "  don't request a massing artifact\n\n"
                     + "When the user does explicitly request a massing, the tool "
                     + "extracts the room program (rooms with areas in m²) from the "
-                    + "brief, computes a stacked rectangular massing, and returns "
-                    + "a downloadable .3dm URL plus a one-line Korean summary "
-                    + "(e.g., \"12실 · 3층 · 총 480 m²\").";
+                    + "brief and computes a stacked rectangular massing. "
+                    + "The tool result contains a one-line Korean summary "
+                    + "(e.g., \"12실 · 3층 · 총 480 m²\"). "
+                    + "The .3dm file is delivered via a download button in the UI automatically — "
+                    + "DO NOT write any URL, file link, or download path in your text response. "
+                    + "Just relay the summary from the tool result and confirm completion.";
 
     /** Default endpoint hostname — overridden by env var when set. */
     private static final URI DEFAULT_ENDPOINT =
