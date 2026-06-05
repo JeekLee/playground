@@ -97,6 +97,7 @@ def test_graph_runs_path_and_builds_envelope():
     # two GROSS zones drive the program (연구영역 + 지하영역).
     assert len(result.program_json.rooms) == 2
     assert result.summary == "2실 · 지상 4층 + 지하 1층 · 총 31000 m²"
+    assert result.brief_title == "KFI 테스트 브리프"
     # result is LLM-visible: no fileUrl leaks (ADR-20 retires agent-tools store).
     assert not hasattr(result, "file_url")
 
