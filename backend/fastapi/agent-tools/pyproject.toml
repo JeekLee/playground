@@ -17,6 +17,7 @@ dependencies = [
     "langgraph==0.2.60",
     "langchain-openai==0.2.14",
     "minio==7.2.15",
+    "trimesh==4.5.3",
 ]
 
 [project.optional-dependencies]
