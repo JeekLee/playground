@@ -339,11 +339,10 @@ public class ChatTurnService {
         Flux<ChatStreamEvent> tokens = rawDeltas
                 // Inactivity timeout between upstream items. A tool-calling turn
                 // emits no token until the tool round-trip finishes, and a tool may
-                // legitimately take up to its 60s budget (e.g. generate_massing's
+                // legitimately take up to its 120s budget (e.g. generate_massing's
                 // LLM brief extraction). So this MUST exceed the max tool budget
-                // (MassingTool 60s + 2s block) — 35s was shorter than the tool
-                // budget and timed out slow massing turns. 90s gives margin.
-                .timeout(java.time.Duration.ofSeconds(90))
+                // (MassingTool 120s + 2s block) — 150s gives margin.
+                .timeout(java.time.Duration.ofSeconds(150))
                 .doOnNext(accumulated::append)
                 .map(delta -> (ChatStreamEvent) new ChatStreamEvent.Token(delta))
                 .onErrorResume(err -> {
