@@ -29,9 +29,10 @@ import type {
 } from '@/entities/chat';
 import { cn } from '@/shared/lib/cn';
 
-function attachmentToToolCard(a: AttachmentWireDto): ToolCardState {
+function attachmentToToolCard(a: AttachmentWireDto, messageContent?: string): ToolCardState {
   const toolCall: ToolCallPayload = { id: a.id, name: a.toolName, args: {} };
-  const toolResult: ToolResultPayload = { id: a.id, name: a.toolName, outputUrl: a.downloadUrl };
+  const summary = messageContent ? messageContent.split('\n')[0] : undefined;
+  const toolResult: ToolResultPayload = { id: a.id, name: a.toolName, outputUrl: a.downloadUrl, summary };
   return { kind: 'result', toolCall, toolResult, calledAt: 0, resolvedAt: 0 };
 }
 
@@ -337,7 +338,7 @@ export function ChatPage({
                   status="done"
                   toolCards={
                     m.role === 'assistant' && m.attachment
-                      ? [attachmentToToolCard(m.attachment)]
+                      ? [attachmentToToolCard(m.attachment, m.content)]
                       : undefined
                   }
                   accordion={
