@@ -118,3 +118,44 @@ def test_ground_plane_translucent_and_covers_footprint():
 def test_empty_boxes_raises():
     with pytest.raises(MassingError):
         serialize_glb([])
+
+
+def _hls(color: tuple[float, ...]) -> tuple[float, float, float]:
+    import colorsys
+    return colorsys.rgb_to_hls(*color[:3])
+
+
+def test_room_boxes_share_zone_hue_with_distinct_lightness():
+    data = serialize_glb([
+        _box(name="대실험실", zone="연구", floor=1, h=3.5),
+        _box(name="실험실A", zone="연구", floor=1, x=5.0, h=3.5),
+    ])
+    scene = _load(data)
+    c1 = _color(next(g for n, g in scene.geometry.items() if n.startswith("대실험실")))
+    c2 = _color(next(g for n, g in scene.geometry.items() if n.startswith("실험실A")))
+    h1, l1, _ = _hls(c1)
+    h2, l2, _ = _hls(c2)
+    assert h1 == pytest.approx(h2, abs=0.02)   # 같은 zone → 같은 hue
+    assert abs(l1 - l2) > 0.03                  # 실 구분 → 명도 차이
+
+
+def test_common_box_is_pale_desaturated():
+    data = serialize_glb([
+        _box(name="대실험실", zone="연구", floor=1, h=3.5),
+        _box(name="공용·기타", zone="연구", floor=1, x=5.0, h=3.5),
+    ])
+    scene = _load(data)
+    room = _color(next(g for n, g in scene.geometry.items() if n.startswith("대실험실")))
+    common = _color(next(g for n, g in scene.geometry.items() if n.startswith("공용·기타")))
+    _, l_room, s_room = _hls(room)
+    _, l_common, s_common = _hls(common)
+    assert l_common > l_room      # 더 밝고
+    assert s_common < s_room      # 더 낮은 채도
+
+
+def test_unsplit_zone_box_keeps_base_palette_color():
+    # zone == name → 기존 원색 그대로 (readability pass와 동일 출력).
+    data = serialize_glb([_box(name="연구", zone="연구", floor=1, h=3.5)])
+    scene = _load(data)
+    c = _color(next(g for n, g in scene.geometry.items() if n.startswith("연구")))
+    assert c[:3] == (round(142 / 255, 2), round(152 / 255, 2), round(90 / 255, 2))
