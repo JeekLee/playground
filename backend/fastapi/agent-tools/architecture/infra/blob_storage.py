@@ -80,3 +80,27 @@ def upload_artifact(
     )
     logger.info("Uploaded artifact to MinIO key=%s size=%d", object_key, len(file_bytes))
     return object_key
+
+
+def upload_to_key(
+    file_bytes: bytes,
+    key: str,
+    content_type: str,
+    settings: Settings,
+) -> None:
+    """Upload bytes to an explicit object key (caller owns key derivation).
+
+    Used by store_glb to place the preview .glb at the same prefix as its
+    .3dm sibling — extension swapped — so rag-chat's preview endpoint can
+    re-derive the key from the stored .3dm storageKey without any new
+    Postgres column (design spec 2026-06-05-massing-glb-preview).
+    """
+    client, bucket = _get_client(settings)
+    client.put_object(
+        bucket_name=bucket,
+        object_name=key,
+        data=io.BytesIO(file_bytes),
+        length=len(file_bytes),
+        content_type=content_type or "application/octet-stream",
+    )
+    logger.info("Uploaded artifact to MinIO key=%s size=%d", key, len(file_bytes))

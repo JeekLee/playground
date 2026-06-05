@@ -80,9 +80,15 @@ def _build_workflow() -> MassingWorkflow:
 
 def test_graph_runs_path_and_builds_envelope(monkeypatch):
     monkeypatch.setattr(
-        "architecture.app.nodes.store.upload_artifact",
+        "architecture.app.nodes.store_3dm.upload_artifact",
         lambda file_bytes, filename, content_type, settings:
             f"architecture/massing/20260605/test-uuid/{filename}",
+    )
+    glb_uploads: list[tuple[str, str, int]] = []
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_glb.upload_to_key",
+        lambda file_bytes, key, content_type, settings:
+            glb_uploads.append((key, content_type, len(file_bytes))),
     )
 
     flow = _build_workflow()
@@ -115,6 +121,14 @@ def test_graph_runs_path_and_builds_envelope(monkeypatch):
     assert artifact.storage_key.endswith(artifact.filename)
     assert artifact.size_bytes > 0
 
+    # .glb preview rides next to the .3dm — same prefix, extension swapped
+    # (design spec 2026-06-05-massing-glb-preview).
+    assert len(glb_uploads) == 1
+    glb_key, glb_content_type, glb_size = glb_uploads[0]
+    assert glb_key == artifact.storage_key[: -len(".3dm")] + ".glb"
+    assert glb_content_type == "model/gltf-binary"
+    assert glb_size > 0
+
 
 def test_graph_has_expected_nodes_and_subgraphs():
     flow = _build_workflow()
@@ -124,6 +138,8 @@ def test_graph_has_expected_nodes_and_subgraphs():
         "resolve_program",
         "compute",
         "serialize",
+        "store_3dm",
+        "store_glb",
         "respond",
     } <= nodes
 
