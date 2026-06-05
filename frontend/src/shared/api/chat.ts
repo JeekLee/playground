@@ -79,6 +79,8 @@ export interface AttachmentWireDto {
   /** Gateway-relative download URL: `/api/rag/chat/attachments/{id}`. */
   downloadUrl: string;
   toolName: string;
+  /** Document title of the brief that produced this artifact. Absent on legacy rows. */
+  briefTitle?: string;
 }
 
 export interface MessageDto {
@@ -214,6 +216,8 @@ export interface ToolResultEventPayload {
   summary?: string;
   /** Relative download URL for file-producing tools. */
   outputUrl?: string;
+  /** Document title of the brief that produced this artifact (M8). */
+  briefTitle?: string;
   /** Tool-specific structured payload. M8: see {@link MassingProgramJson}. */
   programJson?: Record<string, unknown>;
   /** Reserved for non-file tools (e.g. image-gen returning an inline preview). */

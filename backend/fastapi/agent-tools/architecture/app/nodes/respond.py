@@ -56,6 +56,7 @@ def respond(state: MassingState) -> dict:
                 floorCount=floors_above,
                 basementLevels=basement_levels,
                 summary=summary,
+                briefTitle=state["detail"].title,
             ),
             artifact=MassingArtifact(
                 filename=filename,

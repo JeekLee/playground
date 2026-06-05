@@ -32,7 +32,13 @@ import { cn } from '@/shared/lib/cn';
 function attachmentToToolCard(a: AttachmentWireDto, messageContent?: string): ToolCardState {
   const toolCall: ToolCallPayload = { id: a.id, name: a.toolName, args: {} };
   const summary = messageContent ? messageContent.split('\n')[0] : undefined;
-  const toolResult: ToolResultPayload = { id: a.id, name: a.toolName, outputUrl: a.downloadUrl, summary };
+  const toolResult: ToolResultPayload = {
+    id: a.id,
+    name: a.toolName,
+    outputUrl: a.downloadUrl,
+    summary,
+    briefTitle: a.briefTitle,
+  };
   return { kind: 'result', toolCall, toolResult, calledAt: 0, resolvedAt: 0 };
 }
 

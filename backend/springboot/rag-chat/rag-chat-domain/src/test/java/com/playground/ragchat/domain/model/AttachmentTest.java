@@ -19,7 +19,7 @@ class AttachmentTest {
 
         Attachment a = Attachment.toolArtifact(
                 id, messageId, "massing-한글-1.3dm", "application/octet-stream",
-                31_000L, "chat/s/m/a-massing-한글-1.3dm", "generate_massing", now);
+                31_000L, "chat/s/m/a-massing-한글-1.3dm", "generate_massing", null, now);
 
         assertThat(a.id()).isEqualTo(id);
         assertThat(a.messageId()).isEqualTo(messageId);
@@ -37,7 +37,7 @@ class AttachmentTest {
     void rejectsNegativeSize() {
         assertThatThrownBy(() -> Attachment.toolArtifact(
                 AttachmentId.generate(), MessageId.generate(), "f.3dm",
-                "application/octet-stream", -1L, "key", "tool", Instant.now()))
+                "application/octet-stream", -1L, "key", "tool", null, Instant.now()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("sizeBytes");
     }
@@ -46,11 +46,11 @@ class AttachmentTest {
     void rejectsNullRequiredFields() {
         assertThatThrownBy(() -> new Attachment(
                 null, MessageId.generate(), "tool-artifact", "f.3dm",
-                "application/octet-stream", 1L, "key", "tool", Instant.now()))
+                "application/octet-stream", 1L, "key", "tool", null, Instant.now()))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new Attachment(
                 AttachmentId.generate(), MessageId.generate(), "tool-artifact", "f.3dm",
-                "application/octet-stream", 1L, null, "tool", Instant.now()))
+                "application/octet-stream", 1L, null, "tool", null, Instant.now()))
                 .isInstanceOf(NullPointerException.class);
     }
 }

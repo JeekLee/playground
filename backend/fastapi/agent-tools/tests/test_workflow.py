@@ -13,7 +13,6 @@ Real LLM/docs + extraction parity is covered by the real-gateway E2E.
 
 from __future__ import annotations
 
-import base64
 import uuid
 from types import SimpleNamespace
 
@@ -79,7 +78,13 @@ def _build_workflow() -> MassingWorkflow:
     )
 
 
-def test_graph_runs_path_and_builds_envelope():
+def test_graph_runs_path_and_builds_envelope(monkeypatch):
+    monkeypatch.setattr(
+        "architecture.app.nodes.store.upload_artifact",
+        lambda file_bytes, filename, content_type, settings:
+            f"architecture/massing/20260605/test-uuid/{filename}",
+    )
+
     flow = _build_workflow()
     req = GenerateMassingRequest.model_validate(
         {"briefDocId": "11111111-1111-1111-1111-111111111111"}
@@ -97,18 +102,18 @@ def test_graph_runs_path_and_builds_envelope():
     # two GROSS zones drive the program (연구영역 + 지하영역).
     assert len(result.program_json.rooms) == 2
     assert result.summary == "2실 · 지상 4층 + 지하 1층 · 총 31000 m²"
+    assert result.brief_title == "KFI 테스트 브리프"
     # result is LLM-visible: no fileUrl leaks (ADR-20 retires agent-tools store).
     assert not hasattr(result, "file_url")
 
-    # artifact carries the .3dm bytes base64-encoded, off the LLM path.
+    # artifact carries metadata only (ADR-20 §D3 revised — bytes are in MinIO).
     artifact = resp.artifact
     assert artifact.filename.startswith("massing-")
     assert artifact.filename.endswith(".3dm")
     assert artifact.content_type == "application/octet-stream"
-    decoded = base64.b64decode(artifact.base64)
-    # The artifact decodes to a valid binary .3dm (OpenNURBS magic + reader).
-    assert decoded[:23] == b"3D Geometry File Format"
-    assert rhino3dm.File3dm.FromByteArray(decoded) is not None
+    assert artifact.storage_key.startswith("architecture/massing/")
+    assert artifact.storage_key.endswith(artifact.filename)
+    assert artifact.size_bytes > 0
 
 
 def test_graph_has_expected_nodes_and_subgraphs():

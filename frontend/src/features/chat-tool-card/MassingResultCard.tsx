@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
 import { ToolResultCard } from './ToolResultCard';
@@ -12,8 +12,8 @@ import { ToolResultCard } from './ToolResultCard';
  * `78:1392`).
  *
  * Filled slots (per design doc §4.2):
- *   - icon         = `📁`
- *   - name         = `generate_massing`
+ *   - icon         = Lucide `Box` (18 px, strokeWidth 1.75)
+ *   - name         = `매싱 모델 · {briefTitle}` (briefTitle absent → plain `매싱 모델`)
  *   - summary      = backend-emitted `summary` string (Korean-fixed
  *                    per ADR-18 §5 — e.g., `"12실 · 3층 · 총 480 m²"`).
  *                    The FE renders verbatim; no client-side i18n.
@@ -27,10 +27,10 @@ import { ToolResultCard } from './ToolResultCard';
  *
  * In-flight state (when `toolCard.kind === 'in_flight'`):
  *   - Skeleton card per design doc §2.2 lifecycle section.
- *     `📁 generate_massing` + `Running…` summary + small spinner.
- *     No Download button, no accordion. The card lifts to the
- *     populated state in-place when the matching `tool_result` event
- *     lands.
+ *     Box icon + `매싱 모델` + `Running…` summary + small spinner.
+ *     No Download button, no accordion. briefTitle is not available
+ *     yet in the in-flight state; it renders once the tool_result
+ *     event lands.
  *
  * Wire shape contract: see `MassingProgramJson` in
  * `shared/api/chat.ts`. The wire ships only `{name, areaM2}` per room
@@ -52,9 +52,9 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
   if (state.kind === 'in_flight') {
     return (
       <ToolResultCard
-        ariaLabel="Tool call in flight: generate_massing"
-        icon={<MassingIcon />}
-        name={<span className="font-mono text-[14px] font-semibold">generate_massing</span>}
+        ariaLabel="Tool call in flight: 매싱 모델"
+        icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
+        name={<span className="text-[14px] font-semibold text-text">매싱 모델</span>}
         summary={
           <span className="inline-flex items-center gap-sm text-text-muted">
             <span>Running…</span>
@@ -74,9 +74,16 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 
   return (
     <ToolResultCard
-      ariaLabel="Tool result: generate_massing"
-      icon={<MassingIcon />}
-      name={<span className="font-mono text-[14px] font-semibold">generate_massing</span>}
+      ariaLabel="Tool result: 매싱 모델"
+      icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
+      name={
+        <span className="text-[14px] font-semibold text-text">
+          매싱 모델
+          {state.toolResult.briefTitle && (
+            <span className="font-normal text-text-muted"> · {state.toolResult.briefTitle}</span>
+          )}
+        </span>
+      }
       summary={
         <span className="font-medium text-text">{state.toolResult.summary}</span>
       }
@@ -117,14 +124,6 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function MassingIcon() {
-  // Emoji glyph per design doc §2.3 — the editorial olive/cream palette
-  // doesn't carry a "massing" iconography slot, and the emoji reads
-  // naturally as "an artifact you can download" without competing
-  // visually with the accent action button.
-  return <span aria-hidden="true">📁</span>;
-}
 
 function Spinner() {
   // Small olive-accent rotating ring — `tool-spinner` keyframe in

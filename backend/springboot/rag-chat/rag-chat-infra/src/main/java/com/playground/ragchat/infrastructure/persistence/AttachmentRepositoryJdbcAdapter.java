@@ -33,8 +33,8 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
     public Attachment save(Attachment attachment) {
         jdbc.update(
                 "INSERT INTO chat.message_attachments "
-                        + "(id, message_id, kind, filename, content_type, size_bytes, storage_key, tool_name, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        + "(id, message_id, kind, filename, content_type, size_bytes, storage_key, tool_name, brief_title, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 ps -> bindInsert(ps, attachment));
         return attachment;
     }
@@ -46,8 +46,8 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
         }
         jdbc.batchUpdate(
                 "INSERT INTO chat.message_attachments "
-                        + "(id, message_id, kind, filename, content_type, size_bytes, storage_key, tool_name, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        + "(id, message_id, kind, filename, content_type, size_bytes, storage_key, tool_name, brief_title, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(PreparedStatement ps, int i) throws SQLException {
@@ -69,7 +69,7 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
         try {
             Attachment row = jdbc.queryForObject(
                     "SELECT a.id, a.message_id, a.kind, a.filename, a.content_type, "
-                            + "a.size_bytes, a.storage_key, a.tool_name, a.created_at "
+                            + "a.size_bytes, a.storage_key, a.tool_name, a.brief_title, a.created_at "
                             + "FROM chat.message_attachments a "
                             + "JOIN chat.messages m ON m.id = a.message_id "
                             + "WHERE a.id = ? AND m.user_id = ?",
@@ -92,7 +92,7 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
                 .collect(Collectors.joining(",", "{", "}"));
         return jdbc.query(
                 "SELECT id, message_id, kind, filename, content_type, "
-                        + "size_bytes, storage_key, tool_name, created_at "
+                        + "size_bytes, storage_key, tool_name, brief_title, created_at "
                         + "FROM chat.message_attachments "
                         + "WHERE message_id = ANY (?::uuid[]) "
                         + "ORDER BY message_id, created_at",
@@ -109,7 +109,8 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
         ps.setLong(6, a.sizeBytes());
         ps.setString(7, a.storageKey());
         ps.setString(8, a.toolName());
-        ps.setObject(9, OffsetDateTime.ofInstant(a.createdAt(), ZoneOffset.UTC));
+        ps.setString(9, a.briefTitle());
+        ps.setObject(10, OffsetDateTime.ofInstant(a.createdAt(), ZoneOffset.UTC));
     }
 
     private RowMapper<Attachment> attachmentRowMapper() {
@@ -122,6 +123,7 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
                 rs.getLong("size_bytes"),
                 rs.getString("storage_key"),
                 rs.getString("tool_name"),
+                rs.getString("brief_title"),
                 rs.getTimestamp("created_at").toInstant());
     }
 }
