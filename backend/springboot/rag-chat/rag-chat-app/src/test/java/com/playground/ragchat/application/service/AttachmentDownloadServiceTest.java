@@ -237,4 +237,19 @@ class AttachmentDownloadServiceTest {
                 .satisfies(e -> assertThat(((AbstractException) e).errorCode().code())
                         .isEqualTo("CHAT-NOT-FOUND-002"));
     }
+
+    @Test
+    void preview_nonOwnerWithNonPreviewableType_gets404_not415() {
+        // Pins the check ordering: ownership resolves BEFORE the type check,
+        // so a stranger never learns the attachment exists (404, not 415).
+        FakeAttachmentRepository repo = new FakeAttachmentRepository();
+        AttachmentId id = AttachmentId.generate();
+        repo.put(attachment(id, "architecture/massing/20260605/u/report.pdf"), owner);
+
+        AttachmentDownloadService svc = new AttachmentDownloadService(repo, new FakeBlobStorage());
+        assertThatThrownBy(() -> svc.openPreview(id, stranger))
+                .isInstanceOf(AbstractException.class)
+                .satisfies(e -> assertThat(((AbstractException) e).errorCode().code())
+                        .isEqualTo("CHAT-NOT-FOUND-002"));
+    }
 }

@@ -59,6 +59,8 @@ public class AttachmentDownloadService {
         if (!key.endsWith(".3dm")) {
             throw ExceptionCreator.of(RagChatErrorCode.PREVIEW_NOT_SUPPORTED).build();
         }
+        // Key is producer-written (agent-tools, ADR-20 §D3 revised), never
+        // caller-derived — the suffix swap introduces no traversal surface.
         String glbKey = key.substring(0, key.length() - ".3dm".length()) + ".glb";
         Optional<BlobStoragePort.BlobHandle> handle = blobStoragePort.get(glbKey);
         if (handle.isEmpty()) {
