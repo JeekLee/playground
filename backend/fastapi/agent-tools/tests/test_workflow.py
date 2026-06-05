@@ -16,6 +16,8 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
+import pytest
+
 import rhino3dm
 from langchain_core.runnables import RunnableLambda
 
@@ -105,8 +107,30 @@ def test_graph_runs_path_and_builds_envelope(monkeypatch):
     assert result.total_area_m2 == 31000.0
     assert result.floor_count == 4
     assert result.basement_levels == 1
-    # two GROSS zones drive the program (연구영역 + 지하영역).
-    assert len(result.program_json.rooms) == 2
+    # 실별 분할 (design spec 2026-06-05-room-split-massing): 연구영역은
+    # Middle Lab + 층별 공용·기타로 분할, 지하영역은 통짜.
+    rooms = result.program_json.rooms
+    by_name = {}
+    for r in rooms:
+        by_name.setdefault(r.name, []).append(r)
+
+    lab = by_name["Middle Lab"][0]
+    assert lab.zone == "연구영역"
+    assert lab.floor == 1                  # FFD: 가장 낮은 층
+    assert lab.area_m2 == 5680.0           # 브리프 전용면적 그대로 (D2)
+    assert lab.label_anchor is not None    # hotspot 좌표
+    # 상면 중심: glTF Y = z_top = (floor-1)*h + (h - 0.15)
+    assert lab.label_anchor.y == pytest.approx(3.5 - 0.15)
+
+    commons = by_name.get("공용·기타", [])
+    assert len(commons) == 4               # 연구영역 4층 각각
+    assert all(c.zone == "연구영역" and c.label_anchor is None for c in commons)
+
+    basement = by_name["지하영역"][0]
+    assert basement.zone == "지하영역"     # 미분할 zone도 zone 세팅 (deviation 3)
+    assert basement.floor is None          # 미분할 신호
+
+    # summary: 명명 실(Middle Lab) + 미분할 zone(지하영역) = 2실 — 기존 문자열 유지.
     assert result.summary == "2실 · 지상 4층 + 지하 1층 · 총 31000 m²"
     assert result.brief_title == "KFI 테스트 브리프"
     # result is LLM-visible: no fileUrl leaks (ADR-20 retires agent-tools store).
