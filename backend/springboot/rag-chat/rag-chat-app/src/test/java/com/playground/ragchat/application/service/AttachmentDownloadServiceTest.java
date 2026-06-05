@@ -108,7 +108,7 @@ class AttachmentDownloadServiceTest {
     private Attachment attachment(AttachmentId id, String storageKey) {
         return Attachment.toolArtifact(
                 id, MessageId.generate(), "massing-한글-1.3dm", "application/octet-stream",
-                5L, storageKey, "generate_massing", Instant.parse("2026-06-04T12:00:00Z"));
+                5L, storageKey, "generate_massing", null, Instant.parse("2026-06-04T12:00:00Z"));
     }
 
     @Test
