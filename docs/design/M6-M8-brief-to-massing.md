@@ -256,7 +256,12 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 > inline viewer (sizing lives on a wrapper div — React 18 writes `className`
 > on custom elements as a literal attribute, so Tailwind cannot target
 > `<model-viewer>` directly),
-> camera-controls + auto-rotate. Legacy attachments without a `.glb` show
+> camera-controls + auto-rotate. The .glb carries preview-only styling
+> (2026-06-05 readability pass): deterministic muted zone colors (olive /
+> clay / slate / sand / mauve, below-grade dimmed), a translucent ground
+> slab at grade, and a 0.15m top slit per floor box so stacked floors read
+> as separate slabs — the .3dm deliverable stays untouched. Legacy
+> attachments without a `.glb` show
 > fallback copy inside the accordion when the fetch 404s ("미리보기를 불러올
 > 수 없습니다…"). Spec:
 > `docs/superpowers/specs/2026-06-05-massing-glb-preview-design.md`.
