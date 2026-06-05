@@ -3,7 +3,7 @@ package com.playground.shared.error;
 import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
 
-/** 415. The resource exists but has no representation in the requested media shape. */
+/** 415. Requested file format has no supported preview representation. */
 public class UnsupportedMediaTypeException extends AbstractException {
 
     public UnsupportedMediaTypeException(ErrorCode errorCode, Object... messageArgs) {
