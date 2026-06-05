@@ -65,7 +65,7 @@ def serialize_glb(boxes: list[RoomBox]) -> bytes:
     # compute_massing emits floors in order with area-sorted zones).
     zone_slot: dict[str, int] = {}
     for box in boxes:
-        zone_slot.setdefault(box.name, len(zone_slot))
+        zone_slot.setdefault(box.zone, len(zone_slot))
 
     scene = trimesh.Scene()
     for i, box in enumerate(boxes):
@@ -80,7 +80,7 @@ def serialize_glb(boxes: list[RoomBox]) -> bytes:
             box.z + render_h / 2.0,
         ))
         mesh.apply_transform(_Z_UP_TO_Y_UP)
-        rgb = _PALETTE[zone_slot[box.name] % len(_PALETTE)]
+        rgb = _PALETTE[zone_slot[box.zone] % len(_PALETTE)]
         dim = _BELOW_GRADE_DIM if box.floor < 0 else 1.0
         mesh.visual = trimesh.visual.TextureVisuals(material=_solid_material(rgb, dim=dim))
         # Index suffix keeps geometry names unique when room names repeat.

@@ -17,8 +17,8 @@ from architecture.infra.serializer import serialize_massing
 
 def _boxes() -> list[RoomBox]:
     return [
-        RoomBox(name="로비", floor=1, x=0.0, y=0.0, z=0.0, width=10.0, depth=8.0, height=3.5),
-        RoomBox(name="사무실", floor=2, x=0.0, y=0.0, z=3.5, width=10.0, depth=8.0, height=3.5),
+        RoomBox(name="로비", zone="로비", floor=1, x=0.0, y=0.0, z=0.0, width=10.0, depth=8.0, height=3.5),
+        RoomBox(name="사무실", zone="사무실", floor=2, x=0.0, y=0.0, z=3.5, width=10.0, depth=8.0, height=3.5),
     ]
 
 

@@ -132,6 +132,7 @@ def _pack_level(
         boxes.append(
             RoomBox(
                 name=zone.name,
+                zone=zone.name,
                 floor=floor,
                 x=shelf_x,
                 y=shelf_y,

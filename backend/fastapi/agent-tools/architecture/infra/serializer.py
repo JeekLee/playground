@@ -47,6 +47,7 @@ def serialize_massing(boxes: list[RoomBox]) -> bytes:
             attrs.LayerIndex = layer_index_by_name[box.name]
             attrs.SetUserString("floor", str(box.floor))
             attrs.SetUserString("roomName", box.name)
+            attrs.SetUserString("zone", box.zone)
             file.Objects.AddMesh(mesh, attrs)
 
         # rhino3dm.py 8.x exposes ToByteArray() returning raw archive bytes;

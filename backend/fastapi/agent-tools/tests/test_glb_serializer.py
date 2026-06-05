@@ -14,8 +14,11 @@ from architecture.infra.glb_serializer import FLOOR_GAP_M, serialize_glb
 from shared_kernel.errors import MassingError
 
 
-def _box(name="lab", floor=1, x=0.0, y=0.0, z=0.0, w=2.0, d=3.0, h=10.0):
-    return RoomBox(name=name, floor=floor, x=x, y=y, z=z, width=w, depth=d, height=h)
+def _box(name="lab", floor=1, x=0.0, y=0.0, z=0.0, w=2.0, d=3.0, h=10.0, zone=None):
+    return RoomBox(
+        name=name, zone=zone or name, floor=floor,
+        x=x, y=y, z=z, width=w, depth=d, height=h,
+    )
 
 
 def _load(data: bytes) -> trimesh.Scene:

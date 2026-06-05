@@ -107,10 +107,20 @@ class BriefAnalysis(BaseModel):
 # --- Algorithm contract: Zone (used by intermediates + MassingInputs) ---
 
 
+class Room(BaseModel):
+    """A named sub-space placed whole on one floor (net area, 브리프 그대로 —
+    design spec 2026-06-05-room-split-massing D2)."""
+
+    name: str = Field(min_length=1)
+    area_m2: float = Field(gt=0)
+
+
 class Zone(BaseModel):
     name: str = Field(min_length=1)
     area_m2: float = Field(gt=0)
     grade: Literal["above", "below"]
+    # 실별 분할 대상 (빈 리스트 = 분할 없음). derive가 귀속·검증 후 채운다.
+    rooms: list[Room] = Field(default_factory=list)
 
 
 # --- Pipeline intermediates: reconcile -> classify carriers ---
@@ -159,6 +169,8 @@ class ClassifiedBrief(BaseModel):
     """
 
     zones: list[Zone] = Field(min_length=1)
+    # classify가 등급 판정을 마친 sub-space 사본 — derive의 실 귀속 입력.
+    sub_spaces: list[ProgramItem] = Field(default_factory=list)
     footprint_driver_m2: float | None = None
     site_area_m2: float | None = None
     coverage_ratio_max: float | None = None
@@ -220,6 +232,9 @@ class MassingInputs(BaseModel):
 
 # --- Algorithm output (no Pydantic — keep zero-dep) ---
 
+# 분할 zone의 층별 잔여(공용·코어) 박스 이름 — algorithm/serializers/respond 공통.
+COMMON_AREA_NAME = "공용·기타"
+
 
 @dataclass(frozen=True, slots=True)
 class RoomBox:
@@ -227,6 +242,7 @@ class RoomBox:
     (lower-left origin, z = (floor-1) * floor_height)."""
 
     name: str
+    zone: str  # owning zone — color key + 공용 구분. 통짜 박스는 zone == name.
     floor: int
     x: float
     y: float
