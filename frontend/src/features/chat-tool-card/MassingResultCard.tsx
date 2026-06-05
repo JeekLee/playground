@@ -157,6 +157,8 @@ function PreviewAccordion({ previewUrl }: { previewUrl: string }) {
   // Inline 3D preview per design spec 2026-06-05-massing-glb-preview —
   // the backend serves the .glb sibling of the .3dm at `${outputUrl}/preview`.
   const [open, setOpen] = useState(false);
+  // Intentionally never reset on close/reopen — a 404 here means the row
+  // predates the .glb sibling (permanent), so retrying would just 404 again.
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
