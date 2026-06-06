@@ -11,6 +11,9 @@
  *   - `ToolCardList`        — the entry point — call from
  *                             `ChatPage` / `ChatMessage` with the
  *                             turn's `ToolCardState[]`.
+ *   - `ToolRunCard`         — the generic, wire-driven in-flight progress
+ *                             card (tool-streaming spec D3). Renders any
+ *                             tool's progress; new tools need no FE code.
  *   - `MassingResultCard`   — the §2.3/§2.4 happy-path card.
  *   - `MassingErrorCard`    — the §2.5 warning-palette card.
  *   - `ToolResultCard`      — the generic primitive (§2.2). Exported
@@ -24,6 +27,7 @@
  */
 export { ToolCardList } from './ToolCardList';
 export type { ToolCardListProps } from './ToolCardList';
+export { ToolRunCard } from './ToolRunCard';
 export { MassingResultCard } from './MassingResultCard';
 export type { MassingResultCardProps } from './MassingResultCard';
 export { MassingErrorCard } from './MassingErrorCard';

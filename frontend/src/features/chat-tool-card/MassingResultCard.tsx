@@ -34,12 +34,11 @@ import { ToolResultCard } from './ToolResultCard';
  *                    error (legacy rows without .glb) swaps the viewer for
  *                    fallback copy.
  *
- * In-flight state (when `toolCard.kind === 'in_flight'`):
- *   - Skeleton card per design doc §2.2 lifecycle section.
- *     Box icon + `매싱 모델` + `Running…` summary + small spinner.
- *     No Download button, no accordion. briefTitle is not available
- *     yet in the in-flight state; it renders once the tool_result
- *     event lands.
+ * In-flight state is handled by the generic `ToolRunCard` (tool-streaming
+ * spec D3), not here — this card only renders the resolved `result`
+ * variant. The streaming turn shows a `ToolRunCard` until the
+ * `tool_result` event lands, at which point `ToolCardList` swaps in this
+ * card.
  *
  * Wire shape contract: see `MassingProgramJson` in
  * `shared/api/chat.ts`. The accordion table renders 2 columns (ROOM /
@@ -49,7 +48,7 @@ import { ToolResultCard } from './ToolResultCard';
  */
 
 export interface MassingResultCardProps {
-  state: Extract<ToolCardState, { kind: 'in_flight' | 'result' }>;
+  state: Extract<ToolCardState, { kind: 'result' }>;
 }
 
 export function MassingResultCard({ state }: MassingResultCardProps) {
@@ -59,10 +58,10 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
   // replaced on done-refetch); the .glb carries it in scene extras since
   // glb-extras spec D4 — fetch once and merge into the same render path.
   const [extrasProgram, setExtrasProgram] = useState<Record<string, unknown> | null>(null);
-  const outputUrl = state.kind === 'result' ? state.toolResult.outputUrl : undefined;
-  const hasStreamedProgram = state.kind === 'result' && !!state.toolResult.programJson;
+  const outputUrl = state.toolResult.outputUrl;
+  const hasStreamedProgram = !!state.toolResult.programJson;
   useEffect(() => {
-    if (state.kind !== 'result' || hasStreamedProgram || !outputUrl) return;
+    if (hasStreamedProgram || !outputUrl) return;
     let cancelled = false;
     void fetchGlbProgramJson(`${outputUrl}/preview`).then((pj) => {
       if (!cancelled && pj) setExtrasProgram(pj);
@@ -71,25 +70,7 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.kind, hasStreamedProgram, outputUrl]);
-
-  if (state.kind === 'in_flight') {
-    return (
-      <ToolResultCard
-        ariaLabel="Tool call in flight: 매싱 모델"
-        icon={<Box size={18} aria-hidden="true" strokeWidth={1.75} />}
-        name={<span className="text-[14px] font-semibold text-text">매싱 모델</span>}
-        summary={
-          <span className="inline-flex items-center gap-sm text-text-muted">
-            <span>Running…</span>
-            <Spinner />
-          </span>
-        }
-        primaryAction={null}
-        footer={null}
-      />
-    );
-  }
+  }, [hasStreamedProgram, outputUrl]);
 
   const program = readProgramJson(state.toolResult.programJson ?? extrasProgram ?? undefined);
   const hasProgram = program !== null && program.rooms.length > 0;
@@ -171,20 +152,6 @@ function zoneColorMap(rooms: MassingProgramJson['rooms']): Map<string, string> {
     }
   }
   return map;
-}
-
-function Spinner() {
-  // Small olive-accent rotating ring — `tool-spinner` keyframe in
-  // tailwind.config.ts. The CSS spinner is preferable to a Lucide
-  // `Loader` glyph because we can color the segment with `border-accent`
-  // and leave the rest transparent — matches the citation-accordion's
-  // calm visual language vs. a heavy "loading" spinner.
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-block h-[12px] w-[12px] animate-tool-spinner rounded-full border-2 border-border border-t-accent"
-    />
-  );
 }
 
 function PreviewAccordion({

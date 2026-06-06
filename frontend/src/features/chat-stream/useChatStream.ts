@@ -255,10 +255,33 @@ function makeOnEvent(
       // skeleton card with `Running…` summary + spinner sits below the
       // assistant body so the user sees that something is happening.
       const calledAt = Date.now();
-      const card: ToolCardState = { kind: 'in_flight', toolCall: ev.payload, calledAt };
+      const card: ToolCardState = {
+        kind: 'in_flight',
+        toolCall: ev.payload,
+        calledAt,
+        displayName: ev.payload.displayName,
+      };
       setTurn((prev) =>
         prev && prev.clientId === clientId
           ? { ...prev, toolCards: [...prev.toolCards, card] }
+          : prev,
+      );
+    } else if (ev.type === 'tool_progress') {
+      // Merge the latest progress into the matching in-flight card (keyed
+      // by tool-call `id`). The generic ToolRunCard reads `progress` to
+      // render the current stage label + pip bar. Non-in_flight cards (the
+      // call already resolved) are left untouched — a late progress event
+      // after tool_result is a no-op.
+      setTurn((prev) =>
+        prev && prev.clientId === clientId
+          ? {
+              ...prev,
+              toolCards: prev.toolCards.map((c) =>
+                c.kind === 'in_flight' && c.toolCall.id === ev.payload.id
+                  ? { ...c, progress: ev.payload }
+                  : c,
+              ),
+            }
           : prev,
       );
     } else if (ev.type === 'tool_result') {

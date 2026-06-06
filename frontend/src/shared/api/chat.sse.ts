@@ -36,6 +36,7 @@ import type {
   TokenEventPayload,
   ToolCallEventPayload,
   ToolErrorEventPayload,
+  ToolProgressEventPayload,
   ToolResultEventPayload,
 } from './chat';
 
@@ -55,6 +56,7 @@ export type ChatStreamEvent =
   | { type: 'done'; payload: DoneEventPayload }
   | { type: 'error'; payload: ErrorEventPayload }
   | { type: 'tool_call'; payload: ToolCallEventPayload }
+  | { type: 'tool_progress'; payload: ToolProgressEventPayload }
   | { type: 'tool_result'; payload: ToolResultEventPayload }
   | { type: 'tool_error'; payload: ToolErrorEventPayload };
 
@@ -143,8 +145,43 @@ function parseFrame(rawFrame: string): ChatStreamEvent | null {
       return { type: 'done', payload: parsed as DoneEventPayload };
     case 'error':
       return { type: 'error', payload: parsed as ErrorEventPayload };
-    case 'tool_call':
-      return { type: 'tool_call', payload: parsed as ToolCallEventPayload };
+    case 'tool_call': {
+      // Raw top-level shape {id, name, displayName?, args} per ADR-17 §3 +
+      // tool-streaming spec W2. displayName is optional (absent on a
+      // pre-streaming backend); narrow it without dropping the event.
+      const raw = parsed as ToolCallEventPayload & { displayName?: unknown };
+      const payload: ToolCallEventPayload = {
+        ...raw,
+        displayName: typeof raw.displayName === 'string' ? raw.displayName : undefined,
+      };
+      return { type: 'tool_call', payload };
+    }
+    case 'tool_progress': {
+      // Drop malformed lines silently (forward-compat — same posture as the
+      // unknown-event `default` branch). `name` / `attempt` are tolerant:
+      // a missing name degrades to '' (card falls back to displayName/name
+      // from the tool_call it merges into), attempt only set when numeric.
+      const raw = parsed as Record<string, unknown>;
+      if (
+        typeof raw.id !== 'string' ||
+        typeof raw.stage !== 'string' ||
+        typeof raw.label !== 'string' ||
+        typeof raw.stageIndex !== 'number' ||
+        typeof raw.stageCount !== 'number'
+      ) {
+        return null;
+      }
+      const payload: ToolProgressEventPayload = {
+        id: raw.id,
+        name: typeof raw.name === 'string' ? raw.name : '',
+        stage: raw.stage,
+        label: raw.label,
+        stageIndex: raw.stageIndex,
+        stageCount: raw.stageCount,
+        attempt: typeof raw.attempt === 'number' ? raw.attempt : undefined,
+      };
+      return { type: 'tool_progress', payload };
+    }
     case 'tool_result': {
       // Backend wire shape is {id, name, result: <tool-body>} per ADR-17 §3.
       // Flatten result.* into the ToolResultEventPayload and map
