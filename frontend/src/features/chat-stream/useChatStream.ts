@@ -261,9 +261,14 @@ function makeOnEvent(
         calledAt,
         displayName: ev.payload.displayName,
       };
+      // Retrieval is over by the time the LLM dispatches a tool, but no
+      // token has arrived yet (the first response IS the tool call), so the
+      // last `phase` label ("참고 문서 확인 중") would sit stale above the
+      // progress card for the whole tool run — clear it here; the tool
+      // card's own stage label takes over the progress narration.
       setTurn((prev) =>
         prev && prev.clientId === clientId
-          ? { ...prev, toolCards: [...prev.toolCards, card] }
+          ? { ...prev, toolCards: [...prev.toolCards, card], phaseLabel: undefined }
           : prev,
       );
     } else if (ev.type === 'tool_progress') {
