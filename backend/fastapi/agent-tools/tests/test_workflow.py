@@ -86,11 +86,11 @@ def test_graph_runs_path_and_builds_envelope(monkeypatch):
         lambda file_bytes, filename, content_type, settings:
             f"architecture/massing/20260605/test-uuid/{filename}",
     )
-    glb_uploads: list[tuple[str, str, int]] = []
+    glb_uploads: list[tuple[str, str, bytes]] = []
     monkeypatch.setattr(
         "architecture.app.nodes.store_glb.upload_to_key",
         lambda file_bytes, key, content_type, settings:
-            glb_uploads.append((key, content_type, len(file_bytes))),
+            glb_uploads.append((key, content_type, file_bytes)),
     )
 
     flow = _build_workflow()
@@ -148,10 +148,18 @@ def test_graph_runs_path_and_builds_envelope(monkeypatch):
     # .glb preview rides next to the .3dm — same prefix, extension swapped
     # (design spec 2026-06-05-massing-glb-preview).
     assert len(glb_uploads) == 1
-    glb_key, glb_content_type, glb_size = glb_uploads[0]
+    glb_key, glb_content_type, glb_bytes = glb_uploads[0]
     assert glb_key == artifact.storage_key[: -len(".3dm")] + ".glb"
     assert glb_content_type == "model/gltf-binary"
-    assert glb_size > 0
+    assert len(glb_bytes) > 0
+
+    # .glb extras == SSE programJson (단일 빌더 보장 — glb-extras spec D1·D2).
+    import json as _json
+    import struct as _struct
+    json_len = _struct.unpack("<I", glb_bytes[12:16])[0]
+    doc = _json.loads(glb_bytes[20 : 20 + json_len].decode("utf-8"))
+    extras_pj = doc["scenes"][0]["extras"]["programJson"]
+    assert extras_pj == result.program_json.model_dump(by_alias=True, mode="json")
 
 
 def test_graph_has_expected_nodes_and_subgraphs():

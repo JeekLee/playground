@@ -86,8 +86,15 @@ def _room_step_color(zone_rgb: tuple[int, int, int], step: int) -> tuple[int, in
     return _with_hls(zone_rgb, light=light)
 
 
-def serialize_glb(boxes: list[RoomBox]) -> bytes:
-    """Build a .glb scene from the box list. Returns binary glTF bytes."""
+def serialize_glb(
+    boxes: list[RoomBox],
+    *,
+    program_json: dict | None = None,
+) -> bytes:
+    """Build a .glb scene from the box list. Returns binary glTF bytes.
+
+    program_json이 주어지면 scenes[0].extras에 임베드된다 (preview 메타데이터 영속화).
+    """
     if not boxes:
         raise MassingError(
             MassingErrorCode.MASSING_ALGORITHM_FAILED,
@@ -137,6 +144,11 @@ def serialize_glb(boxes: list[RoomBox]) -> bytes:
         scene.add_geometry(mesh, geom_name=f"{box.name}-f{box.floor}-{i}")
 
     scene.add_geometry(_ground_plane(boxes), geom_name="ground")
+    if program_json is not None:
+        # glTF 2.0 extras (scenes[0].extras.programJson) — trimesh가
+        # scene.metadata를 extras로 직렬화한다. FE가 히스토리 카드에서
+        # 이것을 읽어 hotspot/테이블을 복원한다 (glb-extras spec D2).
+        scene.metadata["programJson"] = program_json
     return bytes(scene.export(file_type="glb"))
 
 

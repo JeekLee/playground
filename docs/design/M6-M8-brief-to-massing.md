@@ -274,6 +274,14 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 > 페이로드는 기존 2열 유지. Spec:
 > `docs/superpowers/specs/2026-06-05-room-split-massing-design.md`.
 
+> **2026-06-05 — programJson 영속화 (.glb extras):** `programJson`은 이제
+> 생성 시점에 `.glb`의 `scenes[0].extras`에도 임베드된다 (SSE와 단일 빌더
+> `program_wire.build_program_json` 공유). 히스토리 카드는
+> `shared/lib/glb-extras.ts`의 의존성-제로 GLB 파서로 그것을 복원해
+> 스트리밍 카드와 동일하게 hotspot 라벨 + 실별 테이블을 렌더한다. 레거시
+> .glb(extras 없음)는 지금처럼 테이블/라벨 없이 graceful 생략. Spec:
+> `docs/superpowers/specs/2026-06-05-glb-extras-program-json-design.md`.
+
 ### 2.5 M8 — `/chat` with `tool_error` card — frame node-id: `78:1437`
 
 - **Purpose:** the failure path. Architect uploads a non-brief PDF (e.g., a CV or a marketing flyer); the LLM extraction step fails. The card surfaces a `BRIEF_EXTRACTION_FAILED` error in `warning` palette with a user-actionable secondary action.

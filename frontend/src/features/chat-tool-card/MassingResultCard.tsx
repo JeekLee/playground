@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Box, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
+import { fetchGlbProgramJson } from '@/shared/lib/glb-extras';
 import { zonePalette } from '@/shared/ui/tokens';
 import type { MassingProgramJson, ToolCardState } from '@/entities/chat';
 import { ToolResultCard } from './ToolResultCard';
@@ -54,6 +55,24 @@ export interface MassingResultCardProps {
 export function MassingResultCard({ state }: MassingResultCardProps) {
   const [open, setOpen] = useState(false);
 
+  // History cards lack `toolResult.programJson` (the SSE-only payload is
+  // replaced on done-refetch); the .glb carries it in scene extras since
+  // glb-extras spec D4 — fetch once and merge into the same render path.
+  const [extrasProgram, setExtrasProgram] = useState<Record<string, unknown> | null>(null);
+  const outputUrl = state.kind === 'result' ? state.toolResult.outputUrl : undefined;
+  const hasStreamedProgram = state.kind === 'result' && !!state.toolResult.programJson;
+  useEffect(() => {
+    if (state.kind !== 'result' || hasStreamedProgram || !outputUrl) return;
+    let cancelled = false;
+    void fetchGlbProgramJson(`${outputUrl}/preview`).then((pj) => {
+      if (!cancelled && pj) setExtrasProgram(pj);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.kind, hasStreamedProgram, outputUrl]);
+
   if (state.kind === 'in_flight') {
     return (
       <ToolResultCard
@@ -72,7 +91,7 @@ export function MassingResultCard({ state }: MassingResultCardProps) {
     );
   }
 
-  const program = readProgramJson(state.toolResult.programJson);
+  const program = readProgramJson(state.toolResult.programJson ?? extrasProgram ?? undefined);
   const hasProgram = program !== null && program.rooms.length > 0;
   const hasDownloadUrl =
     typeof state.toolResult.outputUrl === 'string' && state.toolResult.outputUrl.length > 0;
