@@ -15,6 +15,7 @@ import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.playground.ragchat.application.properties.RagChatProperties;
 import com.playground.ragchat.application.tool.ToolArtifact;
+import com.playground.ragchat.application.tool.ToolDispatcherPort;
 import com.playground.ragchat.application.tool.ToolInvocationResult;
 import com.playground.ragchat.application.tool.UserContext;
 import com.playground.ragchat.domain.model.id.UserId;
@@ -23,6 +24,8 @@ import com.playground.ragchat.domain.tool.ToolErrorCode;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -31,16 +34,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
- * Unit-level dispatcher tests per ADR-17 §12 + PRD acceptance bullets:
+ * Unit-level dispatcher tests per ADR-17 §12 + PRD acceptance bullets,
+ * updated for the NDJSON streaming contract (tool-streaming spec D2/D4):
  * <ul>
- *   <li>Happy path: descriptor + WireMock 200 + JSON → Success</li>
+ *   <li>progress lines → {@code ToolProgress} listener callbacks; terminal
+ *       {@code result} → Success</li>
+ *   <li>terminal {@code error} line → {@code UPSTREAM_4XX} / {@code UPSTREAM_5XX}
+ *       with a {@code "<CODE>: <message>"} body</li>
+ *   <li>idle gap above the descriptor's idle timeout → {@code TIMEOUT}</li>
+ *   <li>stream that ends with no terminal event → {@code INTERNAL}</li>
  *   <li>{@code X-User-Id}/{@code X-User-Sub} forwarded; {@code Authorization}
  *       not forwarded</li>
- *   <li>4xx → {@code UPSTREAM_4XX}</li>
- *   <li>5xx → {@code UPSTREAM_5XX}</li>
- *   <li>Timeout (response delay above descriptor timeout) → {@code TIMEOUT}</li>
- *   <li>JSON parse error → {@code SCHEMA_INVALID}</li>
- *   <li>Over-cap response (&gt; 16 KiB) → truncated Success envelope</li>
+ *   <li>JSON parse error on the {@code result} envelope → {@code SCHEMA_INVALID}</li>
+ *   <li>Over-cap result → truncated Success envelope</li>
  *   <li>Circuit breaker OPEN → {@code CIRCUIT_OPEN}</li>
  * </ul>
  *
@@ -71,6 +77,11 @@ class WebClientToolDispatcherTest {
         wireMock.stop();
     }
 
+    /** NDJSON body: one JSON object per line, trailing newline. */
+    private static String ndjson(String... lines) {
+        return String.join("\n", lines) + "\n";
+    }
+
     private WebClientToolDispatcher dispatcher(ToolDescriptor descriptor) {
         ToolBreakerRegistry breakers = new ToolBreakerRegistry(registry);
         WebClient.Builder builder = WebClient.builder()
@@ -80,8 +91,115 @@ class WebClientToolDispatcherTest {
                 name -> name.equals(descriptor.name()) ? Optional.of(descriptor) : Optional.empty());
     }
 
+    /** Descriptor pointing at the WireMock stub path with the given idle timeout. */
+    private ToolDescriptor desc(String name, String path, Duration idle) {
+        return new ToolDescriptor(
+                name, name + " display", name + " description", null,
+                URI.create("http://localhost:" + wireMock.port() + path),
+                idle, Duration.ofSeconds(30));
+    }
+
+    /**
+     * Build a dispatcher whose sole descriptor points at the
+     * {@code generate-massing} stub with custom idle + total timeouts, then
+     * invoke it. Mirrors the {@link #dispatcher(ToolDescriptor)} injection
+     * pattern but lets a test drive the two streaming time bounds directly.
+     */
+    private ToolInvocationResult invokeWithTimeouts(Duration idle, Duration total) {
+        ToolDescriptor d = new ToolDescriptor(
+                "generate_massing", "매싱 모델", "gen description", null,
+                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/generate-massing"),
+                idle, total);
+        return dispatcher(d).invoke("t1", "generate_massing", args(), userCtx(), p -> { });
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode args() {
+        return objectMapper.createObjectNode().put("msg", "hi");
+    }
+
     private UserContext userCtx() {
         return new UserContext(UserId.of(UUID.randomUUID()), "google-sub-1234");
+    }
+
+    @Test
+    void streamsProgressThenResult() {
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/generate-massing"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson(
+                                "{\"event\":\"progress\",\"stage\":\"extract\",\"label\":\"공간 프로그램 추출 중\",\"stageIndex\":3,\"stageCount\":10}",
+                                "{\"event\":\"progress\",\"stage\":\"compute\",\"label\":\"매싱 계산\",\"stageIndex\":7,\"stageCount\":10,\"attempt\":2}",
+                                "{\"event\":\"result\",\"result\":{\"summary\":\"2실\"},\"artifact\":{\"storageKey\":\"k.3dm\",\"filename\":\"k.3dm\",\"contentType\":\"application/octet-stream\",\"sizeBytes\":5}}"))));
+
+        List<ToolDispatcherPort.ToolProgress> seen = new ArrayList<>();
+        ToolInvocationResult r = dispatcher(
+                desc("generate_massing", "/internal/tools/generate-massing", Duration.ofSeconds(5)))
+                .invoke("t1", "generate_massing", args(), userCtx(), seen::add);
+
+        assertThat(r).isInstanceOf(ToolInvocationResult.Success.class);
+        assertThat(seen).hasSize(2);
+        assertThat(seen.get(0).stage()).isEqualTo("extract");
+        assertThat(seen.get(0).attempt()).isNull();
+        assertThat(seen.get(1).attempt()).isEqualTo(2);
+    }
+
+    @Test
+    void errorEventMapsToFailureWithCodePrefix() {
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/generate-massing"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson(
+                                "{\"event\":\"error\",\"code\":\"BRIEF_NOT_READY\",\"message\":\"site area missing\",\"status\":422}"))));
+
+        ToolInvocationResult r = dispatcher(
+                desc("generate_massing", "/internal/tools/generate-massing", Duration.ofSeconds(5)))
+                .invoke("t1", "generate_massing", args(), userCtx(), p -> { });
+
+        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) r;
+        assertThat(f.code()).isEqualTo(ToolErrorCode.UPSTREAM_4XX);
+        assertThat(f.message()).isEqualTo("BRIEF_NOT_READY: site area missing");
+    }
+
+    @Test
+    void errorEventStatus5xxMapsToUpstream5xx() {
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/generate-massing"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson(
+                                "{\"event\":\"error\",\"code\":\"SIDECAR_FAILED\",\"message\":\"llm down\",\"status\":502}"))));
+
+        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) dispatcher(
+                desc("generate_massing", "/internal/tools/generate-massing", Duration.ofSeconds(5)))
+                .invoke("t1", "generate_massing", args(), userCtx(), p -> { });
+        assertThat(f.code()).isEqualTo(ToolErrorCode.UPSTREAM_5XX);
+    }
+
+    @Test
+    void idleTimeoutTripsWhenNoEvents() {
+        // idle 짧은 디스크립터로 디스패처 호출 — 바디를 idle보다 길게 지연.
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/generate-massing"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{},\"artifact\":{\"storageKey\":\"k.3dm\",\"filename\":\"k\",\"contentType\":\"x\",\"sizeBytes\":1}}"))
+                        .withFixedDelay(800)));   // idle 300ms 초과
+
+        ToolInvocationResult r = invokeWithTimeouts(Duration.ofMillis(300), Duration.ofSeconds(5));
+        assertThat(((ToolInvocationResult.Failure) r).code()).isEqualTo(ToolErrorCode.TIMEOUT);
+    }
+
+    @Test
+    void streamWithoutTerminalEventIsInternal() {
+        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/generate-massing"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson(
+                                "{\"event\":\"progress\",\"stage\":\"extract\",\"label\":\"l\",\"stageIndex\":3,\"stageCount\":10}",
+                                "{\"event\":\"heartbeat\"}"))));
+
+        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) dispatcher(
+                desc("generate_massing", "/internal/tools/generate-massing", Duration.ofSeconds(5)))
+                .invoke("t1", "generate_massing", args(), userCtx(), p -> { });
+        assertThat(f.code()).isEqualTo(ToolErrorCode.INTERNAL);
     }
 
     @Test
@@ -89,17 +207,14 @@ class WebClientToolDispatcherTest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"echoed\":\"hi\"}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"echoed\":\"hi\"}}"))));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
+        ToolDescriptor d = desc("echo", "/internal/tools/echo", Duration.ofSeconds(5));
         UserContext ctx = userCtx();
 
-        ToolInvocationResult result = dispatcher(desc).invoke(
-                "call_1", "echo", objectMapper.createObjectNode().put("msg", "hi"), ctx);
+        ToolInvocationResult result = dispatcher(d).invoke(
+                "call_1", "echo", objectMapper.createObjectNode().put("msg", "hi"), ctx, p -> { });
 
         assertThat(result).isInstanceOf(ToolInvocationResult.Success.class);
         ToolInvocationResult.Success s = (ToolInvocationResult.Success) result;
@@ -116,125 +231,57 @@ class WebClientToolDispatcherTest {
     }
 
     @Test
-    void upstream4xx_returnsFailure_UPSTREAM_4XX() {
-        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
-                .willReturn(aResponse().withStatus(400).withBody("bad input")));
-
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
-
-        ToolInvocationResult result = dispatcher(desc).invoke(
-                "call_1", "echo", null, userCtx());
-
-        assertThat(result).isInstanceOf(ToolInvocationResult.Failure.class);
-        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
-        assertThat(f.code()).isEqualTo(ToolErrorCode.UPSTREAM_4XX);
-    }
-
-    @Test
-    void upstream5xx_returnsFailure_UPSTREAM_5XX() {
-        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
-                .willReturn(aResponse().withStatus(500).withBody("boom")));
-
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
-
-        ToolInvocationResult result = dispatcher(desc).invoke(
-                "call_1", "echo", null, userCtx());
-
-        assertThat(result).isInstanceOf(ToolInvocationResult.Failure.class);
-        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
-        assertThat(f.code()).isEqualTo(ToolErrorCode.UPSTREAM_5XX);
-    }
-
-    @Test
-    void responseSlowerThanDescriptorTimeout_returnsFailure_TIMEOUT() {
-        wireMock.stubFor(post(urlPathEqualTo("/internal/tools/slow"))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{}")
-                        .withFixedDelay(800)));
-
-        ToolDescriptor desc = new ToolDescriptor(
-                "slow", "Slow tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/slow"),
-                Duration.ofMillis(200));
-
-        ToolInvocationResult result = dispatcher(desc).invoke(
-                "call_1", "slow", null, userCtx());
-
-        assertThat(result).isInstanceOf(ToolInvocationResult.Failure.class);
-        ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
-        assertThat(f.code()).isEqualTo(ToolErrorCode.TIMEOUT);
-    }
-
-    @Test
-    void invalidJsonResponseBody_returnsFailure_SCHEMA_INVALID() {
+    void invalidJsonResponseBody_returnsFailure_INTERNAL() {
+        // A non-NDJSON / unparseable body produces no JSON nodes, so the stream
+        // surfaces a transport/decoding error → INTERNAL (no terminal node).
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("not even close to JSON {][}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody("not even close to JSON {][}\n")));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
-
-        ToolInvocationResult result = dispatcher(desc).invoke(
-                "call_1", "echo", null, userCtx());
+        ToolInvocationResult result = dispatcher(
+                desc("echo", "/internal/tools/echo", Duration.ofSeconds(5)))
+                .invoke("call_1", "echo", null, userCtx(), p -> { });
 
         assertThat(result).isInstanceOf(ToolInvocationResult.Failure.class);
         ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
-        assertThat(f.code()).isEqualTo(ToolErrorCode.SCHEMA_INVALID);
+        assertThat(f.code()).isEqualTo(ToolErrorCode.INTERNAL);
     }
 
     @Test
     void responseOver16KiB_isTruncated_andWrappedAsTruncatedEnvelope() {
-        // Build a 20 KiB JSON string body so WireMock returns it intact (the
-        // WebClient codec is configured at 16 KiB cap; we hit DataBufferLimit
-        // OR we read the bytes and slice. The dispatcher constructor sets the
-        // codec cap, so the codec will throw — we expect a Failure(INTERNAL)
-        // in that case. To exercise the truncate path we use a smaller codec
-        // cap by configuring properties differently.) Use a properties with
-        // a wider codec cap so the body is delivered, then expect dispatcher
-        // truncation against its own configured byte cap.
-        // For deterministic coverage of truncate-and-warn we run with a
-        // smaller dispatcher byte cap (256) below.
+        // The LLM-visible `result` node exceeds the dispatcher's byte cap (256)
+        // → truncate-and-warn envelope. Run with a small dispatcher byte cap so
+        // a modest body trips it deterministically.
         RagChatProperties small = new RagChatProperties(
                 6, 40, 200, 2400, 24576, 4000, 400, 5, 256);
         ToolBreakerRegistry breakers = new ToolBreakerRegistry(registry);
         WebClient.Builder builder = WebClient.builder()
-                // codec cap > body size so body is delivered to the dispatcher
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(64 * 1024));
 
         StringBuilder big = new StringBuilder(512);
-        big.append("{\"data\":\"");
+        big.append("{\"event\":\"result\",\"result\":{\"data\":\"");
         while (big.length() < 400) {
             big.append("xxxxxxxx");
         }
-        big.append("\"}");
+        big.append("\"},\"artifact\":{\"storageKey\":\"k\",\"filename\":\"k\",\"contentType\":\"x\",\"sizeBytes\":1}}");
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/big"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(big.toString())));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(big + "\n")));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "big", "Big tool", null,
+        ToolDescriptor d = new ToolDescriptor(
+                "big", "big display", "big description", null,
                 URI.create("http://localhost:" + wireMock.port() + "/internal/tools/big"),
-                Duration.ofSeconds(5));
+                Duration.ofSeconds(5), Duration.ofSeconds(30));
 
         WebClientToolDispatcher dispatcher = new WebClientToolDispatcher(
                 builder, breakers, objectMapper, small,
-                name -> name.equals("big") ? Optional.of(desc) : Optional.empty());
+                name -> name.equals("big") ? Optional.of(d) : Optional.empty());
 
-        ToolInvocationResult result = dispatcher.invoke("call_1", "big", null, userCtx());
+        ToolInvocationResult result = dispatcher.invoke("call_1", "big", null, userCtx(), p -> { });
 
         assertThat(result).isInstanceOf(ToolInvocationResult.Success.class);
         ToolInvocationResult.Success s = (ToolInvocationResult.Success) result;
@@ -246,31 +293,26 @@ class WebClientToolDispatcherTest {
 
     @Test
     void circuitBreaker_opensAfterFailureBurst_thenCIRCUIT_OPEN() {
+        // Transport-level failure (HTTP 500) still trips the breaker — non-2xx
+        // surfaces as WebClientResponseException through the operator.
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/sick"))
                 .willReturn(aResponse().withStatus(500)));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "sick", "Sick tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/sick"),
-                Duration.ofSeconds(5));
-        WebClientToolDispatcher dispatcher = dispatcher(desc);
+        ToolDescriptor d = desc("sick", "/internal/tools/sick", Duration.ofSeconds(5));
+        WebClientToolDispatcher dispatcher = dispatcher(d);
 
-        // Trigger ≥10 failures to satisfy the breaker's minimumNumberOfCalls
-        // gate at >=50% failure rate.
         for (int i = 0; i < 10; i++) {
-            ToolInvocationResult r = dispatcher.invoke("call_" + i, "sick", null, userCtx());
+            ToolInvocationResult r = dispatcher.invoke("call_" + i, "sick", null, userCtx(), p -> { });
             assertThat(r).isInstanceOf(ToolInvocationResult.Failure.class);
             assertThat(((ToolInvocationResult.Failure) r).code())
                     .isIn(ToolErrorCode.UPSTREAM_5XX, ToolErrorCode.CIRCUIT_OPEN);
         }
-        // At this point the breaker is OPEN. The next call must NOT hit upstream.
         int beforeCount = wireMock.findAll(postRequestedFor(urlPathEqualTo("/internal/tools/sick"))).size();
-        ToolInvocationResult r = dispatcher.invoke("call_next", "sick", null, userCtx());
+        ToolInvocationResult r = dispatcher.invoke("call_next", "sick", null, userCtx(), p -> { });
         int afterCount = wireMock.findAll(postRequestedFor(urlPathEqualTo("/internal/tools/sick"))).size();
 
         assertThat(r).isInstanceOf(ToolInvocationResult.Failure.class);
         assertThat(((ToolInvocationResult.Failure) r).code()).isEqualTo(ToolErrorCode.CIRCUIT_OPEN);
-        // Cost-protection invariant: the WireMock call count did not increase.
         assertThat(afterCount).isEqualTo(beforeCount);
     }
 
@@ -281,20 +323,12 @@ class WebClientToolDispatcherTest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/well"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"ok\":true}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"ok\":true}}"))));
 
-        ToolDescriptor sick = new ToolDescriptor(
-                "sick", "Sick", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/sick"),
-                Duration.ofSeconds(5));
-        ToolDescriptor well = new ToolDescriptor(
-                "well", "Well", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/well"),
-                Duration.ofSeconds(5));
+        ToolDescriptor sick = desc("sick", "/internal/tools/sick", Duration.ofSeconds(5));
+        ToolDescriptor well = desc("well", "/internal/tools/well", Duration.ofSeconds(5));
 
-        // Use a shared registry so both dispatchers register their breakers
-        // there. Trip the "sick" breaker.
         ToolBreakerRegistry sharedBreakers = new ToolBreakerRegistry(registry);
         WebClient.Builder b = WebClient.builder()
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(16384));
@@ -307,10 +341,9 @@ class WebClientToolDispatcherTest {
                 });
 
         for (int i = 0; i < 10; i++) {
-            d.invoke("c-" + i, "sick", null, userCtx());
+            d.invoke("c-" + i, "sick", null, userCtx(), p -> { });
         }
-        // "well" must still be invokable.
-        ToolInvocationResult r = d.invoke("call_well", "well", null, userCtx());
+        ToolInvocationResult r = d.invoke("call_well", "well", null, userCtx(), p -> { });
         assertThat(r).isInstanceOf(ToolInvocationResult.Success.class);
     }
 
@@ -319,16 +352,13 @@ class WebClientToolDispatcherTest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{}}"))));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
+        ToolDescriptor d = desc("echo", "/internal/tools/echo", Duration.ofSeconds(5));
         UserContext ctx = new UserContext(UserId.of(UUID.randomUUID()), null);
 
-        dispatcher(desc).invoke("call_1", "echo", null, ctx);
+        dispatcher(d).invoke("call_1", "echo", null, ctx, p -> { });
 
         wireMock.verify(postRequestedFor(urlPathEqualTo("/internal/tools/echo"))
                 .withHeader("X-User-Id", equalTo(ctx.userId().value().toString()))
@@ -337,33 +367,27 @@ class WebClientToolDispatcherTest {
 
     @Test
     void artifactEnvelope_splitsResultFromArtifact_resultIsLlmVisibleOnly() {
-        // ADR-20 §D3 revised — {result, artifact} envelope: body() carries ONLY
+        // ADR-20 §D3 revised — {result, artifact} terminal: body() carries ONLY
         // result (LLM-visible); artifact() carries metadata (storageKey, sizeBytes).
-        // agent-tools already stored the file in MinIO before returning this response.
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/gen"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"result\":{\"summary\":\"s\",\"floorCount\":4},"
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"summary\":\"s\",\"floorCount\":4},"
                                 + "\"artifact\":{\"filename\":\"massing-한글-1.3dm\","
                                 + "\"contentType\":\"application/octet-stream\","
                                 + "\"sizeBytes\":28,"
-                                + "\"storageKey\":\"architecture/massing/20260604/abc-uuid/massing-한글-1.3dm\"}}")));
+                                + "\"storageKey\":\"architecture/massing/20260604/abc-uuid/massing-한글-1.3dm\"}}"))));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "gen", "Gen tool", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/gen"),
-                Duration.ofSeconds(5));
+        ToolDescriptor d = desc("gen", "/internal/tools/gen", Duration.ofSeconds(5));
 
-        ToolInvocationResult result = dispatcher(desc).invoke("call_1", "gen", null, userCtx());
+        ToolInvocationResult result = dispatcher(d).invoke("call_1", "gen", null, userCtx(), p -> { });
 
         assertThat(result).isInstanceOf(ToolInvocationResult.Success.class);
         ToolInvocationResult.Success s = (ToolInvocationResult.Success) result;
-        // body() == result ONLY — no artifact/storageKey leaks into the LLM path.
         assertThat(s.body().has("storageKey")).isFalse();
         assertThat(s.body().has("artifact")).isFalse();
         assertThat(s.body().get("floorCount").asInt()).isEqualTo(4);
-        // artifact() carries the storageKey + filename + content type + sizeBytes.
         ToolArtifact artifact = s.artifact();
         assertThat(artifact).isNotNull();
         assertThat(artifact.filename()).isEqualTo("massing-한글-1.3dm");
@@ -373,35 +397,27 @@ class WebClientToolDispatcherTest {
     }
 
     @Test
-    void plainToolWithoutArtifact_treatedAsWholeBodyResult_noArtifact() {
-        // Back-compat (ADR-20 §D2): a response without `artifact` → whole body
-        // is the result, artifact() is null (M7 behaviour unchanged).
+    void resultWithoutArtifact_treatedAsResultOnly_noArtifact() {
+        // A terminal result event with no `artifact` key → body() = result node,
+        // artifact() is null.
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"result\":{\"x\":1}}")));  // has `result` but NO `artifact`
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"x\":1}}"))));
 
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
-
-        ToolInvocationResult.Success s = (ToolInvocationResult.Success)
-                dispatcher(desc).invoke("call_1", "echo", null, userCtx());
-        // No artifact key → not an envelope → whole body preserved.
+        ToolInvocationResult.Success s = (ToolInvocationResult.Success) dispatcher(
+                desc("echo", "/internal/tools/echo", Duration.ofSeconds(5)))
+                .invoke("call_1", "echo", null, userCtx(), p -> { });
         assertThat(s.artifact()).isNull();
-        assertThat(s.body().path("result").path("x").asInt()).isEqualTo(1);
+        assertThat(s.body().path("x").asInt()).isEqualTo(1);
     }
 
     @Test
     void unknownTool_returnsFailure_INTERNAL() {
-        ToolDescriptor desc = new ToolDescriptor(
-                "echo", "Echo", null,
-                URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                Duration.ofSeconds(5));
-        ToolInvocationResult r = dispatcher(desc).invoke(
-                "call_1", "no_such_tool", null, userCtx());
+        ToolDescriptor d = desc("echo", "/internal/tools/echo", Duration.ofSeconds(5));
+        ToolInvocationResult r = dispatcher(d).invoke(
+                "call_1", "no_such_tool", null, userCtx(), p -> { });
         assertThat(r).isInstanceOf(ToolInvocationResult.Failure.class);
         assertThat(((ToolInvocationResult.Failure) r).code()).isEqualTo(ToolErrorCode.INTERNAL);
     }

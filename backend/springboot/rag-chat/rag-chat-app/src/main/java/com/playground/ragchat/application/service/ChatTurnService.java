@@ -617,7 +617,10 @@ public class ChatTurnService {
         // tool_call BEFORE dispatching (ADR-17 §3.1 step 3a).
         sink.tryEmitNext(new ChatStreamEvent.ToolCall(id, desc.name(), args));
 
-        ToolInvocationResult result = toolDispatcherPort.invoke(id, desc.name(), args, userCtx);
+        // Progress relay is wired in Task 4 — no-op listener keeps this turn's
+        // dispatch compiling against the new streaming port signature.
+        ToolInvocationResult result = toolDispatcherPort.invoke(
+                id, desc.name(), args, userCtx, progress -> { });
         if (result instanceof ToolInvocationResult.Success s) {
             // ADR-20 §D3 — if the tool emitted an artifact, store it to MinIO
             // and stage an Attachment linked to the (pre-allocated) assistant

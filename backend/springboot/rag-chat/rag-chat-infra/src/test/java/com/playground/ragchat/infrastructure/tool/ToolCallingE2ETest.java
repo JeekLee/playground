@@ -147,13 +147,20 @@ class ToolCallingE2ETest {
         wireMock.stop();
     }
 
-    private ToolDescriptor echoDescriptor(Duration timeout) {
+    /** NDJSON body: one JSON object per line, trailing newline. */
+    private static String ndjson(String... lines) {
+        return String.join("\n", lines) + "\n";
+    }
+
+    private ToolDescriptor echoDescriptor(Duration idleTimeout) {
         return new ToolDescriptor(
                 "echo",
+                "Echo tool",
                 "Echo tool — returns the argument JSON unchanged",
                 "{\"type\":\"object\"}",
                 URI.create("http://localhost:" + wireMock.port() + "/internal/tools/echo"),
-                timeout);
+                idleTimeout,
+                Duration.ofSeconds(30));
     }
 
     private WebClientToolDispatcher dispatcher(ToolDescriptor desc, RagChatProperties props) {
@@ -249,8 +256,8 @@ class ToolCallingE2ETest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"echoed\":\"hi\"}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"echoed\":\"hi\"}}"))));
 
         RagChatProperties props = RagChatProperties.defaults();
         ToolDescriptor desc = echoDescriptor(Duration.ofSeconds(5));
@@ -293,8 +300,8 @@ class ToolCallingE2ETest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"echoed\":\"ok\"}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"echoed\":\"ok\"}}"))));
 
         RagChatProperties props = RagChatProperties.defaults();
         ToolDescriptor desc = echoDescriptor(Duration.ofSeconds(5));
@@ -383,7 +390,8 @@ class ToolCallingE2ETest {
         // chat-turn flow must surface CIRCUIT_OPEN without hitting WireMock.
         for (int i = 0; i < 10; i++) {
             dispatcher.invoke("warm_" + i, "echo", null,
-                    new com.playground.ragchat.application.tool.UserContext(caller, googleSub));
+                    new com.playground.ragchat.application.tool.UserContext(caller, googleSub),
+                    p -> { });
         }
 
         int callsBefore = wireMock.findAll(
@@ -410,8 +418,8 @@ class ToolCallingE2ETest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"echoed\":true}")));
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"echoed\":true}}"))));
 
         RagChatProperties props = RagChatProperties.defaults();
         ToolDescriptor desc = echoDescriptor(Duration.ofSeconds(5));
@@ -450,12 +458,12 @@ class ToolCallingE2ETest {
         wireMock.stubFor(post(urlPathEqualTo("/internal/tools/echo"))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"result\":{\"summary\":\"2실 · 지상 4층\",\"floorCount\":4},"
+                        .withHeader("Content-Type", "application/x-ndjson")
+                        .withBody(ndjson("{\"event\":\"result\",\"result\":{\"summary\":\"2실 · 지상 4층\",\"floorCount\":4},"
                                 + "\"artifact\":{\"filename\":\"massing-테스트-20260604.3dm\","
                                 + "\"contentType\":\"application/octet-stream\","
                                 + "\"sizeBytes\":32,"
-                                + "\"storageKey\":\"" + storageKey + "\"}}")));
+                                + "\"storageKey\":\"" + storageKey + "\"}}"))));
 
         RagChatProperties props = RagChatProperties.defaults();
         ToolDescriptor desc = echoDescriptor(Duration.ofSeconds(5));
