@@ -334,7 +334,7 @@ services:
   # same M6.1 cycle (commit 1). Historical reference: `docs/adr/13-m3-rag-ingestion.md`.
 
   # --- M4: chat-api (Chat BC quadruplet runnable per ADR-01 v2 + ADR-14) ---
-  # No host port — gateway routes /api/rag/chat/** here per ADR-07 + ADR-14 §2.
+  # No host port — gateway routes /api/chat/** here per ADR-07 + ADR-14 §2.
   # No Kafka dependency — chat publishes/consumes no events (ADR-14 §1 + §A).
   # Cross-schema SELECT into `docs.document_chunks`, `docs.documents`, and
   # `identity.users` runs via JDBC against postgres-playground (ADR-14 §3 + §G.3,
@@ -357,7 +357,7 @@ services:
       minio-playground:
         condition: service_healthy     # ADR-20: chat attachment blob store
       gateway:
-        condition: service_started     # gateway must be up for /api/rag/chat/** routing
+        condition: service_started     # gateway must be up for /api/chat/** routing
     networks:
       # Joined to two bridges (see docs-api block + ADR-04 amendment
       # 2026-05-20): playground default for db/cache/gateway hops, external
