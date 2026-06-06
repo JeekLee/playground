@@ -30,7 +30,7 @@ export const dashboardFixtureLoaded: DashboardResponse = {
     { name: 'playground-backend-identity-api', status: 'up', since: '2026-05-19T04:10:11Z', uptimeSec: 12722, image: 'playground/backend-identity-api:dev' },
     { name: 'playground-backend-docs-api', status: 'up', since: '2026-05-19T04:12:01Z', uptimeSec: 12612, image: 'playground/backend-docs-api:dev' },
     { name: 'playground-backend-rag-ingestion-api', status: 'up', since: '2026-05-19T04:12:30Z', uptimeSec: 12583, image: 'playground/backend-rag-ingestion-api:dev' },
-    { name: 'playground-backend-rag-chat-api', status: 'up', since: '2026-05-19T05:28:14Z', uptimeSec: 8039, image: 'playground/backend-rag-chat-api:dev' },
+    { name: 'playground-backend-chat-api', status: 'up', since: '2026-05-19T05:28:14Z', uptimeSec: 8039, image: 'playground/backend-chat-api:dev' },
     { name: 'playground-backend-metrics-api', status: 'up', since: '2026-05-19T06:40:00Z', uptimeSec: 3733, image: 'playground/backend-metrics-api:dev' },
     // Row 2 — spark + 4 observability self cells (ADR-15 §17 #7–#11).
     { name: 'spark-inference-gateway', status: 'up', latencyP95Ms: 340, note: '2 models' },
@@ -67,14 +67,14 @@ export const dashboardFixtureLoaded: DashboardResponse = {
     modelsLoaded: ['bge-m3', 'qwen3-30b-a3b'],
   },
   jvm: [
-    { service: 'playground-backend-rag-chat-api', heapUsedMb: 420, heapMaxMb: 1024, threads: 48, gcPauseP95Ms: 12 },
+    { service: 'playground-backend-chat-api', heapUsedMb: 420, heapMaxMb: 1024, threads: 48, gcPauseP95Ms: 12 },
     { service: 'playground-backend-docs-api', heapUsedMb: 280, heapMaxMb: 1024, threads: 32, gcPauseP95Ms: 9 },
     { service: 'playground-backend-identity-api', heapUsedMb: 180, heapMaxMb: 512, threads: 24, gcPauseP95Ms: 7 },
     { service: 'playground-backend-rag-ingestion-api', heapUsedMb: 220, heapMaxMb: 1024, threads: 36, gcPauseP95Ms: 10 },
   ],
   httpRate: [
     { service: 'playground-backend-gateway', rps: 2.4, errorRate: 0.0 },
-    { service: 'playground-backend-rag-chat-api', rps: 0.8, errorRate: 0.0 },
+    { service: 'playground-backend-chat-api', rps: 0.8, errorRate: 0.0 },
     { service: 'playground-backend-docs-api', rps: 1.6, errorRate: 0.01 },
   ],
 };

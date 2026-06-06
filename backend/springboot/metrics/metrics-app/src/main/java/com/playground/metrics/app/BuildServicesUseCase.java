@@ -21,7 +21,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>Cell catalog (canonical order, also drives the dashboard grid):
  * <ol>
- *   <li>gateway, identity-api, docs-api, rag-ingestion-api, rag-chat-api,
+ *   <li>gateway, identity-api, docs-api, rag-ingestion-api, chat-api,
  *       metrics-api (BCs — {@code up{}} scrape + actuator/health)</li>
  *   <li>spark-inference-gateway (HEAD {@code /v1/models})</li>
  *   <li>prometheus-playground, loki-playground, alloy-playground,

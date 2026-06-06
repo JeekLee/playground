@@ -46,21 +46,21 @@ class TimeseriesControllerTest {
     void timeseriesShapeForKnownMetric() {
         when(prometheus.rangeQuery(anyString(), any(Range.class), any(Step.class)))
                 .thenReturn(Mono.just(List.of(new PrometheusSeries(
-                        Map.of("service", "rag-chat-api"),
+                        Map.of("service", "chat-api"),
                         List.of(new TimeseriesPoint(1715763600, 380.0),
                                 new TimeseriesPoint(1715763630, 392.0))))));
 
         webTestClient.get()
-                .uri("/timeseries?metric=jvm-heap-rag-chat-api&range=1h&step=30s")
+                .uri("/timeseries?metric=jvm-heap-chat-api&range=1h&step=30s")
                 .accept(MediaType.APPLICATION_JSON)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.metric").isEqualTo("jvm-heap-rag-chat-api")
+                .jsonPath("$.metric").isEqualTo("jvm-heap-chat-api")
                 .jsonPath("$.range").isEqualTo("1h")
                 .jsonPath("$.step").isEqualTo("30s")
                 .jsonPath("$.unit").isEqualTo("MB")
-                .jsonPath("$.series[0].label").isEqualTo("rag-chat-api")
+                .jsonPath("$.series[0].label").isEqualTo("chat-api")
                 .jsonPath("$.series[0].points[0][0]").isEqualTo(1715763600)
                 .jsonPath("$.series[0].points[0][1]").isEqualTo(380.0);
     }

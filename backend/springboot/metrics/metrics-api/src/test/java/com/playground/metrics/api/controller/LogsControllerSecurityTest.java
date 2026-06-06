@@ -54,7 +54,7 @@ class LogsControllerSecurityTest {
     @Test
     void logsWithoutUserIdReturns401() {
         webTestClient.get()
-                .uri("/logs?service=rag-chat-api&since=15m")
+                .uri("/logs?service=chat-api&since=15m")
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -64,11 +64,11 @@ class LogsControllerSecurityTest {
         Instant ts = Instant.parse("2026-05-19T07:41:58.234Z");
         when(lokiPort.queryRange(anyString(), any(Duration.class), anyInt()))
                 .thenReturn(Mono.just(List.of(
-                        new LogEntry(ts, "rag-chat-api", "INFO", "hello"),
-                        new LogEntry(ts.minusSeconds(1), "rag-chat-api", "WARN", "slow"))));
+                        new LogEntry(ts, "chat-api", "INFO", "hello"),
+                        new LogEntry(ts.minusSeconds(1), "chat-api", "WARN", "slow"))));
 
         webTestClient.get()
-                .uri("/logs?service=rag-chat-api&since=15m")
+                .uri("/logs?service=chat-api&since=15m")
                 .header("X-User-Id", "11111111-2222-3333-4444-555555555555")
                 .exchange()
                 .expectStatus().isOk()

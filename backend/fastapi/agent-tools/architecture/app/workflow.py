@@ -14,7 +14,7 @@ Top-level control flow only; composes nodes + subgraphs (ADR-19 Phase 3a-2):
 - store_3dm       — upload .3dm bytes to MinIO, set storage_key in state (ADR-20 §D3 revised).
 - store_glb       — best-effort preview .glb upload at the same prefix (extension swapped).
 - respond         — build the {result, artifact} envelope where artifact carries
-                    metadata only (no base64); rag-chat records the storageKey.
+                    metadata only (no base64); chat records the storageKey.
 
 The pipeline (7 interpretation stages + fetch/respond plumbing) replaces the
 M8 `ceil(GFA/lot)` massing; floors are footprint-driven by the largest single

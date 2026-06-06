@@ -32,7 +32,7 @@ class BuildDashboardUseCaseTest {
 
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(
-                        Map.of("service", "rag-chat-api"), 1_700_000_000L, 42.0))));
+                        Map.of("service", "chat-api"), 1_700_000_000L, 42.0))));
         when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.reachableUp()));
         when(spark.probe()).thenReturn(Mono.just(SparkProbeResult.up()));
         when(spark.listModels()).thenReturn(Mono.just(List.of("BGE-M3", "Qwen3-32B")));

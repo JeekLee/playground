@@ -2,7 +2,7 @@
 
 agent-tools owns the write path: this node uploads the serialized .3dm
 to MinIO and stashes the object key in `storage_key` for the `respond`
-node to include in the artifact envelope. rag-chat receives the key and
+node to include in the artifact envelope. chat receives the key and
 records it in `chat.message_attachments` without touching MinIO itself.
 
 Split from the former `store` node (design spec

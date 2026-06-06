@@ -18,7 +18,7 @@ import { WidgetDegradeOverlay } from './WidgetDegradeOverlay';
  *    `error 0%` (or 1.0%) `text.muted` 11/400 → chart area 151 × 144
  *    `surface.soft` + 2px `accent` line.
  *
- * Three widgets per spec §5.2: gateway / rag-chat-api / docs-api
+ * Three widgets per spec §5.2: gateway / chat-api / docs-api
  * (rag-ingestion is Kafka-driven, no HTTP rate to chart).
  */
 
@@ -104,7 +104,7 @@ const HTTP_ORDER: ReadonlyArray<string> = [
   'playground-backend-identity-api',
   'playground-backend-docs-api',
   'playground-backend-rag-ingestion-api',
-  'playground-backend-rag-chat-api',
+  'playground-backend-chat-api',
   'playground-backend-metrics-api',
 ];
 

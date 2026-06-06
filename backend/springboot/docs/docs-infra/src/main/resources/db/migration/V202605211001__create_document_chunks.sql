@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS docs.document_chunks (
 CREATE INDEX IF NOT EXISTS docs_document_chunks_document_id_idx
     ON docs.document_chunks (document_id);
 
--- Supports rag-chat's retrieval scoping. Currently only `visibility = 'public'`
+-- Supports chat's retrieval scoping. Currently only `visibility = 'public'`
 -- is needed (auth-only retrieval per the M2 spec §8 amendment) but both
 -- indexes are kept to match ADR-13 §F's prescribed shape and to leave
 -- room for future filter shapes without a migration.
@@ -45,7 +45,7 @@ CREATE INDEX IF NOT EXISTS docs_document_chunks_user_id_visibility_idx
 
 -- HNSW + cosine ops per ADR-13 §9. m=16 / ef_construction=64 are pgvector
 -- defaults; the runtime hint `SET LOCAL hnsw.ef_search = 40;` is applied
--- at rag-chat retrieval time (not here — the index doesn't carry ef_search).
+-- at chat retrieval time (not here — the index doesn't carry ef_search).
 CREATE INDEX IF NOT EXISTS docs_document_chunks_embedding_hnsw_idx
     ON docs.document_chunks
     USING hnsw (embedding public.vector_cosine_ops)
@@ -53,6 +53,6 @@ CREATE INDEX IF NOT EXISTS docs_document_chunks_embedding_hnsw_idx
 
 COMMENT ON TABLE docs.document_chunks IS
     'M6.1 — chunk corpus per ADR-13 §F (now in docs schema per ADR-05 §A05.1). '
-    'docs-api writes via the in-BC ingestion pipeline; rag-chat reads. '
+    'docs-api writes via the in-BC ingestion pipeline; chat reads. '
     '(user_id, visibility) carry from docs.documents at ingestion + '
     'visibility-change time; never recomputed from docs schema.';

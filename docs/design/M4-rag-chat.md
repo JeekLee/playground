@@ -1,5 +1,11 @@
 # Design Context: M4 — RAG-Chat
 
+> **2026-06-06 — 서비스 개명**: rag-chat → **chat** (agentic-RAG 재구성 SP1).
+> 모듈 `:chat:chat-*`, 패키지 `com.playground.chat`, 공개 경로 `/api/chat/**`,
+> 버킷 `chat-attachments`, Redis 키 `chat:*`. 본문의 rag-chat 명칭은 작성
+> 시점 기록으로 유지. Spec:
+> `docs/superpowers/specs/2026-06-06-rename-ragchat-to-chat-design.md`.
+
 > PRD: `docs/prd/M4-rag-chat.md`
 > Spec: `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`
 > ADR: `docs/adr/14-m4-rag-chat.md` (per-milestone, includes the cross-doc amendments to ADR-09, ADR-05, ADR-04, roadmap §M4, M2 spec §8, M3 PRD §"M4 retrieval contract")

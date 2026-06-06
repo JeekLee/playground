@@ -68,7 +68,7 @@ public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolea
             new ServiceProbeTarget("playground-backend-identity-api",      Kind.BC, "http://playground-backend-identity-api:18081/actuator/health",      true),
             new ServiceProbeTarget("playground-backend-docs-api",          Kind.BC, "http://playground-backend-docs-api:18082/actuator/health",          true),
             new ServiceProbeTarget("playground-backend-rag-ingestion-api", Kind.BC, "http://playground-backend-rag-ingestion-api:18083/actuator/health", true),
-            new ServiceProbeTarget("playground-backend-rag-chat-api",      Kind.BC, "http://playground-backend-rag-chat-api:18084/actuator/health",      true),
+            new ServiceProbeTarget("playground-backend-chat-api",      Kind.BC, "http://playground-backend-chat-api:18084/actuator/health",      true),
             new ServiceProbeTarget("playground-backend-metrics-api",       Kind.BC, "http://playground-backend-metrics-api:18085/actuator/health",       true),
             // spark-inference-gateway — HEAD /v1/models per ADR-15 §12 (host process; no scrape, no actuator)
             new ServiceProbeTarget("spark-inference-gateway", Kind.SPARK, null, false),

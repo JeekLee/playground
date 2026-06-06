@@ -55,7 +55,7 @@ class RoomWire(BaseModel):
 
 
 class ProgramJsonWire(BaseModel):
-    """programJson shape returned to rag-chat in the tool result.
+    """programJson shape returned to chat in the tool result.
 
     Per ADR-18 §9 the schema validation pin (rooms required,
     additionalProperties: false). FE consumes this via the EXPANDED card.
@@ -75,7 +75,7 @@ class MassingResult(BaseModel):
     This is the `result` half of the `{result, artifact}` envelope — the only
     payload fed back to the LLM and into the `tool_result` SSE event. It carries
     NO `fileUrl`: ADR-20 retires agent-tools storage, so the bytes travel
-    out-of-band in `artifact` (NON-LLM) and rag-chat owns persistence + download.
+    out-of-band in `artifact` (NON-LLM) and chat owns persistence + download.
 
     `floorCount` is the above-grade floor count (ADR-19 Phase 3a); below-grade
     levels are carried in `basementLevels` (and rendered in `summary`).
@@ -96,7 +96,7 @@ class MassingArtifact(BaseModel):
 
     agent-tools owns the MinIO write path: the `store` node uploaded the .3dm
     before this DTO is built, so only metadata travels in the HTTP response.
-    No bytes / no base64 here — rag-chat records `storageKey` in
+    No bytes / no base64 here — chat records `storageKey` in
     `chat.message_attachments` and serves downloads via its own MinIO GET.
     """
 

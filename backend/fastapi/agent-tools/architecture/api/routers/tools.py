@@ -51,8 +51,8 @@ async def _ndjson_events(
 ) -> AsyncIterator[bytes]:
     """동기 `workflow.stream()`을 워커 스레드에서 돌리고 asyncio 큐로 브리지.
 
-    `heartbeat_seconds` 동안 이벤트가 없으면 heartbeat 줄을 주입 — rag-chat
-    idle 타이머 리셋 전용 (rag-chat이 필터). 한글 라벨은 ensure_ascii=False."""
+    `heartbeat_seconds` 동안 이벤트가 없으면 heartbeat 줄을 주입 — chat
+    idle 타이머 리셋 전용 (chat이 필터). 한글 라벨은 ensure_ascii=False."""
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
 

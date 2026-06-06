@@ -26,7 +26,7 @@ class BuildTimeseriesUseCaseTest {
     void resolvesShapeForKnownMetric() {
         PrometheusPort prometheus = Mockito.mock(PrometheusPort.class);
         PrometheusSeries series = new PrometheusSeries(
-                Map.of("service", "rag-chat-api"),
+                Map.of("service", "chat-api"),
                 List.of(new TimeseriesPoint(1715763600, 380.0),
                         new TimeseriesPoint(1715763630, 392.0)));
         when(prometheus.rangeQuery(anyString(), any(Range.class), any(Step.class)))
@@ -35,16 +35,16 @@ class BuildTimeseriesUseCaseTest {
         BuildTimeseriesUseCase useCase = new BuildTimeseriesUseCase(prometheus);
 
         TimeseriesResponse response = useCase.execute(
-                "jvm-heap-rag-chat-api", Range.H_1, Step.parse("30s")).block();
+                "jvm-heap-chat-api", Range.H_1, Step.parse("30s")).block();
 
         assertThat(response).isNotNull();
-        assertThat(response.metric()).isEqualTo("jvm-heap-rag-chat-api");
+        assertThat(response.metric()).isEqualTo("jvm-heap-chat-api");
         assertThat(response.range()).isEqualTo("1h");
         assertThat(response.step()).isEqualTo("30s");
         assertThat(response.unit()).isEqualTo("MB");
         assertThat(response.series()).hasSize(1);
         TimeseriesResponse.Series only = response.series().get(0);
-        assertThat(only.label()).isEqualTo("rag-chat-api");
+        assertThat(only.label()).isEqualTo("chat-api");
         assertThat(only.points()).hasSize(2);
         assertThat(only.points().get(0).ts()).isEqualTo(1715763600L);
         assertThat(only.points().get(0).value()).isEqualTo(380.0);

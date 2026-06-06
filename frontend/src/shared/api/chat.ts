@@ -1,11 +1,11 @@
 /**
- * RAG-Chat API client (browser-safe). Routed through the gateway per
+ * Chat API client (browser-safe). Routed through the gateway per
  * ADR-07 + ADR-14 §2:
- *   /api/rag/chat/**          → rag-chat-api  /api/rag/chat/**
+ *   /api/chat/**          → chat-api  /api/chat/**
  *
  * Wire shapes mirror the M4 spec
  * (`docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`) §5 + §10
- * verbatim. The single streaming endpoint (`POST /api/rag/chat` with body
+ * verbatim. The single streaming endpoint (`POST /api/chat` with body
  * `{ sessionId, message }`) is consumed via the SSE consumer in
  * `./chat.sse.ts`; this module owns the JSON DTO shapes + the
  * non-streaming session-CRUD calls.
@@ -22,13 +22,13 @@
 
 // -------------------- DTOs (verbatim from spec §5 + §10) -----------------
 
-/** Spec §5.3 — `POST /api/rag/chat/sessions`. */
+/** Spec §5.3 — `POST /api/chat/sessions`. */
 export interface CreateSessionResponseDto {
   sessionId: string;
   title: string;
 }
 
-/** Spec §5.3 — `GET /api/rag/chat/sessions`. */
+/** Spec §5.3 — `GET /api/chat/sessions`. */
 export interface SessionListItemDto {
   id: string;
   title: string;
@@ -40,13 +40,13 @@ export interface SessionListResponse {
   sessions: SessionListItemDto[];
 }
 
-/** Spec §5.3 — `PATCH /api/rag/chat/sessions/{id}` body. */
+/** Spec §5.3 — `PATCH /api/chat/sessions/{id}` body. */
 export interface PatchSessionRequestDto {
   title: string;
 }
 
 /**
- * Spec §5.3 — `GET /api/rag/chat/sessions/{id}/messages`. Citations carry
+ * Spec §5.3 — `GET /api/chat/sessions/{id}/messages`. Citations carry
  * the resolved title + excerpt (server-side JOIN to `docs.documents` +
  * `rag.document_chunks` per ADR-14 §3, §11). When the cited doc was
  * deleted (stale citation per ADR-14 §11), `title` is null and `excerpt`
@@ -76,7 +76,7 @@ export interface AttachmentWireDto {
   filename: string;
   contentType: string;
   sizeBytes: number;
-  /** Gateway-relative download URL: `/api/rag/chat/attachments/{id}`. */
+  /** Gateway-relative download URL: `/api/chat/attachments/{id}`. */
   downloadUrl: string;
   toolName: string;
   /** Document title of the brief that produced this artifact. Absent on legacy rows. */
@@ -109,7 +109,7 @@ export interface SessionMessagesResponse {
  * frontend renders the {@link label} verbatim while the stream
  * accumulates; {@link step} is the machine-readable discriminator the
  * UI may use to pick a specific icon (retrieval, tool_call, thinking,
- * generating…). {@link data} is BC-specific — rag-chat's
+ * generating…). {@link data} is BC-specific — chat's
  * {@code retrieval} step carries {@code { count: number }}.
  */
 export interface PhaseEventPayload {
@@ -225,7 +225,7 @@ export interface ToolProgressEventPayload {
  * Wire shape from the backend is `{id, name, result: <tool-body>}`.
  * The SSE parser in `chat.sse.ts` flattens `result.*` into this payload
  * and maps `result.fileUrl` → `outputUrl`. For M8 the download URL is
- * `/api/rag/chat/attachments/{uuid}` per ADR-20 §D4.
+ * `/api/chat/attachments/{uuid}` per ADR-20 §D4.
  *
  * `programJson` / `metadata` are tool-specific opaque blobs extracted
  * from the result body. For M8 `programJson` matches the JSON Schema
@@ -345,9 +345,9 @@ function browserHeaders(extra?: Record<string, string>): HeadersInit {
 
 // -------------------- Session CRUD (spec §5.3) ---------------------------
 
-/** Spec §5.3 — `POST /api/rag/chat/sessions`. Returns the freshly-created session. */
+/** Spec §5.3 — `POST /api/chat/sessions`. Returns the freshly-created session. */
 export async function createSession(): Promise<ChatResult<CreateSessionResponseDto>> {
-  const res = await fetch('/api/rag/chat/sessions', {
+  const res = await fetch('/api/chat/sessions', {
     method: 'POST',
     credentials: 'same-origin',
     headers: browserHeaders({ 'content-type': 'application/json' }),
@@ -356,9 +356,9 @@ export async function createSession(): Promise<ChatResult<CreateSessionResponseD
   return parseChatResult<CreateSessionResponseDto>(res);
 }
 
-/** Spec §5.3 — `GET /api/rag/chat/sessions`. The caller's full list, `updated_at DESC`. */
+/** Spec §5.3 — `GET /api/chat/sessions`. The caller's full list, `updated_at DESC`. */
 export async function listSessions(): Promise<ChatResult<SessionListResponse>> {
-  const res = await fetch('/api/rag/chat/sessions', {
+  const res = await fetch('/api/chat/sessions', {
     method: 'GET',
     credentials: 'same-origin',
     headers: browserHeaders(),
@@ -366,12 +366,12 @@ export async function listSessions(): Promise<ChatResult<SessionListResponse>> {
   return parseChatResult<SessionListResponse>(res);
 }
 
-/** Spec §5.3 — `PATCH /api/rag/chat/sessions/{id}` for manual rename. */
+/** Spec §5.3 — `PATCH /api/chat/sessions/{id}` for manual rename. */
 export async function renameSession(
   id: string,
   title: string,
 ): Promise<ChatResult<SessionListItemDto>> {
-  const res = await fetch(`/api/rag/chat/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`/api/chat/sessions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     credentials: 'same-origin',
     headers: browserHeaders({ 'content-type': 'application/json' }),
@@ -380,9 +380,9 @@ export async function renameSession(
   return parseChatResult<SessionListItemDto>(res);
 }
 
-/** Spec §5.3 — `DELETE /api/rag/chat/sessions/{id}`. CASCADE per ADR-14 §F. */
+/** Spec §5.3 — `DELETE /api/chat/sessions/{id}`. CASCADE per ADR-14 §F. */
 export async function deleteSession(id: string): Promise<ChatResult<void>> {
-  const res = await fetch(`/api/rag/chat/sessions/${encodeURIComponent(id)}`, {
+  const res = await fetch(`/api/chat/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     credentials: 'same-origin',
     headers: browserHeaders(),
@@ -391,14 +391,14 @@ export async function deleteSession(id: string): Promise<ChatResult<void>> {
 }
 
 /**
- * Spec §5.3 — `GET /api/rag/chat/sessions/{id}/messages`. Loads the full
+ * Spec §5.3 — `GET /api/chat/sessions/{id}/messages`. Loads the full
  * message + citation history for a session. Stale citations (post-doc-delete)
  * carry `title: null` per ADR-14 §11.
  */
 export async function fetchSessionMessages(
   id: string,
 ): Promise<ChatResult<SessionMessagesResponse>> {
-  const res = await fetch(`/api/rag/chat/sessions/${encodeURIComponent(id)}/messages`, {
+  const res = await fetch(`/api/chat/sessions/${encodeURIComponent(id)}/messages`, {
     method: 'GET',
     credentials: 'same-origin',
     headers: browserHeaders(),

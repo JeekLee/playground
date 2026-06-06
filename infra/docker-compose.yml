@@ -267,7 +267,7 @@ services:
       # M6.1 ADR-12 §A12.1 absorbs rag-ingestion's BGE-M3 embedding calls, so
       # it must reach `spark-inference-gateway:8000` by container DNS for both
       # paths. Joined to two bridges (default + spark-inference-net), same
-      # pattern as rag-chat-api / metrics-api (ADR-04 amendment 2026-05-20).
+      # pattern as chat-api / metrics-api (ADR-04 amendment 2026-05-20).
       # Without this attach, docs-api gets "Temporary failure in name
       # resolution" on every OCR / embedding call.
       - default
@@ -307,7 +307,7 @@ services:
       # M6 ADR-16 + M6.1 ADR-12 §A12.1 — Spring AI Vision OCR + BGE-M3 embed.
       # docs-api joins the spark-inference-net bridge (declared above) AND
       # needs the same SPRING_AI_OPENAI_* envs the other consumer BCs
-      # (rag-chat-api / metrics-api) carry. Without these the OpenAI-
+      # (chat-api / metrics-api) carry. Without these the OpenAI-
       # compatible client falls through to application.yml defaults
       # (base-url = host.docker.internal:10080, api-key = dummy-not-used),
       # giving HTTP 401 'invalid master key' from spark-inference-gateway.
@@ -333,22 +333,22 @@ services:
   # The Java modules `rag-ingestion-{domain,app,infra,api}` are removed in the
   # same M6.1 cycle (commit 1). Historical reference: `docs/adr/13-m3-rag-ingestion.md`.
 
-  # --- M4: rag-chat-api (RAG-Chat BC quadruplet runnable per ADR-01 v2 + ADR-14) ---
-  # No host port — gateway routes /api/rag/chat/** here per ADR-07 + ADR-14 §2.
-  # No Kafka dependency — rag-chat publishes/consumes no events (ADR-14 §1 + §A).
+  # --- M4: chat-api (Chat BC quadruplet runnable per ADR-01 v2 + ADR-14) ---
+  # No host port — gateway routes /api/chat/** here per ADR-07 + ADR-14 §2.
+  # No Kafka dependency — chat publishes/consumes no events (ADR-14 §1 + §A).
   # Cross-schema SELECT into `docs.document_chunks`, `docs.documents`, and
   # `identity.users` runs via JDBC against postgres-playground (ADR-14 §3 + §G.3,
   # post-M6.1 the chunks table moved to the `docs` schema per ADR-12 §A12.1);
   # docs-api is NOT a depends_on target (no HTTP coupling).
   # Reaches spark-inference-gateway (Qwen3-32B chat + BGE-M3 query embeddings)
   # via host.docker.internal:10080 per ADR-04 + ADR-14 §B.
-  rag-chat-api:
+  chat-api:
     build:
       context: ../backend/springboot
-      dockerfile: rag-chat/rag-chat-api/Dockerfile
-    image: playground/backend-rag-chat-api:dev
-    container_name: playground-backend-rag-chat-api
-    hostname: playground-backend-rag-chat-api
+      dockerfile: chat/chat-api/Dockerfile
+    image: playground/backend-chat-api:dev
+    container_name: playground-backend-chat-api
+    hostname: playground-backend-chat-api
     depends_on:
       postgres-playground:
         condition: service_healthy
@@ -357,7 +357,7 @@ services:
       minio-playground:
         condition: service_healthy     # ADR-20: chat attachment blob store
       gateway:
-        condition: service_started     # gateway must be up for /api/rag/chat/** routing
+        condition: service_started     # gateway must be up for /api/chat/** routing
     networks:
       # Joined to two bridges (see docs-api block + ADR-04 amendment
       # 2026-05-20): playground default for db/cache/gateway hops, external
@@ -389,19 +389,19 @@ services:
       # ADR-20: MinIO blob store for chat message attachments (tool artifacts,
       # e.g. the .3dm). Mirrors docs-api's MinIO wiring (ADR-12 §A12.4); same
       # minio-playground on playground-net. Bucket is made-if-absent at startup.
-      PLAYGROUND_RAGCHAT_MINIO_ENDPOINT: ${PLAYGROUND_RAGCHAT_MINIO_ENDPOINT:-http://minio-playground:9000}
-      PLAYGROUND_RAGCHAT_MINIO_BUCKET: ${PLAYGROUND_RAGCHAT_MINIO_BUCKET:-rag-chat-attachments}
+      PLAYGROUND_CHAT_MINIO_ENDPOINT: ${PLAYGROUND_CHAT_MINIO_ENDPOINT:-http://minio-playground:9000}
+      PLAYGROUND_CHAT_MINIO_BUCKET: ${PLAYGROUND_CHAT_MINIO_BUCKET:-chat-attachments}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
       # Retrieval K (ADR-14 §7) — overridable for experiments without recompile.
-      PLAYGROUND_RAG_CHAT_RETRIEVAL_K: ${PLAYGROUND_RAG_CHAT_RETRIEVAL_K:-6}
+      PLAYGROUND_CHAT_RETRIEVAL_K: ${PLAYGROUND_CHAT_RETRIEVAL_K:-6}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18084/actuator/health || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
-    # NO `ports:` block — rag-chat-api is compose-internal only (ADR-08).
-    # Browser traffic reaches it via gateway:18080 → /api/rag/chat/** → http://rag-chat-api:18084.
+    # NO `ports:` block — chat-api is compose-internal only (ADR-08).
+    # Browser traffic reaches it via gateway:18080 → /api/chat/** → http://chat-api:18084.
 
   # --- agent-tools: Python multi-BC host (ADR-19 §D1) — first BC: architecture ---
   # Single FastAPI host for small LLM-tool BCs (ADR-19 supersedes ADR-18's
@@ -437,10 +437,10 @@ services:
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
       PLAYGROUND_MASSING_GEN_LLM_MODEL: ${PLAYGROUND_MASSING_GEN_LLM_MODEL:-qwen3-vl-30b-a3b}
       PLAYGROUND_MASSING_GEN_MAX_FLOORS: ${PLAYGROUND_MASSING_GEN_MAX_FLOORS:-10}
-      # ADR-20 §D3 revised — agent-tools owns MinIO write; same bucket as rag-chat
-      # so rag-chat's download adapter can GET using the returned storageKey.
+      # ADR-20 §D3 revised — agent-tools owns MinIO write; same bucket as chat
+      # so chat's download adapter can GET using the returned storageKey.
       PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT: ${PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT:-http://minio-playground:9000}
-      PLAYGROUND_ARCHITECTURE_MINIO_BUCKET: ${PLAYGROUND_ARCHITECTURE_MINIO_BUCKET:-rag-chat-attachments}
+      PLAYGROUND_ARCHITECTURE_MINIO_BUCKET: ${PLAYGROUND_ARCHITECTURE_MINIO_BUCKET:-chat-attachments}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
     healthcheck:
@@ -449,7 +449,7 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
-    # NO `ports:` block — compose-internal only. rag-chat-api reaches
+    # NO `ports:` block — compose-internal only. chat-api reaches
     # `/internal/tools/generate-massing` directly via the hostname;
     # browser traffic for /api/arch/outputs/{id} hops through the gateway.
 
@@ -492,12 +492,12 @@ services:
       METRICS_PROMETHEUS_BASE_URL: http://prometheus-playground:9090
       METRICS_LOKI_BASE_URL: http://loki-playground:3100
       # Spark probe wiring — reuses the operator's `.env` SPARK_INFERENCE_GATEWAY_URL
-      # so the metrics health-grid sees the same endpoint docs-api / rag-chat
+      # so the metrics health-grid sees the same endpoint docs-api / chat
       # call (ADR-15 §12 amendment 2026-05-20; post-M6.1 the embed path moved
       # from rag-ingestion to docs-api per ADR-12 §A12.1). Falls back to the
       # original host-process URL if `SPARK_INFERENCE_GATEWAY_URL` is not in `.env`.
       METRICS_SPARK_GATEWAY_BASE_URL: ${SPARK_INFERENCE_GATEWAY_URL:-http://host.docker.internal:10080}
-      # Bearer token forwarded on every probe — same key docs-api / rag-chat
+      # Bearer token forwarded on every probe — same key docs-api / chat
       # use, so a single `.env` change covers all three BCs. Blank → no header,
       # which is fine for the bare-vLLM fallback that doesn't validate keys.
       METRICS_SPARK_GATEWAY_API_KEY: ${METRICS_SPARK_GATEWAY_API_KEY:-${SPRING_AI_OPENAI_API_KEY:-}}
@@ -662,7 +662,7 @@ networks:
   # The Spark inference stack (`spark-inference-gateway` + per-model backends
   # like `spark-inference-qwen3-vl-30b-a3b`, `spark-inference-bge-m3`) lives in a
   # SEPARATE compose project on a bridge named `spark-inference-net`. Three
-  # playground services (`docs-api`, `rag-chat-api`, `metrics-api`) join this
+  # playground services (`docs-api`, `chat-api`, `metrics-api`) join this
   # bridge so the gateway's container DNS resolves directly. (Pre-M6.1 the
   # third member was `rag-ingestion-api`; that BC was absorbed into docs-api
   # in M6.1, which now carries both the Vision OCR and the BGE-M3 embedding

@@ -48,7 +48,7 @@ class BuildServicesUseCaseTest {
                         "playground-backend-identity-api",
                         "playground-backend-docs-api",
                         "playground-backend-rag-ingestion-api",
-                        "playground-backend-rag-chat-api",
+                        "playground-backend-chat-api",
                         "playground-backend-metrics-api",
                         "spark-inference-gateway",
                         "playground-prometheus",

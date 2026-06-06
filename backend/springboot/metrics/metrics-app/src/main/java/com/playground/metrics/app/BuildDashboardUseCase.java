@@ -34,7 +34,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>JVM-bearing services in the {@code jvm[]} array: every JVM-bearing
  * service in the stack (5 BCs + gateway). The {@code httpRate[]} array
- * covers gateway + rag-chat-api + docs-api. The {@code services[]} array
+ * covers gateway + chat-api + docs-api. The {@code services[]} array
  * reuses {@link BuildServicesUseCase}'s 11-cell result (6 BCs + spark
  * gateway + 4 observability containers).
  */
@@ -57,12 +57,12 @@ public class BuildDashboardUseCase {
             "playground-backend-identity-api",
             "playground-backend-docs-api",
             "playground-backend-rag-ingestion-api",
-            "playground-backend-rag-chat-api",
+            "playground-backend-chat-api",
             "playground-backend-metrics-api");
 
     /**
      * Every HTTP-bearing Spring Boot BC. Spec §5.2는 원래 3개 (gateway,
-     * rag-chat-api, docs-api)였지만, 2026-05-21 amendment에서 운영 가시성
+     * chat-api, docs-api)였지만, 2026-05-21 amendment에서 운영 가시성
      * 위해 6개 BC 전체로 확장 — 모든 actuator/Spring MVC traffic을 한
      * row에 노출. rag-ingestion-api처럼 HTTP 트래픽 적은 BC도 actuator
      * health-check + Spring observation을 통해 rate가 비등하게 나옴.

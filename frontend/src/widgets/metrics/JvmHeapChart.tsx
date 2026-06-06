@@ -151,7 +151,7 @@ const JVM_SLUGS_SSR_FALLBACK: ReadonlyArray<string> = [
   'playground-backend-identity-api',
   'playground-backend-docs-api',
   'playground-backend-rag-ingestion-api',
-  'playground-backend-rag-chat-api',
+  'playground-backend-chat-api',
   'playground-backend-metrics-api',
 ];
 

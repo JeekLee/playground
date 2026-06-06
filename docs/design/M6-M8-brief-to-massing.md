@@ -289,6 +289,7 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 > label + (시도 N) + stageCount 핍 바 — 전부 wire 구동이라 새 도구는 FE 코드
 > 없이 진행 표시를 얻는다. Spec:
 > `docs/superpowers/specs/2026-06-06-tool-streaming-progress-design.md`.
+> (2026-06-06 후속: rag-chat 서비스는 chat으로 개명 — 본문 명칭은 작성 시점 기록.)
 
 ### 2.5 M8 — `/chat` with `tool_error` card — frame node-id: `78:1437`
 

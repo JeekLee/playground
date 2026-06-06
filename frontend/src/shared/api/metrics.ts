@@ -41,7 +41,7 @@ export interface ServiceHealth {
   /**
    * Canonical service slug. The 11 expected values are:
    *
-   *   gateway / identity-api / docs-api / rag-ingestion / rag-chat-api /
+   *   gateway / identity-api / docs-api / rag-ingestion / chat-api /
    *   metrics-api / spark-inference-gateway / prometheus-playground /
    *   loki-playground / alloy-playground / cadvisor-playground.
    */
@@ -103,7 +103,7 @@ export interface JvmSummary {
 
 /**
  * HTTP request rate snapshot per request-heavy BC (gateway,
- * rag-chat-api, docs-api — 3 rows). `rag-ingestion` is Kafka-driven.
+ * chat-api, docs-api — 3 rows). `rag-ingestion` is Kafka-driven.
  */
 export interface HttpRateSummary {
   service: string;

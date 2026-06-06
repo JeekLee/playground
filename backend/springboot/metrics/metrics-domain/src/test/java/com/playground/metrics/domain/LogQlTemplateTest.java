@@ -9,14 +9,14 @@ class LogQlTemplateTest {
 
     @Test
     void buildsLogQlForKnownService() {
-        String logql = LogQlTemplate.forService("rag-chat-api", null);
-        assertThat(logql).isEqualTo("{container=\"rag-chat-api\"} | json");
+        String logql = LogQlTemplate.forService("chat-api", null);
+        assertThat(logql).isEqualTo("{container=\"chat-api\"} | json");
     }
 
     @Test
     void buildsLogQlWithSearchExpression() {
-        String logql = LogQlTemplate.forService("rag-chat-api", "ERROR");
-        assertThat(logql).isEqualTo("{container=\"rag-chat-api\"} |~ \"ERROR\" | json");
+        String logql = LogQlTemplate.forService("chat-api", "ERROR");
+        assertThat(logql).isEqualTo("{container=\"chat-api\"} |~ \"ERROR\" | json");
     }
 
     @Test
@@ -27,7 +27,7 @@ class LogQlTemplateTest {
 
     @Test
     void escapesQuoteInSearchExpression() {
-        String logql = LogQlTemplate.forService("rag-chat-api", "say \"hi\"");
+        String logql = LogQlTemplate.forService("chat-api", "say \"hi\"");
         assertThat(logql).contains("\\\"hi\\\"");
     }
 

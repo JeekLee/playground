@@ -23,7 +23,7 @@ class ServiceProbeTargetTest {
                         "playground-backend-identity-api",
                         "playground-backend-docs-api",
                         "playground-backend-rag-ingestion-api",
-                        "playground-backend-rag-chat-api",
+                        "playground-backend-chat-api",
                         "playground-backend-metrics-api",
                         "spark-inference-gateway",
                         "playground-prometheus",
@@ -98,8 +98,8 @@ class ServiceProbeTargetTest {
                 .isEqualTo("http://playground-backend-docs-api:18082/actuator/health");
         assertThat(probeOf("playground-backend-rag-ingestion-api").probeUrl())
                 .isEqualTo("http://playground-backend-rag-ingestion-api:18083/actuator/health");
-        assertThat(probeOf("playground-backend-rag-chat-api").probeUrl())
-                .isEqualTo("http://playground-backend-rag-chat-api:18084/actuator/health");
+        assertThat(probeOf("playground-backend-chat-api").probeUrl())
+                .isEqualTo("http://playground-backend-chat-api:18084/actuator/health");
         assertThat(probeOf("playground-backend-metrics-api").probeUrl())
                 .isEqualTo("http://playground-backend-metrics-api:18085/actuator/health");
     }

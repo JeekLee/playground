@@ -22,7 +22,7 @@ import reactor.core.publisher.Mono;
  *       and {@code /actuator/**}.</li>
  *   <li>{@code authenticated()} on {@code /api/metrics/logs/**} — enforced by
  *       checking the gateway-injected {@code X-User-Id} header (mirrors the
- *       M2 docs-api / M4 rag-chat-api pattern; the gateway is the security
+ *       M2 docs-api / M4 chat-api pattern; the gateway is the security
  *       boundary per ADR-08, the BC trusts the header presence per ADR-07).</li>
  * </ul>
  *
