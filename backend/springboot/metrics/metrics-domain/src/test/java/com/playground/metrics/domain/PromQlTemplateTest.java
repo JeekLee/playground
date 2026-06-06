@@ -9,9 +9,9 @@ class PromQlTemplateTest {
 
     @Test
     void resolveJvmHeapForKnownService() {
-        String promql = PromQlTemplate.resolve("jvm-heap-playground-backend-rag-chat-api");
+        String promql = PromQlTemplate.resolve("jvm-heap-playground-backend-chat-api");
         assertThat(promql).isEqualTo(
-                "jvm_memory_used_bytes{area=\"heap\",service=\"playground-backend-rag-chat-api\"} / 1048576");
+                "jvm_memory_used_bytes{area=\"heap\",service=\"playground-backend-chat-api\"} / 1048576");
     }
 
     @Test
@@ -30,10 +30,10 @@ class PromQlTemplateTest {
     @Test
     void resolveJvmGcPauseFillsRepeatedPlaceholder() {
         // Template uses %s twice; both must point to the same caller-supplied svc.
-        String promql = PromQlTemplate.resolve("jvm-gc-pause-playground-backend-rag-chat-api");
+        String promql = PromQlTemplate.resolve("jvm-gc-pause-playground-backend-chat-api");
         assertThat(promql).isEqualTo(
-                "rate(jvm_gc_pause_seconds_sum{service=\"playground-backend-rag-chat-api\"}[5m]) "
-                        + "/ rate(jvm_gc_pause_seconds_count{service=\"playground-backend-rag-chat-api\"}[5m])");
+                "rate(jvm_gc_pause_seconds_sum{service=\"playground-backend-chat-api\"}[5m]) "
+                        + "/ rate(jvm_gc_pause_seconds_count{service=\"playground-backend-chat-api\"}[5m])");
     }
 
     @Test
@@ -62,7 +62,7 @@ class PromQlTemplateTest {
     void injectionAttemptViaMetricIdRejected() {
         // Story 9 attack: try to inject by tacking PromQL onto the metric id
         assertThatThrownBy(() -> PromQlTemplate.resolve(
-                "jvm-heap-playground-backend-rag-chat-api\"}|sum() OR x{"))
+                "jvm-heap-playground-backend-chat-api\"}|sum() OR x{"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -88,7 +88,7 @@ class PromQlTemplateTest {
 
     @Test
     void templateOfReturnsUnitForKnownMetric() {
-        assertThat(PromQlTemplate.templateOf("jvm-heap-playground-backend-rag-chat-api"))
+        assertThat(PromQlTemplate.templateOf("jvm-heap-playground-backend-chat-api"))
                 .isPresent()
                 .get()
                 .extracting(PromQlTemplate.Template::unit)

@@ -46,7 +46,7 @@ class LokiAdapterTest {
                     "resultType":"streams",
                     "result":[
                       {
-                        "stream":{"container":"rag-chat-api","service":"rag-chat-api","source":"docker"},
+                        "stream":{"container":"chat-api","service":"chat-api","source":"docker"},
                         "values":[
                           ["1715763718234000000","{\\"level\\":\\"INFO\\",\\"msg\\":\\"hi\\"}"],
                           ["1715763717812000000","{\\"level\\":\\"WARN\\",\\"msg\\":\\"slow\\"}"]
@@ -62,11 +62,11 @@ class LokiAdapterTest {
                         .withBody(json)));
 
         List<LogEntry> entries = adapter.queryRange(
-                "{container=\"rag-chat-api\"} | json",
+                "{container=\"chat-api\"} | json",
                 Duration.ofMinutes(15), 200).block();
 
         assertThat(entries).hasSize(2);
-        assertThat(entries.get(0).service()).isEqualTo("rag-chat-api");
+        assertThat(entries.get(0).service()).isEqualTo("chat-api");
         assertThat(entries.get(0).level()).isEqualTo("INFO");
         assertThat(entries.get(1).level()).isEqualTo("WARN");
         assertThat(entries.get(0).message()).contains("hi");
@@ -80,7 +80,7 @@ class LokiAdapterTest {
                         .withBody("{\"status\":\"success\",\"data\":{\"resultType\":\"streams\",\"result\":[]}}")));
 
         List<LogEntry> entries = adapter.queryRange(
-                "{container=\"rag-chat-api\"} | json",
+                "{container=\"chat-api\"} | json",
                 Duration.ofMinutes(15), 200).block();
         assertThat(entries).isEmpty();
     }

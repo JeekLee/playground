@@ -10,7 +10,7 @@ import type { ServiceStatus, SparkGatewaySummary } from '@/entities/metrics';
  * 디자인 컨텍스트 §2.1은 원래 Latency P95 (365 × 236) + Models loaded (175 × 236)
  * 두 카드를 mixed-width row로 두기로 했음. Latency P95 카드는 보류 상태:
  * - PromQL `http_client_requests_seconds_bucket{target="spark-inference-gateway"}`
- *   메트릭이 rag-chat-api의 actuator/prometheus에 emit되지 않음 (Spring AI
+ *   메트릭이 chat-api의 actuator/prometheus에 emit되지 않음 (Spring AI
  *   WebClient + Micrometer observation 통합 미설정).
  * - 빈 차트 + 0 값을 표시하느니 차라리 카드 자체를 숨김. metric emit 정리
  *   되면 별도 PR로 복원.

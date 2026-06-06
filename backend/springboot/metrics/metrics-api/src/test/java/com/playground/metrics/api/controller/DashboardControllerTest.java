@@ -52,7 +52,7 @@ class DashboardControllerTest {
         Mockito.reset(prometheus, spark, actuator);
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(
-                        Map.of("service", "rag-chat-api"), 1_700_000_000L, 1.0))));
+                        Map.of("service", "chat-api"), 1_700_000_000L, 1.0))));
         when(spark.probe()).thenReturn(Mono.just(SparkProbeResult.up()));
         when(spark.listModels()).thenReturn(Mono.just(List.of("BGE-M3", "Qwen3-32B")));
         when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.reachableUp()));

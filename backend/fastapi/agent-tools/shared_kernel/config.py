@@ -67,12 +67,12 @@ class Settings(BaseSettings):
     minio_access_key: str = Field(default="playground", alias="MINIO_ROOT_USER")
     minio_secret_key: str = Field(default="playground-secret", alias="MINIO_ROOT_PASSWORD")
     minio_bucket: str = Field(
-        default="rag-chat-attachments",
+        default="chat-attachments",
         alias="PLAYGROUND_ARCHITECTURE_MINIO_BUCKET",
     )
 
     # --- Tool streaming (tool-streaming spec D1/D4) ---
-    # NDJSON heartbeat 발신 간격. rag-chat idle(60s)의 1/6 — 일시 지연 여유.
+    # NDJSON heartbeat 발신 간격. chat idle(60s)의 1/6 — 일시 지연 여유.
     stream_heartbeat_seconds: float = Field(default=10.0)
 
     # --- Server ---

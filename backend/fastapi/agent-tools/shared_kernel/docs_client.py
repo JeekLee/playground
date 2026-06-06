@@ -7,7 +7,7 @@ considered, because the public detail endpoint accepts the X-User-Id
 header for visibility filtering.
 
 `X-User-Id` + `X-User-Sub` headers are forwarded from M8's request
-(set by rag-chat per M7's ToolDispatcher contract — ADR-17 §X).
+(set by chat per M7's ToolDispatcher contract — ADR-17 §X).
 Authorization / cookies are NOT forwarded.
 """
 

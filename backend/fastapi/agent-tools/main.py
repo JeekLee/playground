@@ -10,7 +10,7 @@ Wires:
 ADR-20 §D4: the `architecture` BC is now a stateless generator. The
 `arch.outputs` store + `/outputs/{id}` download are retired — no Postgres
 bootstrap, no DB session. The `.3dm` bytes flow out in the tool-result
-`artifact`; rag-chat owns persistence + download.
+`artifact`; chat owns persistence + download.
 
 Single uvicorn worker per ADR-18 §A18.3.
 """
@@ -77,7 +77,7 @@ async def massing_error_handler(request: Request, exc: MassingError) -> JSONResp
     """Map MassingError → HTTP response.
 
     Body shape: {code: "<CODE>", message: "<human>"}. M7's ToolDispatcher
-    on the rag-chat side will pack this into tool_error.message as
+    on the chat side will pack this into tool_error.message as
     `<CODE>: <message>` per ADR-18 §A18.5 §7.
     """
     # NOTE: Python's logging module reserves `message` as a LogRecord

@@ -111,8 +111,8 @@ public class GatewaySecurityConfig {
                         .pathMatchers(HttpMethod.GET, "/api/docs", "/api/docs/").permitAll()
                         .pathMatchers("/api/docs", "/api/docs/", "/api/docs/**").authenticated()
                         // ADR-14 §G.4 — the M4 cycle removes the legacy
-                        // /api/rag/chat/public anonymous allowlist; the entire
-                        // /api/rag/chat/** surface is auth-only. Gateway 401s
+                        // /api/chat/public anonymous allowlist; the entire
+                        // /api/chat/** surface is auth-only. Gateway 401s
                         // anonymous callers via the default authenticated()
                         // catch-all below.
                         //

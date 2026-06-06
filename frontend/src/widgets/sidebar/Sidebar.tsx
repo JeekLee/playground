@@ -98,7 +98,7 @@ const APPS_BASE: AppsRow[] = [
   {
     // M4 shipped — Chat row is active for `/chat`. Auth-locked for
     // anonymous callers (per ADR-14 §G.4 amendment to ADR-09; see
-    // design doc M4-rag-chat.md §2.8).
+    // design doc M4-chat.md §2.8).
     label: 'Chat',
     icon: MessageSquare,
     href: '/chat',
@@ -135,7 +135,7 @@ export function Sidebar({
   const apps: AppsRow[] = APPS_BASE.map((row) => {
     // The Chat row is M4-shipped, but auth-only — anonymous callers see
     // the `🔒 Sign in` badge instead of a destination tab (per ADR-09
-    // amendment in ADR-14 §G.4 + design doc M4-rag-chat.md §2.8).
+    // amendment in ADR-14 §G.4 + design doc M4-chat.md §2.8).
     if (row.label === 'Chat' && isAnonymous && !row.locked) {
       return { ...row, locked: 'auth' as const };
     }

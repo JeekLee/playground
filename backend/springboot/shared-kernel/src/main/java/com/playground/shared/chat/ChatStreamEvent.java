@@ -5,7 +5,7 @@ import java.util.Map;
 /**
  * BC-agnostic SSE event grammar for streaming chat surfaces. Lives in
  * shared-kernel so any bounded context that streams an LLM turn — current
- * rag-chat (M4), future tool-calling agents, second model line, etc. —
+ * chat (M4), future tool-calling agents, second model line, etc. —
  * can emit the same wire grammar to a single frontend consumer.
  *
  * <h2>Grammar shape</h2>
@@ -18,7 +18,7 @@ import java.util.Map;
  *   <li>{@link Token} — one text delta emitted by the assistant
  *       stream.</li>
  *   <li>{@link Done} — terminal success. {@code citations} is a
- *       BC-specific payload (rag-chat ships the cited document chunks;
+ *       BC-specific payload (chat ships the cited document chunks;
  *       a future web-agent ships URLs; the wire format is whatever the
  *       BC's Jackson serializer produces).</li>
  *   <li>{@link Error} — terminal failure with a code + human-readable
@@ -33,7 +33,7 @@ import java.util.Map;
  * is mechanical because the envelope is fixed here.
  *
  * <h2>Pre-PR-B compat note</h2>
- * Today rag-chat (M4) still emits the wire event {@code retrieval} as
+ * Today chat (M4) still emits the wire event {@code retrieval} as
  * a {@link Phase} with {@code step = "retrieval"} and
  * {@code data.citations} carrying the full retrieved set; PR B will
  * pull the citation list out of {@code retrieval} into {@link Done}
@@ -64,7 +64,7 @@ public sealed interface ChatStreamEvent
 
     /**
      * Terminal success — assistant message persisted, stream closing.
-     * {@code citations} is BC-specific: rag-chat populates it with the
+     * {@code citations} is BC-specific: chat populates it with the
      * cited document chunks (PR B); other BCs may use a different shape
      * or leave it {@code null}.
      */

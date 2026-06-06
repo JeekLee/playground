@@ -8,7 +8,7 @@ import {
 } from './chat';
 
 /**
- * RAG-Chat API — server-only helpers. Same gateway routing as
+ * Chat API — server-only helpers. Same gateway routing as
  * `./chat.ts`, but with inbound-cookie forwarding so the gateway can
  * resolve `PLAYGROUND_SESSION` during SSR.
  *
@@ -49,7 +49,7 @@ async function serverFetch<T>(path: string): Promise<ChatResult<T>> {
  * waterfall.
  */
 export async function fetchSessionsServerSide(): Promise<ChatResult<SessionListResponse>> {
-  return serverFetch<SessionListResponse>('/api/rag/chat/sessions');
+  return serverFetch<SessionListResponse>('/api/chat/sessions');
 }
 
 /**
@@ -61,6 +61,6 @@ export async function fetchSessionMessagesServerSide(
   sessionId: string,
 ): Promise<ChatResult<SessionMessagesResponse>> {
   return serverFetch<SessionMessagesResponse>(
-    `/api/rag/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
+    `/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
   );
 }

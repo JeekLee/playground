@@ -15,7 +15,7 @@ import reactor.core.scheduler.Schedulers;
  * per ADR-15 §C + §18 + spec §8.2 (Story 19).
  *
  * <p>Reuses the M3/M4 {@code RRateLimiter} pattern (see
- * {@code com.playground.ragchat.infrastructure.redis.RedissonTokenBucketAdapter})
+ * {@code com.playground.chat.infrastructure.redis.RedissonTokenBucketAdapter})
  * but keyed by IP (anonymous-OK route) rather than user id.
  *
  * <p>Bucket key namespace: {@code metrics:bucket:ip:{ip}:dashboard}. Redisson

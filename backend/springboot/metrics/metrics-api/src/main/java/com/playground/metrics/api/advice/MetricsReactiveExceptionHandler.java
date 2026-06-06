@@ -16,7 +16,7 @@ import org.springframework.web.server.ServerWebExchange;
 
 /**
  * WebFlux exception advice per ADR-11 + ADR-15 §C. Mirrors
- * {@code RagChatReactiveExceptionHandler}'s shape — the shared-kernel's
+ * {@code ChatReactiveExceptionHandler}'s shape — the shared-kernel's
  * {@code SharedExceptionHandler} is servlet-stack-only, so reactive BCs
  * ship their own advice.
  *

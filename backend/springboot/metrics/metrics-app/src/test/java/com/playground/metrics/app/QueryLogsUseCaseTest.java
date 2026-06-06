@@ -25,17 +25,17 @@ class QueryLogsUseCaseTest {
         LokiPort loki = Mockito.mock(LokiPort.class);
         Instant now = Instant.parse("2026-05-19T07:41:58.234Z");
         List<LogEntry> entries = List.of(
-                new LogEntry(now, "rag-chat-api", "INFO", "{\"level\":\"INFO\",\"msg\":\"hi\"}"),
-                new LogEntry(now.minusSeconds(1), "rag-chat-api", "WARN", "{\"level\":\"WARN\"}"));
+                new LogEntry(now, "chat-api", "INFO", "{\"level\":\"INFO\",\"msg\":\"hi\"}"),
+                new LogEntry(now.minusSeconds(1), "chat-api", "WARN", "{\"level\":\"WARN\"}"));
         when(loki.queryRange(anyString(), any(Duration.class), anyInt()))
                 .thenReturn(Mono.just(entries));
 
         QueryLogsUseCase useCase = new QueryLogsUseCase(loki);
-        LogsResponse response = useCase.execute("rag-chat-api", "15m", null, null).block();
+        LogsResponse response = useCase.execute("chat-api", "15m", null, null).block();
 
         assertThat(response).isNotNull();
         assertThat(response.entries()).hasSize(2);
-        assertThat(response.entries().get(0).service()).isEqualTo("rag-chat-api");
+        assertThat(response.entries().get(0).service()).isEqualTo("chat-api");
         assertThat(response.entries().get(0).level()).isEqualTo("INFO");
         assertThat(response.hasMore()).isFalse();
         assertThat(response.nextCursor()).isNull();
@@ -57,7 +57,7 @@ class QueryLogsUseCaseTest {
         LokiPort loki = Mockito.mock(LokiPort.class);
         QueryLogsUseCase useCase = new QueryLogsUseCase(loki);
 
-        assertThatThrownBy(() -> useCase.execute("rag-chat-api", "99x", null, null))
+        assertThatThrownBy(() -> useCase.execute("chat-api", "99x", null, null))
                 .isInstanceOf(AbstractException.class);
     }
 

@@ -29,7 +29,7 @@ def get_user_context(
 ) -> UserContext:
     if not x_user_id:
         # M7's ToolDispatcher always sets X-User-Id when forwarding from
-        # rag-chat. Missing header is a contract violation.
+        # chat. Missing header is a contract violation.
         raise MassingError(
             MassingErrorCode.BRIEF_NOT_ACCESSIBLE,
             "X-User-Id header missing",

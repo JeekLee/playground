@@ -3,7 +3,7 @@ plugins {
 }
 
 // M6 (ADR-16) — Spring AI BOM for the Vision OCR fallback path. Same 1.0.0 GA
-// line that rag-chat (M4) and the (M6.1-absorbed) ingestion pipeline pin per
+// line that chat (M4) and the (M6.1-absorbed) ingestion pipeline pin per
 // ADR-04 — keeps the OpenAI-compatible spark-inference-gateway client coherent
 // across the stack.
 dependencyManagement {
@@ -40,7 +40,7 @@ dependencies {
     implementation(libs.pdfbox)
 
     // M6 (ADR-16): Spring AI OpenAI-compatible client for the Vision OCR
-    // fallback. Same starter rag-chat (M4) uses — wires a `ChatClient.Builder`
+    // fallback. Same starter chat (M4) uses — wires a `ChatClient.Builder`
     // bean backed by spark-inference-gateway's `/v1/chat/completions` endpoint.
     // The Vision call uses `Media`-attached UserMessage (multimodal).
     implementation("org.springframework.ai:spring-ai-starter-model-openai")

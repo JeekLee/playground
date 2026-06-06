@@ -2,7 +2,7 @@
 
 Same MinIO prefix as the .3dm, extension swapped — strip the trailing
 ``.3dm`` and append ``.glb``; non-.3dm keys have no preview (design spec
-2026-06-05-massing-glb-preview). rag-chat's /attachments/{id}/preview
+2026-06-05-massing-glb-preview). chat's /attachments/{id}/preview
 endpoint re-derives the key with the same suffix swap, so nothing new
 lands in Postgres.
 

@@ -38,7 +38,7 @@ playground:
       probe-cache-ttl-seconds: 15
       # Bearer token for the post-2026-05-20 spark-inference-gateway (ADR-15
       # §12 amendment). Falls through METRICS_SPARK_GATEWAY_API_KEY (metrics-
-      # specific override) → SPRING_AI_OPENAI_API_KEY (shared with rag-chat /
+      # specific override) → SPRING_AI_OPENAI_API_KEY (shared with chat /
       # rag-ingestion) → empty (the original bare-vLLM ADR-04 wiring that
       # did not validate keys).
       api-key: ${METRICS_SPARK_GATEWAY_API_KEY:${SPRING_AI_OPENAI_API_KEY:}}

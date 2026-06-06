@@ -30,7 +30,7 @@ def get_chat_model(settings: Settings) -> ChatOpenAI:
         model=settings.llm_model,
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_seconds,
-        # 호출당 상한 = timeout × (1 + max_retries) = 120s × 2 — rag-chat의
+        # 호출당 상한 = timeout × (1 + max_retries) = 120s × 2 — chat의
         # total cap(600s) 안에서 예측 가능 (tool-streaming spec D4).
         max_retries=1,
     )

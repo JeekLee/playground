@@ -41,7 +41,7 @@ public record MetricsHttpProperties(
      *     does not validate API keys (original ADR-04 host-process wiring); the
      *     post-2026-05-20 spark-inference-gateway enforces Bearer auth, so in
      *     that setup wire it via {@code METRICS_SPARK_GATEWAY_API_KEY} (or fall
-     *     back to {@code SPRING_AI_OPENAI_API_KEY} which the rag-chat /
+     *     back to {@code SPRING_AI_OPENAI_API_KEY} which the chat /
      *     rag-ingestion BCs already consume). See ADR-15 §12 amendment
      *     2026-05-20.
      */

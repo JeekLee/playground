@@ -90,7 +90,7 @@ spring:
   ai:
     # M6 ADR-16 — Spring AI 1.0 GA wired against spark-inference-gateway for
     # the Vision OCR fallback (PDF pages with no text layer). Same starter
-    # and base URL the rag-chat (M4) + rag-ingestion (M3) services use per
+    # and base URL the chat (M4, was rag-chat) + rag-ingestion (M3) services use per
     # ADR-04; the only docs-BC-specific knob is the Vision model name.
     openai:
       base-url: ${SPRING_AI_OPENAI_BASE_URL:http://spark-inference-gateway:8000}

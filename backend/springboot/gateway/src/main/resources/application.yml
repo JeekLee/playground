@@ -65,12 +65,12 @@ spring:
             - Path=/api/rag/ingest/**
           filters:
             - StripPrefix=3
-        - id: rag-chat-api
-          uri: http://rag-chat-api:18084
+        - id: chat-api
+          uri: http://chat-api:18084
           predicates:
-            - Path=/api/rag/chat/**
+            - Path=/api/chat/**
           filters:
-            - StripPrefix=3
+            - StripPrefix=2   # /api/chat 2세그먼트 — 개명 전 /api/chat은 3이었다
         - id: metrics-api
           # ADR-15 §1 — metrics-api lives on port 18085 (was 18086 in the
           # placeholder; the lowest-unused-BC-port discipline put it at 18085).
@@ -82,11 +82,11 @@ spring:
         # ADR-20 §D4 — the /api/arch/** download route is retired. agent-tools
         # (the architecture BC) is now a stateless generator: it no longer
         # stores .3dm bytes or serves /outputs/{id}. Tool-produced artifacts are
-        # persisted by rag-chat as message attachments and downloaded from
-        # /api/rag/chat/attachments/{id} (already authenticated under the
-        # rag-chat route). The tool dispatch entry POST /internal/tools/
+        # persisted by chat as message attachments and downloaded from
+        # /api/chat/attachments/{id} (already authenticated under the
+        # chat route). The tool dispatch entry POST /internal/tools/
         # generate-massing is still NEVER forwarded by the gateway (Exception 4
-        # invariant per ADR-08 §A08.8) — rag-chat reaches it compose-internally.
+        # invariant per ADR-08 §A08.8) — chat reaches it compose-internally.
         # ADR-09 §allowlist names /api/users/me explicitly — BC-prefix-less
         # alias for the current-user endpoint matching the frontend's /me fetch.
         - id: users-me

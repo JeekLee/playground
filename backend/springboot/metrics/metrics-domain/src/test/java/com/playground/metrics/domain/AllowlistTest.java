@@ -12,7 +12,7 @@ class AllowlistTest {
         assertThat(ServiceAllowlist.contains("playground-backend-identity-api")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-docs-api")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-rag-ingestion-api")).isTrue();
-        assertThat(ServiceAllowlist.contains("playground-backend-rag-chat-api")).isTrue();
+        assertThat(ServiceAllowlist.contains("playground-backend-chat-api")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-metrics-api")).isTrue();
     }
 

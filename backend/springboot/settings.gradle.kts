@@ -45,13 +45,13 @@ include(":docs:docs-infra")
 // `com.playground.docs.infrastructure.ingestion.*` (infra) inside docs-api's
 // single JVM.
 
-// M4 — rag-chat quadruplet (ADR-01 v2 + ADR-14). WebFlux SSE controller on
+// M4 — chat quadruplet (2026-06-06 개명 완료, spec 참조) (ADR-01 v2 + ADR-14). WebFlux SSE controller on
 // port 18084 (gateway-routable). Cross-schema SELECT into rag/docs/identity
 // for retrieval + citation enrichment + display-name; no Kafka surface.
-include(":rag-chat:rag-chat-api")
-include(":rag-chat:rag-chat-app")
-include(":rag-chat:rag-chat-domain")
-include(":rag-chat:rag-chat-infra")
+include(":chat:chat-api")
+include(":chat:chat-app")
+include(":chat:chat-domain")
+include(":chat:chat-infra")
 
 // M5 — metrics quadruplet (ADR-01 v2 + ADR-15). WebFlux end-to-end on port
 // 18085 (gateway-routable). Stateless BC: no Postgres schema, no Kafka surface.

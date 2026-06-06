@@ -39,7 +39,7 @@ public final class ServiceAllowlist {
             "playground-backend-identity-api",
             "playground-backend-docs-api",
             "playground-backend-rag-ingestion-api",
-            "playground-backend-rag-chat-api",
+            "playground-backend-chat-api",
             "playground-backend-metrics-api",
             // 4 observability containers (self-monitoring per ADR-15 §17)
             "playground-prometheus",

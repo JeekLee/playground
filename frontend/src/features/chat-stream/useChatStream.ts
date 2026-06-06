@@ -13,7 +13,7 @@ import type {
 
 /**
  * `useChatStream` — React hook owning the lifecycle of one in-flight
- * chat turn (the `POST /api/rag/chat` SSE stream per spec §5.1).
+ * chat turn (the `POST /api/chat` SSE stream per spec §5.1).
  *
  * Contract:
  * - `start(sessionId, message)` opens the SSE; returns a `Promise<void>`

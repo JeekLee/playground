@@ -1,5 +1,5 @@
 /**
- * SSE consumer for `POST /api/rag/chat` (M4 spec §5.1).
+ * SSE consumer for `POST /api/chat` (M4 spec §5.1).
  *
  * Why hand-rolled (not `EventSource`):
  * - `EventSource` only does `GET` and cannot carry a JSON request body.
@@ -185,7 +185,7 @@ function parseFrame(rawFrame: string): ChatStreamEvent | null {
     case 'tool_result': {
       // Backend wire shape is {id, name, result: <tool-body>} per ADR-17 §3.
       // Flatten result.* into the ToolResultEventPayload and map
-      // result.fileUrl → outputUrl (rag-chat enriches the body with fileUrl
+      // result.fileUrl → outputUrl (chat enriches the body with fileUrl
       // per ADR-20 §D4 before emitting the SSE event).
       const raw = parsed as { id: string; name: string; result?: unknown };
       const body =
@@ -233,7 +233,7 @@ export async function startChatStream(options: StartChatStreamOptions): Promise<
 
   let res: Response;
   try {
-    res = await fetch('/api/rag/chat', {
+    res = await fetch('/api/chat', {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
@@ -287,7 +287,7 @@ export async function resumeChatStream(
 
   let res: Response;
   try {
-    res = await fetch(`/api/rag/chat/sessions/${encodeURIComponent(sessionId)}/stream`, {
+    res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/stream`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: {

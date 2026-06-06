@@ -18,7 +18,7 @@ import type {
  *
  * 16 카드 = 6 BC + 4 observability + 6 stack containers:
  *   Row 1 (BCs):    gateway · identity-api · docs-api · rag-ingestion-api
- *   Row 2 (BCs):    rag-chat-api · metrics-api · frontend · prometheus
+ *   Row 2 (BCs):    chat-api · metrics-api · frontend · prometheus
  *   Row 3 (obs):    loki · alloy · cadvisor · postgres
  *   Row 4 (stack):  redis · kafka-broker · kafka-init · opensearch
  *
@@ -64,7 +64,7 @@ const SUB_SECTIONS: ReadonlyArray<SubSection> = [
       { slug: 'playground-backend-identity-api', label: 'identity-api' },
       { slug: 'playground-backend-docs-api', label: 'docs-api' },
       { slug: 'playground-backend-rag-ingestion-api', label: 'rag-ingestion' },
-      { slug: 'playground-backend-rag-chat-api', label: 'rag-chat-api' },
+      { slug: 'playground-backend-chat-api', label: 'chat-api' },
       { slug: 'playground-backend-metrics-api', label: 'metrics-api' },
       { slug: 'playground-frontend', label: 'frontend' },
     ],

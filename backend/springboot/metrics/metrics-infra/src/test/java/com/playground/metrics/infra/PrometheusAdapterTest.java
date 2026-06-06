@@ -47,7 +47,7 @@ class PrometheusAdapterTest {
                   "data":{
                     "resultType":"vector",
                     "result":[
-                      {"metric":{"__name__":"up","service":"rag-chat-api"},
+                      {"metric":{"__name__":"up","service":"chat-api"},
                        "value":[1715763600, "1"]},
                       {"metric":{"__name__":"up","service":"docs-api"},
                        "value":[1715763600, "0"]}
@@ -63,7 +63,7 @@ class PrometheusAdapterTest {
         List<PrometheusSample> samples = adapter.instantQuery("up").block();
 
         assertThat(samples).hasSize(2);
-        assertThat(samples.get(0).labels()).containsEntry("service", "rag-chat-api");
+        assertThat(samples.get(0).labels()).containsEntry("service", "chat-api");
         assertThat(samples.get(0).value()).isEqualTo(1.0);
         assertThat(samples.get(1).labels()).containsEntry("service", "docs-api");
         assertThat(samples.get(1).value()).isEqualTo(0.0);
@@ -77,7 +77,7 @@ class PrometheusAdapterTest {
                   "data":{
                     "resultType":"matrix",
                     "result":[
-                      {"metric":{"service":"rag-chat-api"},
+                      {"metric":{"service":"chat-api"},
                        "values":[[1715763600, "380"], [1715763630, "392"]]}
                     ]
                   }
@@ -92,7 +92,7 @@ class PrometheusAdapterTest {
                 "jvm_memory_used_bytes", Range.H_1, Step.parse("30s")).block();
 
         assertThat(series).hasSize(1);
-        assertThat(series.get(0).labels()).containsEntry("service", "rag-chat-api");
+        assertThat(series.get(0).labels()).containsEntry("service", "chat-api");
         assertThat(series.get(0).points()).hasSize(2);
         assertThat(series.get(0).points().get(0).ts()).isEqualTo(1715763600L);
         assertThat(series.get(0).points().get(0).value()).isEqualTo(380.0);
@@ -107,7 +107,7 @@ class PrometheusAdapterTest {
                   "data":{
                     "resultType":"matrix",
                     "result":[
-                      {"metric":{"service":"rag-chat-api"},
+                      {"metric":{"service":"chat-api"},
                        "values":[[1715763600, "1"], [1715763630, "1"]]}
                     ]
                   }

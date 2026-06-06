@@ -75,7 +75,7 @@ class ServicesControllerTest {
                 .jsonPath("$.services[1].name").isEqualTo("playground-backend-identity-api")
                 .jsonPath("$.services[2].name").isEqualTo("playground-backend-docs-api")
                 .jsonPath("$.services[3].name").isEqualTo("playground-backend-rag-ingestion-api")
-                .jsonPath("$.services[4].name").isEqualTo("playground-backend-rag-chat-api")
+                .jsonPath("$.services[4].name").isEqualTo("playground-backend-chat-api")
                 .jsonPath("$.services[5].name").isEqualTo("playground-backend-metrics-api")
                 .jsonPath("$.services[6].name").isEqualTo("spark-inference-gateway")
                 .jsonPath("$.services[7].name").isEqualTo("playground-prometheus")

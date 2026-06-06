@@ -2,12 +2,12 @@
 
 agent-tools owns the write path: the `store_3dm` node calls `upload_artifact`
 which puts the .3dm bytes into MinIO and returns the object key that
-rag-chat's dispatcher will record in `chat.message_attachments`; the `store_glb`
+chat's dispatcher will record in `chat.message_attachments`; the `store_glb`
 node calls `upload_to_key` to place the preview .glb at the same prefix.
 
-The bucket is shared with rag-chat's download adapter — both services
-use `PLAYGROUND_ARCHITECTURE_MINIO_BUCKET` / `PLAYGROUND_RAGCHAT_MINIO_BUCKET`
-defaulting to `rag-chat-attachments`, so rag-chat can serve downloads
+The bucket is shared with chat's download adapter — both services
+use `PLAYGROUND_ARCHITECTURE_MINIO_BUCKET` / `PLAYGROUND_CHAT_MINIO_BUCKET`
+defaulting to `chat-attachments`, so chat can serve downloads
 using the same storageKey.
 """
 
@@ -65,7 +65,7 @@ def upload_artifact(
     """Upload bytes to MinIO and return the object key.
 
     Key format: ``architecture/massing/{uuid}/{filename}``
-    so the rag-chat download endpoint can serve it using the stored key.
+    so the chat download endpoint can serve it using the stored key.
     """
     client, bucket = _get_client(settings)
 
@@ -92,7 +92,7 @@ def upload_to_key(
     """Upload bytes to an explicit object key (caller owns key derivation).
 
     Used by store_glb to place the preview .glb at the same prefix as its
-    .3dm sibling — extension swapped — so rag-chat's preview endpoint can
+    .3dm sibling — extension swapped — so chat's preview endpoint can
     re-derive the key from the stored .3dm storageKey without any new
     Postgres column (design spec 2026-06-05-massing-glb-preview).
     """
