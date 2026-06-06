@@ -85,6 +85,11 @@ import reactor.core.publisher.Flux;
  *   <li>{@link WebClientResponseException} 5xx → {@code UPSTREAM_5XX}</li>
  *   <li>{@link CallNotPermittedException} → {@code CIRCUIT_OPEN}</li>
  *   <li>terminal {@code result} JSON parse/cap failure → {@code SCHEMA_INVALID}</li>
+ *   <li>malformed JSON line anywhere in the stream → Jackson's NDJSON
+ *       decoder errors the whole Flux → {@code INTERNAL}. (Spec D2 said
+ *       "skip the line", but the decoder cannot skip; agent-tools is a
+ *       controlled producer emitting typed events, so this is unreachable
+ *       in production — recorded as a spec deviation.)</li>
  *   <li>any other → {@code INTERNAL}</li>
  * </ul>
  *
