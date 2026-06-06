@@ -5,6 +5,8 @@ zone colors, ground plane, and floor-gap readability (preview-only styling).
 from __future__ import annotations
 
 import io
+import json
+import struct
 
 import pytest
 import trimesh
@@ -159,3 +161,23 @@ def test_unsplit_zone_box_keeps_base_palette_color():
     scene = _load(data)
     c = _color(next(g for n, g in scene.geometry.items() if n.startswith("연구")))
     assert c[:3] == (round(142 / 255, 2), round(152 / 255, 2), round(90 / 255, 2))
+
+
+def _glb_json_chunk(data: bytes) -> dict:
+    # GLB 2.0 컨테이너: 12B 헤더(magic/version/length) + chunk0(JSON).
+    assert data[:4] == b"glTF"
+    json_len = struct.unpack("<I", data[12:16])[0]
+    return json.loads(data[20 : 20 + json_len].decode("utf-8"))
+
+
+def test_program_json_embedded_in_scene_extras():
+    pj = {"rooms": [{"name": "시험실", "areaM2": 500.0, "floor": 1}], "floorCount": 2}
+    data = serialize_glb([_box(h=3.5)], program_json=pj)
+    doc = _glb_json_chunk(data)
+    assert doc["scenes"][0]["extras"]["programJson"] == pj
+
+
+def test_no_program_json_no_extras():
+    data = serialize_glb([_box(h=3.5)])
+    doc = _glb_json_chunk(data)
+    assert "extras" not in doc["scenes"][0]

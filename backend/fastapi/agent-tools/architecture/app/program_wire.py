@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from architecture.api.dtos import LabelAnchorWire, ProgramJsonWire, RoomWire
 from architecture.domain.models import COMMON_AREA_NAME, MassingInputs, RoomBox, Zone
-from architecture.infra.glb_serializer import FLOOR_GAP_M
+from architecture.infra.glb_serializer import FLOOR_GAP_M  # FLOOR_GAP_M: glb_serializer의 층 슬릿과 동일해야 라벨이 박스 상면에 정확히 앉는다 — 공유 상수로 동기화.
 
 
 def build_program_json(boxes: list[RoomBox], inputs: MassingInputs) -> ProgramJsonWire:

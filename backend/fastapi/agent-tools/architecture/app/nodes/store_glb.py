@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from architecture.app.program_wire import build_program_json
 from architecture.app.state import MassingState
 from architecture.infra.blob_storage import upload_to_key
 from architecture.infra.glb_serializer import serialize_glb
@@ -32,7 +33,10 @@ def store_glb(state: MassingState) -> dict:
             )
             return {}
         glb_key = storage_key[: -len(".3dm")] + ".glb"
-        glb_bytes = serialize_glb(state["boxes"])
+        program_json = build_program_json(state["boxes"], state["inputs"]).model_dump(
+            by_alias=True, mode="json"
+        )
+        glb_bytes = serialize_glb(state["boxes"], program_json=program_json)
         upload_to_key(
             file_bytes=glb_bytes,
             key=glb_key,
