@@ -28,7 +28,7 @@ import reactor.core.scheduler.Schedulers;
  * per ADR-14 §17 so the request thread is never blocked on a connection
  * acquire.
  *
- * <p>Gateway strips {@code /api/chat} (StripPrefix=3); the controller
+ * <p>Gateway strips {@code /api/chat} (StripPrefix=2); the controller
  * binds the relative {@code /sessions/**} path.
  */
 @RestController

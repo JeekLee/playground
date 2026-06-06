@@ -4,7 +4,7 @@
  *   /api/chat/**          → chat-api  /api/chat/**
  *
  * Wire shapes mirror the M4 spec
- * (`docs/superpowers/specs/2026-05-18-m4-chat-design.md`) §5 + §10
+ * (`docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`) §5 + §10
  * verbatim. The single streaming endpoint (`POST /api/chat` with body
  * `{ sessionId, message }`) is consumed via the SSE consumer in
  * `./chat.sse.ts`; this module owns the JSON DTO shapes + the

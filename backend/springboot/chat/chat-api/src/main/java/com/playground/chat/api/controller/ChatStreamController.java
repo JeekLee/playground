@@ -29,7 +29,7 @@ import reactor.core.publisher.Flux;
  * {@link ChatTurnService#stream}, maps each emitted
  * {@link ChatStreamEvent} into a {@link ServerSentEvent}.
  *
- * <p>The gateway routes {@code /api/chat/**} with {@code StripPrefix=3} per
+ * <p>The gateway routes {@code /api/chat/**} with {@code StripPrefix=2} per
  * the gateway YAML, so this controller listens on {@code POST /} (root). The
  * 415 (Accept must include text/event-stream) gate is enforced via the
  * {@code produces} attribute — Spring WebFlux returns 406 if the Accept header

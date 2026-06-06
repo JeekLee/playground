@@ -28,7 +28,7 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Owner-only attachment download — {@code GET /api/chat/attachments/{id}}
  * per ADR-20 §D4. The gateway routes {@code /api/chat/**} with
- * {@code StripPrefix=3}, so this controller listens on {@code /attachments/{id}}.
+ * {@code StripPrefix=2}, so this controller listens on {@code /attachments/{id}}.
  *
  * <p>Authenticated (gateway injects {@code X-User-Id}); owner-only — the
  * attachment's message owner must equal the caller, else 404 (tenant isolation,
