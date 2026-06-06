@@ -42,6 +42,7 @@ import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -614,13 +615,26 @@ public class ChatTurnService {
             sink.tryEmitComplete();
             throw new MaxDepthExceededException(desc.name(), maxDepth);
         }
-        // tool_call BEFORE dispatching (ADR-17 §3.1 step 3a).
-        sink.tryEmitNext(new ChatStreamEvent.ToolCall(id, desc.name(), args));
+        // tool_call BEFORE dispatching (ADR-17 §3.1 step 3a). tool_call /
+        // tool_result / tool_error all emit from THIS (dispatch) thread — a
+        // single serialization point — so tryEmitNext is safe here.
+        sink.tryEmitNext(new ChatStreamEvent.ToolCall(id, desc.name(), desc.displayName(), args));
 
-        // Progress relay is wired in Task 4 — no-op listener keeps this turn's
-        // dispatch compiling against the new streaming port signature.
+        // Progress relays from the dispatcher's NDJSON `progress` lines, which
+        // the WebClient decodes on a netty event-loop thread — a DIFFERENT
+        // thread than the token/done path that also writes this sink. With
+        // multicast().onBackpressureBuffer() the tryEmitNext is non-serialized
+        // and a concurrent emission silently drops as FAIL_NON_SERIALIZED, so
+        // we use emitNext + busyLooping to retry briefly instead of dropping a
+        // progress event (Task 3 review Critical). emitNext may throw on
+        // exhaustion, but the dispatcher's emitProgress isolates RuntimeException
+        // from the listener, so the stream stays safe.
         ToolInvocationResult result = toolDispatcherPort.invoke(
-                id, desc.name(), args, userCtx, progress -> { });
+                id, desc.name(), args, userCtx,
+                p -> sink.emitNext(
+                        new ChatStreamEvent.ToolProgress(p.id(), p.name(), p.stage(), p.label(),
+                                p.stageIndex(), p.stageCount(), p.attempt()),
+                        Sinks.EmitFailureHandler.busyLooping(Duration.ofMillis(500))));
         if (result instanceof ToolInvocationResult.Success s) {
             // ADR-20 §D3 — if the tool emitted an artifact, store it to MinIO
             // and stage an Attachment linked to the (pre-allocated) assistant

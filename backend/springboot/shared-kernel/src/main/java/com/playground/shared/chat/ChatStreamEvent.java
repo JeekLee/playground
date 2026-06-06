@@ -42,7 +42,8 @@ import java.util.Map;
  */
 public sealed interface ChatStreamEvent
         permits ChatStreamEvent.Phase, ChatStreamEvent.Token, ChatStreamEvent.Done, ChatStreamEvent.Error,
-                ChatStreamEvent.ToolCall, ChatStreamEvent.ToolResult, ChatStreamEvent.ToolError {
+                ChatStreamEvent.ToolCall, ChatStreamEvent.ToolProgress, ChatStreamEvent.ToolResult,
+                ChatStreamEvent.ToolError {
 
     /**
      * Progress / status update during the turn. {@code step} is the
@@ -75,11 +76,13 @@ public sealed interface ChatStreamEvent
      * Emitted immediately before the dispatcher issues the upstream
      * HTTP call per ADR-17 §3.1. Wire event name is {@code tool_call};
      * {@code id} is the opaque correlation id (Spring AI pass-through or
-     * server-generated ULID per ADR-17 §3.2); {@code args} is the
+     * server-generated ULID per ADR-17 §3.2); {@code displayName} is a
+     * short human-facing label for the in-flight tool card (tool-streaming
+     * spec W2 — may be {@code null} for forward-compat); {@code args} is the
      * LLM-produced JSON arguments (carrier object — serialized by the
      * controller's Jackson mapper).
      */
-    record ToolCall(String id, String name, Object args) implements ChatStreamEvent {
+    record ToolCall(String id, String name, String displayName, Object args) implements ChatStreamEvent {
         public ToolCall {
             if (id == null || id.isBlank()) {
                 throw new IllegalArgumentException("ToolCall.id must not be blank");
@@ -89,6 +92,19 @@ public sealed interface ChatStreamEvent
             }
         }
     }
+
+    /**
+     * Tool-calling event — a progress update emitted while a tool is
+     * running (tool-streaming spec W2). Relayed from the dispatcher's
+     * NDJSON {@code progress} lines onto the chat SSE stream as
+     * {@code tool_progress}. {@code id} matches the originating
+     * {@code tool_call.id}; {@code stage} is the machine stage key;
+     * {@code label} is rendered verbatim by the FE; {@code stageIndex}
+     * is 1-based; {@code attempt} is the retry attempt number, or
+     * {@code null} on the first attempt.
+     */
+    record ToolProgress(String id, String name, String stage, String label,
+            int stageIndex, int stageCount, Integer attempt) implements ChatStreamEvent {}
 
     /**
      * Tool-calling event — tool BC returned a successful result.
