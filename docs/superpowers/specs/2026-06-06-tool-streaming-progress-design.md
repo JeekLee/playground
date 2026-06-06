@@ -40,7 +40,7 @@
 {"event":"progress","stage":"extract","label":"공간 프로그램 추출 중","stageIndex":3,"stageCount":10,"attempt":2}
 {"event":"heartbeat"}
 {"event":"result","result":{...},"artifact":{...}}
-{"event":"error","code":"BRIEF_NOT_READY","message":"..."}
+{"event":"error","code":"BRIEF_NOT_READY","message":"...","status":422}
 ```
 
 - `progress`: 노드 **시작** 시점 발신. `stage`=노드명(영문 식별자),
@@ -52,6 +52,15 @@
   기존 `<CODE>: <message>` 문법과 동일한 의미 (MassingErrorCode).
 - 스트림 시작 후 HTTP status는 200 고정 — 모든 실패는 `error` 이벤트.
   스트림이 터미널 이벤트 없이 끝나면 rag-chat이 INTERNAL로 분류.
+
+**구현 중 확정된 deviation (2026-06-06 plan):** `error` 이벤트에 `status`
+(HTTP status int) 추가 — rag-chat이 기존 UPSTREAM_4XX/5XX 분류를 유지하는
+근거 (agent-tools는 `MassingErrorCode.http_status`를 이미 보유).
+
+2. "progress 파싱 불가 줄 무시"는 미구현 — Jackson NDJSON 디코더가 줄 단위
+   스킵을 지원하지 않아 malformed 줄은 Flux 전체를 에러시킨다 (→ INTERNAL).
+   agent-tools가 typed 이벤트만 발신하는 통제된 생산자라 실서비스에서 도달
+   불가 — dispatcher javadoc에 기록됨.
 
 ### W2. rag-chat → FE (채팅 SSE)
 
