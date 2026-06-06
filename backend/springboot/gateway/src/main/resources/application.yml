@@ -70,7 +70,7 @@ spring:
           predicates:
             - Path=/api/chat/**
           filters:
-            - StripPrefix=2   # /api/chat 2세그먼트 — 개명 전 /api/chat은 3이었다
+            - StripPrefix=2   # /api/chat 2세그먼트 — 개명 전 /api/rag/chat은 3이었다
         - id: metrics-api
           # ADR-15 §1 — metrics-api lives on port 18085 (was 18086 in the
           # placeholder; the lowest-unused-BC-port discipline put it at 18085).
