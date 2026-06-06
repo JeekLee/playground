@@ -23,6 +23,7 @@ import com.playground.ragchat.domain.tool.ToolDescriptor;
 import com.playground.ragchat.domain.tool.ToolErrorCode;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,7 +46,6 @@ import org.springframework.web.reactive.function.client.WebClient;
  *   <li>stream that ends with no terminal event → {@code INTERNAL}</li>
  *   <li>{@code X-User-Id}/{@code X-User-Sub} forwarded; {@code Authorization}
  *       not forwarded</li>
- *   <li>JSON parse error on the {@code result} envelope → {@code SCHEMA_INVALID}</li>
  *   <li>Over-cap result → truncated Success envelope</li>
  *   <li>Circuit breaker OPEN → {@code CIRCUIT_OPEN}</li>
  * </ul>
@@ -185,6 +185,90 @@ class WebClientToolDispatcherTest {
 
         ToolInvocationResult r = invokeWithTimeouts(Duration.ofMillis(300), Duration.ofSeconds(5));
         assertThat(((ToolInvocationResult.Failure) r).code()).isEqualTo(ToolErrorCode.TIMEOUT);
+    }
+
+    @Test
+    void heartbeatResetsIdleTimer() throws Exception {
+        // 핵심: heartbeat가 Reactor Flux.timeout(idle)을 리셋해 idle(800ms)보다
+        // 긴 총 스트림(~2.4s)이 TIMEOUT 없이 result에 도달하는지 검증.
+        //
+        // WireMock(withChunkedDribbleDelay)은 청크를 종료 시점에 합쳐 flush하므로
+        // 증분 디코딩이 일어나지 않아(전 줄이 한꺼번에 방출) 이 테스트엔 부적합.
+        // 대신 줄마다 즉시 flush하는 최소 chunked HTTP 서버를 띄워 진짜 증분
+        // 스트리밍을 만든다. 줄 간 간격 ~800ms < idle 800ms 경계가 빠듯하면
+        // 플레이키 — 간격(LINE_GAP)·idle을 비율 유지한 채 키울 것.
+        final long lineGapMillis = 600;   // 줄 간 간격
+        final Duration idle = Duration.ofMillis(1500); // > lineGap, 헤드룸 포함
+        try (StreamingStub stub = StreamingStub.start(lineGapMillis,
+                "{\"event\":\"heartbeat\"}",
+                "{\"event\":\"heartbeat\"}",
+                "{\"event\":\"result\",\"result\":{\"summary\":\"ok\"},\"artifact\":null}")) {
+
+            ToolDescriptor d = new ToolDescriptor(
+                    "generate_massing", "매싱 모델", "gen description", null,
+                    URI.create("http://localhost:" + stub.port() + "/internal/tools/generate-massing"),
+                    idle, Duration.ofSeconds(10));
+
+            ToolInvocationResult r = dispatcher(d)
+                    .invoke("t1", "generate_massing", args(), userCtx(), p -> { });
+            assertThat(r).isInstanceOf(ToolInvocationResult.Success.class);
+        }
+    }
+
+    /**
+     * Minimal HTTP/1.1 chunked stub that flushes each NDJSON line immediately
+     * with a fixed gap — unlike WireMock {@code withChunkedDribbleDelay}, which
+     * coalesces and flushes at stream end (defeating incremental decoding).
+     * Single request, then closes.
+     */
+    private static final class StreamingStub implements AutoCloseable {
+        private final java.net.ServerSocket server;
+        private final Thread thread;
+
+        private StreamingStub(java.net.ServerSocket server, Thread thread) {
+            this.server = server;
+            this.thread = thread;
+        }
+
+        static StreamingStub start(long lineGapMillis, String... lines) throws Exception {
+            java.net.ServerSocket server = new java.net.ServerSocket(0);
+            Thread t = new Thread(() -> {
+                try (java.net.Socket sock = server.accept()) {
+                    sock.getInputStream().read(new byte[8192]); // drain request line/headers
+                    java.io.OutputStream out = sock.getOutputStream();
+                    out.write(("HTTP/1.1 200 OK\r\n"
+                            + "Content-Type: application/x-ndjson\r\n"
+                            + "Transfer-Encoding: chunked\r\n\r\n")
+                            .getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    for (String line : lines) {
+                        Thread.sleep(lineGapMillis);
+                        byte[] body = (line + "\n").getBytes(StandardCharsets.UTF_8);
+                        out.write((Integer.toHexString(body.length) + "\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(body);
+                        out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+                        out.flush();
+                    }
+                    out.write("0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                } catch (Exception ignored) {
+                    // server closed / client disconnected — test owns lifecycle
+                }
+            }, "streaming-stub");
+            t.setDaemon(true);
+            t.start();
+            return new StreamingStub(server, t);
+        }
+
+        int port() {
+            return server.getLocalPort();
+        }
+
+        @Override
+        public void close() throws Exception {
+            server.close();
+            thread.interrupt();
+        }
     }
 
     @Test

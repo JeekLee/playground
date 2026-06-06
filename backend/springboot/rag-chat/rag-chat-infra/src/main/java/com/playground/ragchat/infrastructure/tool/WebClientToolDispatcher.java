@@ -84,7 +84,6 @@ import reactor.core.publisher.Flux;
  *       contract)</li>
  *   <li>{@link WebClientResponseException} 5xx → {@code UPSTREAM_5XX}</li>
  *   <li>{@link CallNotPermittedException} → {@code CIRCUIT_OPEN}</li>
- *   <li>terminal {@code result} JSON parse/cap failure → {@code SCHEMA_INVALID}</li>
  *   <li>malformed JSON line anywhere in the stream → Jackson's NDJSON
  *       decoder errors the whole Flux → {@code INTERNAL}. (Spec D2 said
  *       "skip the line", but the decoder cannot skip; agent-tools is a
@@ -184,13 +183,23 @@ public class WebClientToolDispatcher implements ToolDispatcherPort {
                         String event = node.path("event").asText("");
                         switch (event) {
                             case "progress" -> emitProgress(onProgress, id, descriptor.name(), node);
-                            case "result", "error" -> terminal.compareAndSet(null, node);
+                            case "result", "error" -> {
+                                if (!terminal.compareAndSet(null, node)) {
+                                    // 컨트랙트 위반(터미널 2개) — 첫 줄이 이긴다.
+                                    log.warn("tool_stream_duplicate_terminal tool={}", descriptor.name());
+                                }
+                            }
                             case "heartbeat" -> { /* idle-reset effect only — ignore */ }
                             default -> log.debug("tool_stream_unknown_event tool={} event={}",
                                     descriptor.name(), event);
                         }
                     })
                     // Absolute cap on the whole stream regardless of activity.
+                    // Total-cap breaches are intentionally breaker-INVISIBLE: blockLast
+                    // sits outside the breaker operator, so a hung-but-heartbeating tool
+                    // burns the full cap each call without tripping the breaker (spec D4
+                    // 의도 — idle은 heartbeat가 리셋; total cap은 비용 상한일 뿐 health
+                    // 신호로 보지 않는다).
                     .blockLast(descriptor.totalTimeout());
         } catch (Throwable t) {
             return classify(id, descriptor, t);
