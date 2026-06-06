@@ -7,6 +7,9 @@ stage = LangGraph 노드명(서브그래프 내부 포함), label = FE가 verbat
 
 from __future__ import annotations
 
+# 순서가 의미를 가진다 — workflow._build_graph + program_resolution 서브그래프의
+# 위상 순서와 일치해야 stageIndex가 단조 증가한다. 노드를 추가/개명하면 여기와
+# test_stream_yields_progress_sequence_then_result(실제 그래프 실행 핀)를 갱신할 것.
 STAGES: tuple[tuple[str, str], ...] = (
     ("fetch_brief", "브리프 조회"),
     ("locate", "면적 정보 탐색"),
