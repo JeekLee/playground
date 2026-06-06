@@ -75,4 +75,7 @@ async def _ndjson_events(
                 break
             yield json.dumps(ev, ensure_ascii=False).encode("utf-8") + b"\n"
     finally:
+        # 클라이언트가 중간에 끊어도 produce 스레드는 취소 불가 — graph가 끝날
+        # 때까지 고아로 돈다 (이벤트 ~12개·시간 유한이라 수용; CancelledError는
+        # await를 뚫고 재전파되므로 이벤트 루프는 블록되지 않는다).
         await producer
