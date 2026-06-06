@@ -3,15 +3,21 @@
 import type { ToolCardState } from '@/entities/chat';
 import { MassingErrorCard } from './MassingErrorCard';
 import { MassingResultCard } from './MassingResultCard';
+import { ToolRunCard } from './ToolRunCard';
 
 /**
  * `ToolCardList` — composer that renders one card per `ToolCardState`
- * an assistant turn accumulated. Dispatches by tool `name`:
+ * an assistant turn accumulated. Dispatch:
  *
- *   - `generate_massing` → `MassingResultCard` / `MassingErrorCard`
- *   - any other name     → currently dropped (M8 is the only registered
- *                          tool BC; future tool BCs add their own
- *                          render branches here in their own milestone PRs)
+ *   - `in_flight` (any tool) → `ToolRunCard` — the generic, wire-driven
+ *                              progress card (tool-streaming spec D3).
+ *                              New tools get progress rendering for free.
+ *   - `result` / `error`     → per-tool card, keyed by tool `name`:
+ *       - `generate_massing` → `MassingResultCard` / `MassingErrorCard`
+ *       - any other name     → currently dropped (M8 is the only
+ *                              registered tool BC; future tool BCs add
+ *                              their own result/error branches here in
+ *                              their own milestone PRs)
  *
  * Layout: a column with `gap-md` between cards, matching the chat-message
  * `gap-lg` rhythm one level out. The list lives BELOW the assistant
@@ -30,11 +36,15 @@ export function ToolCardList({ cards }: ToolCardListProps) {
     <div className="mt-md flex w-full max-w-[820px] flex-col gap-md">
       {cards.map((card) => {
         const key = card.toolCall.id;
-        // The dispatch contract pins `generate_massing` as the only
-        // tool name M8 ships. Future tool BCs will fork here; today
-        // we route all variants of `generate_massing` to the M8
-        // renderers and pass through anything else as a no-op so
-        // an unknown tool doesn't crash the chat.
+        // In-flight cards are fully wire-driven — the generic ToolRunCard
+        // renders any tool's progress regardless of name.
+        if (card.kind === 'in_flight') {
+          return <ToolRunCard key={key} state={card} />;
+        }
+        // Resolved cards (result / error) route by tool name. M8 ships
+        // `generate_massing` as the only registered tool; future tool BCs
+        // fork here, and anything else is dropped so an unknown tool
+        // doesn't crash the chat.
         if (card.toolCall.name !== 'generate_massing') {
           return null;
         }

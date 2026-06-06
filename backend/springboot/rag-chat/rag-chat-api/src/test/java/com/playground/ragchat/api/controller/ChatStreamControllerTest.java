@@ -85,7 +85,7 @@ class ChatStreamControllerTest {
     @Test
     void toSse_toolCallCarriesIdNameArgs() {
         ChatStreamEvent.ToolCall evt = new ChatStreamEvent.ToolCall(
-                "call_abc123", "generate_massing",
+                "call_abc123", "generate_massing", "매싱 모델",
                 Map.of("briefDocId", "doc-1", "siteWidth", 30.0));
         ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
         assertThat(sse.event()).isEqualTo("tool_call");
@@ -124,6 +124,41 @@ class ChatStreamControllerTest {
         assertThat(data).containsEntry("code", "TIMEOUT");
         assertThat(data).containsEntry("message",
                 "Tool 'generate_massing' did not respond within 30s");
+    }
+
+    @Test
+    void toSse_mapsToolProgress() {
+        var evt = new ChatStreamEvent.ToolProgress(
+                "t1", "generate_massing", "extract", "공간 프로그램 추출 중", 3, 10, 2);
+        ServerSentEvent<Object> sse = ChatStreamController.toSse(evt);
+        assertThat(sse.event()).isEqualTo("tool_progress");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) sse.data();
+        assertThat(data).containsEntry("stage", "extract")
+                .containsEntry("label", "공간 프로그램 추출 중")
+                .containsEntry("stageIndex", 3)
+                .containsEntry("stageCount", 10)
+                .containsEntry("attempt", 2);
+    }
+
+    @Test
+    void toSse_toolProgressOmitsNullAttempt() {
+        var evt = new ChatStreamEvent.ToolProgress(
+                "t1", "generate_massing", "compute", "매싱 계산", 7, 10, null);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>)
+                ChatStreamController.toSse(evt).data();
+        assertThat(data).doesNotContainKey("attempt");
+    }
+
+    @Test
+    void toSse_toolCallCarriesDisplayName() {
+        var evt = new ChatStreamEvent.ToolCall("t1", "generate_massing", "매싱 모델",
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>)
+                ChatStreamController.toSse(evt).data();
+        assertThat(data).containsEntry("displayName", "매싱 모델");
     }
 
     @Test

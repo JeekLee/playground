@@ -189,6 +189,14 @@ def test_graph_has_expected_nodes_and_subgraphs():
     } <= set(res_sub.get_graph().nodes)
 
 
+_NO_SITE = BriefAnalysis.model_validate(
+    {
+        "program": [{"name": "업무", "area_m2": 1000.0, "grade": "above"}],
+        "site_area_m2": None,
+    }
+)
+
+
 def test_reprompt_loop_fails_when_site_area_never_found(monkeypatch):
     # Extraction never yields a site area → resolve loops MAX_EXTRACT_RETRIES
     # times then raises BRIEF_NOT_READY.
@@ -196,14 +204,8 @@ def test_reprompt_loop_fails_when_site_area_never_found(monkeypatch):
 
     from shared_kernel.errors import MassingError, MassingErrorCode
 
-    no_site = BriefAnalysis.model_validate(
-        {
-            "program": [{"name": "업무", "area_m2": 1000.0, "grade": "above"}],
-            "site_area_m2": None,
-        }
-    )
     sub = pr.build_program_resolution_subgraph(
-        Settings(), chain=RunnableLambda(lambda _i: no_site)
+        Settings(), chain=RunnableLambda(lambda _i: _NO_SITE)
     )
     with pytest.raises(MassingError) as ei:
         sub.invoke(
@@ -215,3 +217,82 @@ def test_reprompt_loop_fails_when_site_area_never_found(monkeypatch):
             }
         )
     assert ei.value.code == MassingErrorCode.BRIEF_NOT_READY
+
+
+# --- stream() (tool-streaming spec D1) ---
+
+_EXPECTED_STAGES = [
+    "fetch_brief", "locate", "extract", "reconcile", "classify",
+    "derive", "compute", "serialize", "store_3dm", "store_glb",
+]
+
+
+def _patch_stores(monkeypatch):
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_3dm.upload_artifact",
+        lambda file_bytes, filename, content_type, settings:
+            f"architecture/massing/20260606/test-uuid/{filename}",
+    )
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_glb.upload_to_key",
+        lambda file_bytes, key, content_type, settings: None,
+    )
+
+
+def test_stream_yields_progress_sequence_then_result(monkeypatch):
+    _patch_stores(monkeypatch)
+    flow = _build_workflow()
+    req = GenerateMassingRequest.model_validate(
+        {"briefDocId": "11111111-1111-1111-1111-111111111111"}
+    )
+    events = list(flow.stream(req, user_id=uuid.uuid4(), user_sub=None))
+
+    progress = [e for e in events if e["event"] == "progress"]
+    assert [e["stage"] for e in progress] == _EXPECTED_STAGES
+    assert [e["stageIndex"] for e in progress] == list(range(1, 11))
+    assert all(e["stageCount"] == 10 for e in progress)
+    assert all("attempt" not in e for e in progress)  # 단일 시도 — 필드 없음
+    # 한국어 레이블 (FE verbatim 렌더 — spec W1)
+    assert progress[2]["label"] == "공간 프로그램 추출 중"
+
+    terminal = events[-1]
+    assert terminal["event"] == "result"
+    assert terminal["result"]["briefTitle"] == "KFI 테스트 브리프"
+    assert terminal["result"]["programJson"]["rooms"]
+    assert terminal["artifact"]["storageKey"].endswith(".3dm")
+
+
+def test_stream_attempt_counts_extract_retries(monkeypatch):
+    _patch_stores(monkeypatch)
+    calls = {"n": 0}
+
+    def flaky(_inputs):
+        calls["n"] += 1
+        return _NO_SITE if calls["n"] == 1 else _FIXED_ANALYSIS
+
+    flow = MassingWorkflow(Settings(), _FakeDocs(), extraction_chain=RunnableLambda(flaky))
+    req = GenerateMassingRequest.model_validate(
+        {"briefDocId": "11111111-1111-1111-1111-111111111111"}
+    )
+    events = list(flow.stream(req, user_id=uuid.uuid4(), user_sub=None))
+
+    extract_events = [e for e in events if e.get("stage") == "extract"]
+    assert len(extract_events) == 2
+    assert "attempt" not in extract_events[0]
+    assert extract_events[1]["attempt"] == 2
+    assert events[-1]["event"] == "result"
+
+
+def test_stream_terminal_error_event_on_massing_error():
+    flow = MassingWorkflow(
+        Settings(), _FakeDocs(), extraction_chain=RunnableLambda(lambda _i: _NO_SITE)
+    )
+    req = GenerateMassingRequest.model_validate(
+        {"briefDocId": "11111111-1111-1111-1111-111111111111"}
+    )
+    events = list(flow.stream(req, user_id=uuid.uuid4(), user_sub=None))
+    terminal = events[-1]
+    assert terminal["event"] == "error"
+    assert terminal["code"] == "BRIEF_NOT_READY"
+    assert terminal["status"] == 422
+    assert isinstance(terminal["message"], str) and terminal["message"]

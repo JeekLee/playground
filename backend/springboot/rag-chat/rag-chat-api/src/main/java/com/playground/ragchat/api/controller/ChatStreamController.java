@@ -117,8 +117,28 @@ public class ChatStreamController {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("id", tc.id());
             data.put("name", tc.name());
+            // tool-streaming spec W2 — short human label for the in-flight
+            // card. Null (forward-compat) drops the key entirely.
+            if (tc.displayName() != null) {
+                data.put("displayName", tc.displayName());
+            }
             data.put("args", tc.args());
             return ServerSentEvent.<Object>builder((Object) data).event("tool_call").build();
+        }
+        if (evt instanceof ChatStreamEvent.ToolProgress tp) {
+            // tool-streaming spec W2 — node-level progress relayed from the
+            // dispatcher's NDJSON `progress` lines. Wire event `tool_progress`.
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", tp.id());
+            data.put("name", tp.name());
+            data.put("stage", tp.stage());
+            data.put("label", tp.label());
+            data.put("stageIndex", tp.stageIndex());
+            data.put("stageCount", tp.stageCount());
+            if (tp.attempt() != null) {
+                data.put("attempt", tp.attempt());
+            }
+            return ServerSentEvent.<Object>builder((Object) data).event("tool_progress").build();
         }
         if (evt instanceof ChatStreamEvent.ToolResult tr) {
             // ADR-17 §3 — wire shape carries id + name + result. Result may be

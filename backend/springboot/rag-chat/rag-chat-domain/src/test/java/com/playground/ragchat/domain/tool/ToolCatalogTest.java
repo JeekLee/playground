@@ -28,8 +28,8 @@ class ToolCatalogTest {
     void list_isImmutable() {
         List<ToolDescriptor> list = ToolCatalog.descriptors();
         ToolDescriptor d = new ToolDescriptor(
-                "echo", "echo back", null,
-                URI.create("http://t/"), Duration.ofSeconds(5));
+                "echo", "Echo", "echo back", null,
+                URI.create("http://t/"), Duration.ofSeconds(5), Duration.ofSeconds(30));
         assertThatThrownBy(() -> list.add(d))
                 .isInstanceOf(UnsupportedOperationException.class);
     }

@@ -36,22 +36,59 @@ import com.fasterxml.jackson.databind.JsonNode;
 public interface ToolDispatcherPort {
 
     /**
-     * Dispatch one tool call.
+     * App-layer copy of one NDJSON {@code progress} event the tool BC
+     * emits while running (tool-streaming spec W2). The dispatcher decodes
+     * each {@code progress} line into this record and hands it to the
+     * caller's {@code onProgress} listener so the use-case can relay it
+     * onto the SSE stream as a {@code tool_progress} event.
      *
-     * @param id        correlation id for the {@code tool_call} / {@code tool_result}
-     *                  pair (ADR-17 §3.2). Must not be null.
-     * @param toolName  name of a descriptor registered in
-     *                  {@code ToolCatalog.descriptors()}. If absent
-     *                  from the catalog, the implementation returns
-     *                  {@link ToolInvocationResult.Failure} with
-     *                  {@code code = INTERNAL}.
-     * @param args      LLM-produced JSON arguments. May be {@code null}
-     *                  for no-argument tools.
-     * @param userCtx   identity context forwarded as HTTP headers.
+     * @param id          correlation id (matches the originating
+     *                    {@code tool_call.id}).
+     * @param name        tool descriptor name.
+     * @param stage       machine stage key (e.g., {@code "extract"}).
+     * @param label       human-facing label rendered verbatim by the FE.
+     * @param stageIndex  1-based index of the current stage.
+     * @param stageCount  total number of stages.
+     * @param attempt     retry attempt number, or {@code null} on the first
+     *                    attempt.
+     */
+    record ToolProgress(
+            String id,
+            String name,
+            String stage,
+            String label,
+            int stageIndex,
+            int stageCount,
+            Integer attempt) {}
+
+    /**
+     * Dispatch one tool call, consuming the NDJSON progress stream.
+     *
+     * @param id          correlation id for the {@code tool_call} /
+     *                    {@code tool_result} pair (ADR-17 §3.2). Must not
+     *                    be null.
+     * @param toolName    name of a descriptor registered in
+     *                    {@code ToolCatalog.descriptors()}. If absent from
+     *                    the catalog, the implementation returns
+     *                    {@link ToolInvocationResult.Failure} with
+     *                    {@code code = INTERNAL}.
+     * @param args        LLM-produced JSON arguments. May be {@code null}
+     *                    for no-argument tools.
+     * @param userCtx     identity context forwarded as HTTP headers.
+     * @param onProgress  best-effort listener invoked once per NDJSON
+     *                    {@code progress} event. Listener exceptions are
+     *                    isolated by the implementation — they never abort
+     *                    the dispatch. Never null (pass a no-op when
+     *                    progress is not needed).
      * @return a {@link ToolInvocationResult.Success} or
      *         {@link ToolInvocationResult.Failure}. Never null, never
      *         throws — every failure mode is classified into the
      *         {@code Failure} envelope.
      */
-    ToolInvocationResult invoke(String id, String toolName, JsonNode args, UserContext userCtx);
+    ToolInvocationResult invoke(
+            String id,
+            String toolName,
+            JsonNode args,
+            UserContext userCtx,
+            java.util.function.Consumer<ToolProgress> onProgress);
 }

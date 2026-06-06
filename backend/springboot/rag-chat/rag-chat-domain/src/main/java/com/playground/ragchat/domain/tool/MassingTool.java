@@ -16,10 +16,20 @@ import java.time.Duration;
  * (ADR-08 §A08.11 Exception 4 sub-row; host renamed per ADR-19 §D2).
  * Override via {@code PLAYGROUND_MASSING_GEN_TOOL_URL} env var if the BC moves.
  *
- * <p>Timeout is 60 s — brief extraction is LLM-bound (~30 s for a long
- * Korean brief) plus algorithm + .3dm serialization (~1 s), so 60 s
- * gives comfortable headroom under M7's per-tool breaker (which trips
- * on the 60 s timeout, not the response latency itself).
+ * <p>The BC answers as an {@code application/x-ndjson} stream
+ * (tool-streaming spec D2/D4): progress + heartbeat lines followed by one
+ * terminal {@code result} or {@code error} line. Two bounds govern the
+ * call — an IDLE bound and an absolute (total) bound:
+ * <ul>
+ *   <li><b>idle</b> = 60 s — max gap between NDJSON signals. The BC emits
+ *       a heartbeat every ~10 s, so 60 s is 6× that cadence: a quiet
+ *       stretch this long means the BC is genuinely wedged, not merely
+ *       busy. A heartbeat resets this timer, so a long LLM extraction that
+ *       keeps the stream alive never trips it.</li>
+ *   <li><b>total</b> = 600 s — absolute cap on the whole pipeline (brief
+ *       extraction + algorithm + .3dm serialization + MinIO write) with
+ *       worst-case headroom, enforced regardless of heartbeat activity.</li>
+ * </ul>
  */
 public final class MassingTool {
 
@@ -83,10 +93,12 @@ public final class MassingTool {
     /** Singleton descriptor instance — registered in {@link ToolCatalog#descriptors()}. */
     public static final ToolDescriptor MASSING = new ToolDescriptor(
             "generate_massing",
+            "매싱 모델",
             DESCRIPTION,
             INPUT_SCHEMA,
             resolveEndpoint(),
-            Duration.ofSeconds(120));
+            Duration.ofSeconds(60),    // idle — heartbeat(10s)의 6배 여유
+            Duration.ofSeconds(600));  // total cap — 파이프라인 최악치 여유
 
     private MassingTool() {
         // constants class — instantiation disallowed

@@ -193,8 +193,30 @@ export type ToolErrorCode =
 export interface ToolCallEventPayload {
   id: string;
   name: string;
+  /**
+   * Server-supplied display name for the in-flight card (tool-streaming
+   * spec W2 — e.g. "매싱 모델"). Optional: absent when streamed by a
+   * pre-streaming backend, in which case the FE falls back to `name`.
+   */
+  displayName?: string;
   /** Arguments the LLM resolved against the descriptor's parameterSchema. */
   args: Record<string, unknown>;
+}
+
+/**
+ * `event: tool_progress` — tool-node progress relayed from the agent's
+ * NDJSON stream (tool-streaming spec W2). The FE renders {@link label}
+ * verbatim (Korean per ADR-18 §5 precedent). `attempt` is present only on
+ * retried nodes (≥ 2); first-attempt events omit it entirely.
+ */
+export interface ToolProgressEventPayload {
+  id: string;
+  name: string;
+  stage: string;
+  label: string;
+  stageIndex: number;
+  stageCount: number;
+  attempt?: number;
 }
 
 /**

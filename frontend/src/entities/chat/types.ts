@@ -23,6 +23,7 @@ import type {
   ToolCallEventPayload,
   ToolErrorCode,
   ToolErrorEventPayload,
+  ToolProgressEventPayload,
   ToolResultEventPayload,
 } from '@/shared/api/chat';
 import type { ChatStreamEvent } from '@/shared/api/chat.sse';
@@ -38,6 +39,7 @@ export type TokenPayload = TokenEventPayload;
 export type DonePayload = DoneEventPayload;
 export type ErrorPayload = ErrorEventPayload;
 export type ToolCallPayload = ToolCallEventPayload;
+export type ToolProgressPayload = ToolProgressEventPayload;
 export type ToolResultPayload = ToolResultEventPayload;
 export type ToolErrorPayload = ToolErrorEventPayload;
 export type { SseErrorCode, ToolErrorCode, MassingProgramJson, MassingRoom };
@@ -60,7 +62,17 @@ export type { SseErrorCode, ToolErrorCode, MassingProgramJson, MassingRoom };
  * and timezone-free.
  */
 export type ToolCardState =
-  | { kind: 'in_flight'; toolCall: ToolCallPayload; calledAt: number }
+  | {
+      kind: 'in_flight';
+      toolCall: ToolCallPayload;
+      calledAt: number;
+      /** Server-supplied display name (tool_call.displayName) — rendered by
+       *  the generic ToolRunCard. Absent on a pre-streaming backend. */
+      displayName?: string;
+      /** Latest tool_progress for this call — absent until the first
+       *  progress event lands, in which case the card shows "Running…". */
+      progress?: ToolProgressPayload;
+    }
   | {
       kind: 'result';
       toolCall: ToolCallPayload;

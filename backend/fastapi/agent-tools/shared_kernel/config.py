@@ -71,6 +71,10 @@ class Settings(BaseSettings):
         alias="PLAYGROUND_ARCHITECTURE_MINIO_BUCKET",
     )
 
+    # --- Tool streaming (tool-streaming spec D1/D4) ---
+    # NDJSON heartbeat 발신 간격. rag-chat idle(60s)의 1/6 — 일시 지연 여유.
+    stream_heartbeat_seconds: float = Field(default=10.0)
+
     # --- Server ---
     port: int = Field(default=18083, alias="PLAYGROUND_MASSING_GEN_PORT")
 

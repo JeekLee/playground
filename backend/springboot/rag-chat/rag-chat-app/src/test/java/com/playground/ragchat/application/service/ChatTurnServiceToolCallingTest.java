@@ -146,7 +146,7 @@ class ChatTurnServiceToolCallingTest {
         verify(chatGenerationPort).stream(any(), anyInt());
         verify(chatGenerationPort, never()).streamWithTools(any(), anyInt(), any());
         // The tool dispatcher was never invoked.
-        verify(toolDispatcherPort, never()).invoke(any(), any(), any(), any());
+        verify(toolDispatcherPort, never()).invoke(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -218,8 +218,9 @@ class ChatTurnServiceToolCallingTest {
         // real use-case (the integration test in rag-chat-infra covers the
         // wire-level WebClient path).
         var desc = new com.playground.ragchat.domain.tool.ToolDescriptor(
-                "echo", "echo description", null,
-                java.net.URI.create("http://t/"), java.time.Duration.ofSeconds(5));
+                "echo", "Echo", "echo description", null,
+                java.net.URI.create("http://t/"),
+                java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(30));
         when(tokenBucketPort.tryAcquire(caller)).thenReturn(TokenBucketPort.Decision.allow());
         Instant now = Instant.parse("2026-05-22T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
@@ -245,7 +246,7 @@ class ChatTurnServiceToolCallingTest {
                     });
                 });
 
-        when(toolDispatcherPort.invoke(any(), eq("echo"), any(), any()))
+        when(toolDispatcherPort.invoke(any(), eq("echo"), any(), any(), any()))
                 .thenAnswer(inv -> {
                     String id = inv.getArgument(0);
                     return new com.playground.ragchat.application.tool.ToolInvocationResult.Success(
@@ -294,8 +295,9 @@ class ChatTurnServiceToolCallingTest {
     @Test
     void depthCapExceeded_emitsToolError_MAX_DEPTH() {
         var desc = new com.playground.ragchat.domain.tool.ToolDescriptor(
-                "loopy", "Loopy tool", null,
-                java.net.URI.create("http://t/"), java.time.Duration.ofSeconds(5));
+                "loopy", "Loopy", "Loopy tool", null,
+                java.net.URI.create("http://t/"),
+                java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(30));
         when(tokenBucketPort.tryAcquire(caller)).thenReturn(TokenBucketPort.Decision.allow());
         Instant now = Instant.parse("2026-05-22T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
@@ -328,7 +330,7 @@ class ChatTurnServiceToolCallingTest {
                     });
                 });
 
-        when(toolDispatcherPort.invoke(any(), eq("loopy"), any(), any()))
+        when(toolDispatcherPort.invoke(any(), eq("loopy"), any(), any(), any()))
                 .thenAnswer(inv -> {
                     String id = inv.getArgument(0);
                     return new com.playground.ragchat.application.tool.ToolInvocationResult.Success(
@@ -376,8 +378,9 @@ class ChatTurnServiceToolCallingTest {
                 com.fasterxml.jackson.databind.JsonNode> handler =
                 args -> new ObjectMapper().createObjectNode();
         var desc = new com.playground.ragchat.domain.tool.ToolDescriptor(
-                "echo", "Echo", null,
-                java.net.URI.create("http://t/"), java.time.Duration.ofSeconds(5));
+                "echo", "Echo", "Echo description", null,
+                java.net.URI.create("http://t/"),
+                java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(30));
         ToolBinding binding = new ToolBinding(desc, handler);
         assertThat(binding.descriptor().name()).isEqualTo("echo");
         assertThat(binding.handler()).isSameAs(handler);

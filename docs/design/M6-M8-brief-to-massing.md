@@ -282,6 +282,14 @@ The per-milestone PRD + ADR cycles still happen — they cover backend / contrac
 > .glb(extras 없음)는 지금처럼 테이블/라벨 없이 graceful 생략. Spec:
 > `docs/superpowers/specs/2026-06-05-glb-extras-program-json-design.md`.
 
+> **2026-06-06 — 도구 스트리밍 + 진행 표시:** 도구 wire가 NDJSON 스트리밍
+> (progress/heartbeat/result|error)으로 전환 — 타임아웃 기준이 총량(120s)에서
+> idle(60s, total cap 600s)로 바뀌어 LLM-bound 장시간 실행이 안전하다.
+> in-flight 카드는 제네릭 `ToolRunCard`: 서버 발신 displayName + 한국어 단계
+> label + (시도 N) + stageCount 핍 바 — 전부 wire 구동이라 새 도구는 FE 코드
+> 없이 진행 표시를 얻는다. Spec:
+> `docs/superpowers/specs/2026-06-06-tool-streaming-progress-design.md`.
+
 ### 2.5 M8 — `/chat` with `tool_error` card — frame node-id: `78:1437`
 
 - **Purpose:** the failure path. Architect uploads a non-brief PDF (e.g., a CV or a marketing flyer); the LLM extraction step fails. The card surfaces a `BRIEF_EXTRACTION_FAILED` error in `warning` palette with a user-actionable secondary action.
