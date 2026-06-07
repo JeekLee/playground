@@ -12,9 +12,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.playground.chat.application.dto.ChatTurnRequest;
 import com.playground.chat.application.port.ChatGenerationPort;
-import com.playground.chat.application.port.ChunkRetrievalPort;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
-import com.playground.chat.application.port.EmbeddingPort;
 import com.playground.chat.application.port.TokenBucketPort;
 import com.playground.chat.application.properties.ChatProperties;
 import com.playground.chat.application.repository.MessageRepository;
@@ -58,8 +56,6 @@ class ChatTurnServiceToolCallingTest {
     private MessageRepository messageRepository;
     private TokenBucketPort tokenBucketPort;
     private ConcurrentStreamLockPort lockPort;
-    private EmbeddingPort embeddingPort;
-    private ChunkRetrievalPort chunkRetrievalPort;
     private ChatGenerationPort chatGenerationPort;
     private AutoTitleService autoTitleService;
     private ToolDispatcherPort toolDispatcherPort;
@@ -75,8 +71,6 @@ class ChatTurnServiceToolCallingTest {
         messageRepository = mock(MessageRepository.class);
         tokenBucketPort = mock(TokenBucketPort.class);
         lockPort = mock(ConcurrentStreamLockPort.class);
-        embeddingPort = mock(EmbeddingPort.class);
-        chunkRetrievalPort = mock(ChunkRetrievalPort.class);
         chatGenerationPort = mock(ChatGenerationPort.class);
         autoTitleService = mock(AutoTitleService.class);
         toolDispatcherPort = mock(ToolDispatcherPort.class);
@@ -91,8 +85,6 @@ class ChatTurnServiceToolCallingTest {
                 messageRepository,
                 tokenBucketPort,
                 lockPort,
-                embeddingPort,
-                chunkRetrievalPort,
                 chatGenerationPort,
                 historyTruncator,
                 tokenCounter,
@@ -105,8 +97,8 @@ class ChatTurnServiceToolCallingTest {
                 new ObjectMapper(),
                 ChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
-                // M8 added a descriptor to the production catalog; tests in
-                // this file simulate the catalog explicitly per scenario.
+                // The production catalog has descriptors; tests in this file
+                // simulate the catalog explicitly per scenario.
                 java.util.List::of);
 
         when(autoTitleService.generate(any(), any())).thenReturn(Mono.empty());
@@ -121,8 +113,6 @@ class ChatTurnServiceToolCallingTest {
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(List.of());
         when(chatGenerationPort.stream(any(), anyInt()))
                 .thenReturn(Flux.just("hello ", "world"));
 
@@ -138,8 +128,8 @@ class ChatTurnServiceToolCallingTest {
         assertThat(events).noneMatch(e -> e instanceof ChatStreamEvent.ToolCall);
         assertThat(events).noneMatch(e -> e instanceof ChatStreamEvent.ToolResult);
         assertThat(events).noneMatch(e -> e instanceof ChatStreamEvent.ToolError);
-        // Token + phase + done events present, in M4 order.
-        assertThat(events.get(0)).isInstanceOf(ChatStreamEvent.Phase.class);
+        // Token + done events present; no retrieval phase (pipeline retrieval
+        // removed — agentic-search spec D2). Done is terminal.
         assertThat(events.get(events.size() - 1)).isInstanceOf(ChatStreamEvent.Done.class);
 
         // The chat-generation port's PLAIN stream() was used — not streamWithTools().
@@ -159,8 +149,6 @@ class ChatTurnServiceToolCallingTest {
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(List.of());
         when(chatGenerationPort.stream(any(), anyInt())).thenReturn(Flux.empty());
         when(chatGenerationPort.streamWithTools(any(), anyInt(), any()))
                 .thenAnswer(inv -> {
@@ -198,8 +186,6 @@ class ChatTurnServiceToolCallingTest {
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(List.of());
         when(chatGenerationPort.stream(any(), anyInt())).thenReturn(Flux.just("ok"));
 
         ConcurrentStreamLockPort.Handle handle = mock(ConcurrentStreamLockPort.Handle.class);
@@ -227,8 +213,6 @@ class ChatTurnServiceToolCallingTest {
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(List.of());
 
         when(chatGenerationPort.streamWithTools(any(), anyInt(), any()))
                 .thenAnswer(inv -> {
@@ -260,7 +244,7 @@ class ChatTurnServiceToolCallingTest {
         // Use package-private test constructor.
         ChatTurnService service = new ChatTurnService(
                 sessionRepository, messageRepository, tokenBucketPort, lockPort,
-                embeddingPort, chunkRetrievalPort, chatGenerationPort,
+                chatGenerationPort,
                 new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
@@ -304,8 +288,6 @@ class ChatTurnServiceToolCallingTest {
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(List.of());
 
         // Simulate Spring AI hammering the callback 6 times in one turn (depth
         // cap default is 5 per ADR-17 §6). On the 6th invocation the handler
@@ -343,7 +325,7 @@ class ChatTurnServiceToolCallingTest {
 
         ChatTurnService service = new ChatTurnService(
                 sessionRepository, messageRepository, tokenBucketPort, lockPort,
-                embeddingPort, chunkRetrievalPort, chatGenerationPort,
+                chatGenerationPort,
                 new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,

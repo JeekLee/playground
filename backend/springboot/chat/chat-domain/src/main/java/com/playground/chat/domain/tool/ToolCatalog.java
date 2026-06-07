@@ -33,7 +33,8 @@ public final class ToolCatalog {
      * implementation may swap this for a registry-backed list without
      * changing consumer API (ADR-17 §D forward-compat hook).
      */
-    private static final List<ToolDescriptor> DESCRIPTORS = List.of(MassingTool.MASSING);
+    private static final List<ToolDescriptor> DESCRIPTORS =
+            List.of(MassingTool.MASSING, SearchTool.SEARCH);
 
     private ToolCatalog() {
         // utility class — instantiation disallowed

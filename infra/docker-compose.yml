@@ -393,8 +393,6 @@ services:
       PLAYGROUND_CHAT_MINIO_BUCKET: ${PLAYGROUND_CHAT_MINIO_BUCKET:-chat-attachments}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
-      # Retrieval K (ADR-14 §7) — overridable for experiments without recompile.
-      PLAYGROUND_CHAT_RETRIEVAL_K: ${PLAYGROUND_CHAT_RETRIEVAL_K:-6}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18084/actuator/health || exit 1"]
       interval: 15s

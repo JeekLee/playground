@@ -6,9 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.playground.chat.application.dto.ChatTurnRequest;
 import com.playground.chat.application.dto.CitationDto;
 import com.playground.chat.application.port.ChatGenerationPort;
-import com.playground.chat.application.port.ChunkRetrievalPort;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
-import com.playground.chat.application.port.EmbeddingPort;
 import com.playground.chat.application.port.TokenBucketPort;
 import com.playground.chat.application.port.UserDocumentManifestPort;
 import com.playground.chat.application.properties.ChatProperties;
@@ -58,10 +56,10 @@ import reactor.core.scheduler.Schedulers;
 /**
  * The per-turn orchestrator per ADR-14 §1 (the {@code StreamChatTurnUseCase}).
  * Composes auth → rate-limit → session-validate → concurrent-stream lock →
- * history load + truncate → embed → retrieve → emit retrieval SSE event →
- * persist user message → assemble prompt → stream tokens → parse markers →
- * persist assistant message + cited subset → emit done SSE event → release
- * lock.
+ * history load + truncate → persist user message → assemble prompt →
+ * stream tokens (search_documents tool searches on demand, accumulating
+ * turn-global citations) → parse markers → persist assistant message +
+ * cited subset → emit done SSE event → release lock.
  *
  * <p>Returns a {@link Flux} of {@link ChatStreamEvent}; the controller maps
  * each event to its SSE shape per ADR-14 §C / spec §5.2.
@@ -79,8 +77,6 @@ public class ChatTurnService {
     private final MessageRepository messageRepository;
     private final TokenBucketPort tokenBucketPort;
     private final ConcurrentStreamLockPort lockPort;
-    private final EmbeddingPort embeddingPort;
-    private final ChunkRetrievalPort chunkRetrievalPort;
     private final ChatGenerationPort chatGenerationPort;
     private final HistoryTruncator historyTruncator;
     private final TokenCounter tokenCounter;
@@ -111,8 +107,6 @@ public class ChatTurnService {
             MessageRepository messageRepository,
             TokenBucketPort tokenBucketPort,
             ConcurrentStreamLockPort lockPort,
-            EmbeddingPort embeddingPort,
-            ChunkRetrievalPort chunkRetrievalPort,
             ChatGenerationPort chatGenerationPort,
             HistoryTruncator historyTruncator,
             TokenCounter tokenCounter,
@@ -125,8 +119,8 @@ public class ChatTurnService {
             ObjectMapper objectMapper,
             ChatProperties properties,
             Clock clock) {
-        this(sessionRepository, messageRepository, tokenBucketPort, lockPort, embeddingPort,
-                chunkRetrievalPort, chatGenerationPort, historyTruncator, tokenCounter,
+        this(sessionRepository, messageRepository, tokenBucketPort, lockPort,
+                chatGenerationPort, historyTruncator, tokenCounter,
                 promptTemplate, autoTitleService, activeTurnRegistry, toolDispatcherPort,
                 userDocumentManifestPort, attachmentRepository,
                 objectMapper, properties, clock, ToolCatalog::descriptors);
@@ -144,8 +138,6 @@ public class ChatTurnService {
             MessageRepository messageRepository,
             TokenBucketPort tokenBucketPort,
             ConcurrentStreamLockPort lockPort,
-            EmbeddingPort embeddingPort,
-            ChunkRetrievalPort chunkRetrievalPort,
             ChatGenerationPort chatGenerationPort,
             HistoryTruncator historyTruncator,
             TokenCounter tokenCounter,
@@ -163,8 +155,6 @@ public class ChatTurnService {
         this.messageRepository = messageRepository;
         this.tokenBucketPort = tokenBucketPort;
         this.lockPort = lockPort;
-        this.embeddingPort = embeddingPort;
-        this.chunkRetrievalPort = chunkRetrievalPort;
         this.chatGenerationPort = chatGenerationPort;
         this.historyTruncator = historyTruncator;
         this.tokenCounter = tokenCounter;
@@ -223,29 +213,16 @@ public class ChatTurnService {
         List<Message> truncated = historyTruncator.truncate(
                 rawHistory, properties.maxHistoryTokens(), currentMessageTokens);
 
-        // 4. Embed query.
-        float[] embedding;
-        try {
-            embedding = embeddingPort.embedQuery(request.message());
-        } catch (RuntimeException e) {
-            throw ExceptionCreator.of(ChatErrorCode.EMBEDDING_FAILED, e.getMessage()).build();
-        }
-
-        // 5. Retrieve K chunks.
-        List<RetrievedChunk> retrieved;
-        try {
-            retrieved = chunkRetrievalPort.retrieve(request.caller(), embedding, properties.retrievalK());
-        } catch (RuntimeException e) {
-            throw ExceptionCreator.of(ChatErrorCode.RETRIEVAL_FAILED, e.getMessage()).build();
-        }
-
-        // 6. Persist the user message before opening the stream so a mid-stream
+        // 4. Persist the user message before opening the stream so a mid-stream
         // refresh shows the user turn even if the assistant never lands.
+        // (agentic-search spec D2: the always-on embed+pgvector retrieval was
+        // removed — the LLM searches via the search_documents tool only when
+        // the question concerns uploaded-document content.)
         Message userMessage = Message.newUserTurn(
                 session.id(), request.caller(), request.message(), clock.instant());
         Message savedUser = messageRepository.save(userMessage);
 
-        // 7. Determine whether this is the first user turn for the auto-title trigger.
+        // 5. Determine whether this is the first user turn for the auto-title trigger.
         int userMessageCount = messageRepository.countUserMessages(session.id());
         boolean firstTurn = userMessageCount == 1;
 
@@ -264,11 +241,10 @@ public class ChatTurnService {
         log.info("turn_start sessionId=" + session.id()
                 + " userId=" + request.caller()
                 + " userSub=" + maskSub(request.userSub())
-                + " retrievedK=" + retrieved.size()
                 + " historyTurns=" + truncated.size()
                 + " docManifest=" + documents.size());
 
-        return new Preparation(session, retrieved, truncated, savedUser, firstTurn, documents);
+        return new Preparation(session, truncated, savedUser, firstTurn, documents);
     }
 
     /** Phase 2: lock + stream. The lock is released in doFinally. */
@@ -304,19 +280,14 @@ public class ChatTurnService {
         List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : prep.documents();
 
         String prompt = promptTemplate.assemble(
-                prep.retrieved(), prep.truncatedHistory(), request.message(),
-                properties.perChunkTokenBudget(), promptDocuments);
+                prep.truncatedHistory(), request.message(), promptDocuments);
 
-        // Spec §5.2 (revised in PR B): the retrieval phase now ships just
-        // a count, not the candidate chunk list — the citation cards land
-        // exclusively at terminal `done` once the marker-extraction step
-        // narrows the set to the actually-cited subset. UI uses this
-        // event for the "N개 청크 확인 중…" progress label.
-        Flux<ChatStreamEvent> retrievalEvent = Flux.just(
-                (ChatStreamEvent) new ChatStreamEvent.Phase(
-                        "retrieval",
-                        "참고 문서 확인 중",
-                        java.util.Map.of("count", prep.retrieved().size())));
+        // Turn-scoped citation accumulator (agentic-search spec D2). Each
+        // search_documents tool result is renumbered into a turn-global
+        // [N] space and accumulated here; at turn end acc.retrieved() feeds
+        // the existing renumber/persist path. A turn with zero searches
+        // yields an empty list → empty citations (the existing path handles).
+        TurnCitationAccumulator acc = new TurnCitationAccumulator();
 
         // Sink the tool callbacks push events into. Multicast so the orchestrator
         // can interleave the events with the token flux as they arrive.
@@ -327,7 +298,7 @@ public class ChatTurnService {
         List<ToolBinding> bindings = descriptors.isEmpty()
                 ? List.of()
                 : buildBindings(descriptors, toolEventSink, depth, userCtx,
-                        prep.session().id(), assistantMessageId, stagedAttachments);
+                        prep.session().id(), assistantMessageId, stagedAttachments, acc);
 
         Flux<String> rawDeltas = bindings.isEmpty()
                 ? chatGenerationPort.stream(prompt, properties.maxCompletionTokens())
@@ -371,7 +342,8 @@ public class ChatTurnService {
                 return Mono.empty();
             }
             return persistAssistantAndDone(
-                    prep, accumulated.toString(), request, assistantMessageId, stagedAttachments);
+                    prep, acc.retrieved(), accumulated.toString(), request,
+                    assistantMessageId, stagedAttachments);
         });
 
         // Source pipeline — must run to completion on the server even when the
@@ -379,7 +351,7 @@ public class ChatTurnService {
         // land in `chat.messages` / `chat.message_citations`. Lock release and
         // auto-title fire from the source's terminal signal (not from the
         // client-facing flux).
-        Flux<ChatStreamEvent> source = Flux.concat(retrievalEvent, mergedTokensAndToolEvents, done)
+        Flux<ChatStreamEvent> source = Flux.concat(mergedTokensAndToolEvents, done)
                 .doFinally(signal -> {
                     activeTurnRegistry.unregister(prep.session().id());
                     try {
@@ -427,7 +399,8 @@ public class ChatTurnService {
     private static final int MAX_REPLAY_EVENTS = 4096;
 
     private Mono<ChatStreamEvent> persistAssistantAndDone(
-            Preparation prep, String accumulatedText, ChatTurnRequest request,
+            Preparation prep, List<RetrievedChunk> retrieved, String accumulatedText,
+            ChatTurnRequest request,
             MessageId assistantMessageId, List<Attachment> stagedAttachments) {
         return Mono.fromCallable(() -> {
             if (accumulatedText == null || accumulatedText.isEmpty()) {
@@ -442,14 +415,14 @@ public class ChatTurnService {
             // assistant text shipped to the client (and persisted) gets
             // its markers rewritten to the new sequence; the per-row
             // citation cards line up 1:1.
-            CitationRenumber renumber = renumberCitations(accumulatedText, prep.retrieved());
+            CitationRenumber renumber = renumberCitations(accumulatedText, retrieved);
 
             // Approximate token counts — we don't get them from the streaming
             // ChatResponse uniformly; the assistant counter is the byte/token
             // count of the accumulated text via JTokkit.
             int tokensIn = tokenCounter.count(prep.lastUserMessageContent(request)).value();
             int tokensOut = tokenCounter.count(renumber.text).value();
-            int retrievalK = prep.retrieved().size();
+            int retrievalK = retrieved.size();
 
             // Reuse the UP-FRONT-allocated assistant messageId (ADR-20 §D3) so
             // any attachments staged mid-stream already point at this row.
@@ -461,15 +434,23 @@ public class ChatTurnService {
             List<MessageCitation> toPersist = new java.util.ArrayList<>();
             List<CitationDto> wireCitations = new java.util.ArrayList<>();
             for (CitedChunk c : renumber.cited) {
+                // Snapshot persistence (agentic-search spec D2): freeze
+                // title/excerpt/visibility on the citation row so history reload
+                // reads them back without joining the docs schema. The live
+                // Done-event DTO and the persisted snapshot carry IDENTICAL
+                // values (same RetrievedChunk source, no re-truncation) — the
+                // excerpt is already ≤600 chars from docs-api search.
+                String visibility = c.chunk.visibility().wireValue();
                 toPersist.add(new MessageCitation(
-                        persisted.id(), c.newN, c.chunk.documentId(), c.chunk.chunkIndex()));
+                        persisted.id(), c.newN, c.chunk.documentId(), c.chunk.chunkIndex(),
+                        c.chunk.title(), c.chunk.text(), visibility));
                 wireCitations.add(new CitationDto(
                         c.newN,
                         c.chunk.documentId().value().toString(),
                         c.chunk.chunkIndex(),
                         c.chunk.title(),
-                        shortExcerpt(c.chunk.text()),
-                        c.chunk.visibility().wireValue()));
+                        c.chunk.text(),
+                        visibility));
             }
             if (!toPersist.isEmpty()) {
                 messageRepository.saveCitations(toPersist);
@@ -549,14 +530,6 @@ public class ChatTurnService {
     /** A retrieved chunk paired with its new dense citation number. */
     private record CitedChunk(int newN, RetrievedChunk chunk) {}
 
-    /** Wire-shape excerpt — first ~160 chars, matches the old retrieval payload. */
-    private static String shortExcerpt(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.length() > 160 ? text.substring(0, 160) : text;
-    }
-
     /**
      * Build one {@link ToolBinding} per registered descriptor. The binding's
      * handler is the boundary where (per ADR-17 §3.1) we:
@@ -585,12 +558,14 @@ public class ChatTurnService {
             UserContext userCtx,
             SessionId sessionId,
             MessageId assistantMessageId,
-            List<Attachment> stagedAttachments) {
+            List<Attachment> stagedAttachments,
+            TurnCitationAccumulator acc) {
         List<ToolBinding> bindings = new ArrayList<>(descriptors.size());
         for (ToolDescriptor d : descriptors) {
             ToolDescriptor desc = d;
             bindings.add(new ToolBinding(desc, args -> handleToolInvocation(
-                    desc, args, sink, depth, userCtx, sessionId, assistantMessageId, stagedAttachments)));
+                    desc, args, sink, depth, userCtx, sessionId, assistantMessageId,
+                    stagedAttachments, acc)));
         }
         return bindings;
     }
@@ -603,7 +578,8 @@ public class ChatTurnService {
             UserContext userCtx,
             SessionId sessionId,
             MessageId assistantMessageId,
-            List<Attachment> stagedAttachments) {
+            List<Attachment> stagedAttachments,
+            TurnCitationAccumulator acc) {
         String id = "call_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 24);
         int newDepth = depth.incrementAndGet();
         int maxDepth = properties.toolMaxDepth();
@@ -640,14 +616,23 @@ public class ChatTurnService {
                                 p.stageIndex(), p.stageCount(), p.attempt()),
                         Sinks.EmitFailureHandler.busyLooping(Duration.ofMillis(50))));
         if (result instanceof ToolInvocationResult.Success s) {
+            // agentic-search spec D2 — for search_documents, renumber the
+            // per-call [N] positions into the turn-global space and accumulate
+            // the chunks. The renumbered body is what BOTH the SSE tool_result
+            // and the LLM-bound feedback see, so the [N] markers the model
+            // cites line up with the citation cards. Other tools bypass absorb.
+            JsonNode llmVisibleBody = s.body();
+            if ("search_documents".equals(desc.name()) && s.body() != null) {
+                llmVisibleBody = acc.absorb(userCtx.userId(), s.body());
+            }
             // ADR-20 §D3 — if the tool emitted an artifact, store it to MinIO
             // and stage an Attachment linked to the (pre-allocated) assistant
             // message. Only the LLM-visible `body` (result) reaches the LLM +
             // the tool_result SSE result field; the bytes never enter context.
             Attachment attachment = null;
             if (s.artifact() != null) {
-                String briefTitle = s.body() != null && s.body().has("briefTitle")
-                        ? s.body().get("briefTitle").asText(null)
+                String briefTitle = llmVisibleBody != null && llmVisibleBody.has("briefTitle")
+                        ? llmVisibleBody.get("briefTitle").asText(null)
                         : null;
                 attachment = storeArtifact(
                         s.artifact(), desc.name(), briefTitle,
@@ -657,12 +642,12 @@ public class ChatTurnService {
             // an `attachment` object + top-level `fileUrl` for the FE. The
             // LLM-bound feedback below is the bare `body` only.
             sink.tryEmitNext(new ChatStreamEvent.ToolResult(
-                    s.id(), s.name(), enrichResultForSse(s.body(), attachment)));
+                    s.id(), s.name(), enrichResultForSse(llmVisibleBody, attachment)));
             // Truncate the body to the configured cap if needed for the
             // LLM-bound feedback. The dispatcher already truncates at its
             // own boundary (ADR-17 §4) but we re-cap here defensively
             // before sending back to Spring AI.
-            return truncateForLlm(s.body());
+            return truncateForLlm(llmVisibleBody);
         }
         ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
         sink.tryEmitNext(new ChatStreamEvent.ToolError(f.id(), f.name(), f.code().name(), f.message()));
@@ -824,7 +809,6 @@ public class ChatTurnService {
     /** Snapshot of pre-stream side-effects bound to one turn. */
     private record Preparation(
             ChatSession session,
-            List<RetrievedChunk> retrieved,
             List<Message> truncatedHistory,
             Message savedUser,
             boolean firstTurn,

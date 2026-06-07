@@ -64,6 +64,25 @@ public enum DocsErrorCode implements ErrorCode {
             "author query parameter must be a UUID"),
 
     /**
+     * agentic-search spec D1 — the {@code /internal/tools/search-documents}
+     * tool route needs the caller's identity for the visibility filter; the
+     * tool dispatcher must inject {@code X-User-Id}. 400 (not 401) per the
+     * spec: a missing header here is a wiring bug in the dispatcher, not an
+     * end-user auth failure.
+     */
+    @MappedTo(BadRequestException.class)
+    TOOL_USER_HEADER_MISSING("DOCS-VALIDATION-012",
+            "X-User-Id header is required on the search-documents tool route"),
+
+    /**
+     * agentic-search spec D1 — the search-documents tool query was missing or
+     * blank.
+     */
+    @MappedTo(BadRequestException.class)
+    TOOL_QUERY_BLANK("DOCS-VALIDATION-013",
+            "search-documents tool query must not be blank"),
+
+    /**
      * M2 spec §10 "Search failure isolation" + spec §6.5: when OpenSearch is
      * unreachable, search routes return 503 with this code so callers can
      * distinguish "no hits" from "search subsystem down".

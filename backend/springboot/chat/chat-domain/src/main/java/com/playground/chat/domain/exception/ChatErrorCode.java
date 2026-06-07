@@ -57,12 +57,6 @@ public enum ChatErrorCode implements ErrorCode {
     BLOB_STORAGE_UNAVAILABLE("CHAT-BLOB-001", "Attachment storage unavailable"),
 
     @MappedTo(InternalServerErrorException.class)
-    RETRIEVAL_FAILED("CHAT-RETRIEVAL-001", "Retrieval failed: {0}"),
-
-    @MappedTo(InternalServerErrorException.class)
-    EMBEDDING_FAILED("CHAT-EMBED-001", "Query embedding failed: {0}"),
-
-    @MappedTo(InternalServerErrorException.class)
     PERSISTENCE_FAILED("CHAT-PERSIST-001", "Failed to persist chat artifact: {0}");
 
     private final String code;

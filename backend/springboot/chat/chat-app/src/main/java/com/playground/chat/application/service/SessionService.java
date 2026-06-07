@@ -78,8 +78,7 @@ public class SessionService {
     }
 
     /** Resolve session detail (404 if not owned). */
-    public SessionDetailView loadDetail(
-            SessionId id, UserId caller, CitationResolver resolver) {
+    public SessionDetailView loadDetail(SessionId id, UserId caller) {
         ChatSession session = sessionRepository.findOwned(id, caller)
                 .orElseThrow(() -> ExceptionCreator.of(ChatErrorCode.SESSION_NOT_FOUND).build());
 
@@ -108,39 +107,25 @@ public class SessionService {
             attachmentByMessage.put(a.messageId(), a);
         }
 
-        // Enrich each citation with title + excerpt via the resolver (deleted-doc
-        // case yields title=null + deleted=true).
+        // Build each CitationView straight from the persisted snapshot
+        // (title/excerpt/visibility frozen at persist time per agentic-search
+        // spec D2). No cross-schema read — history reload reads chat's own table
+        // only. Snapshot rows always carry a title, so deleted=false: the FE
+        // isStaleCitation (title-null) heuristic never fires for new rows.
         List<SessionDetailView.MessageView> views = new ArrayList<>(messages.size());
         for (Message m : messages) {
             List<MessageCitation> raw = citationsByMessage.getOrDefault(m.id(), List.of());
-            List<SessionDetailView.CitationView> enrichedCitations = new ArrayList<>(raw.size());
+            List<SessionDetailView.CitationView> snapshotCitations = new ArrayList<>(raw.size());
             for (MessageCitation rc : raw) {
-                CitationResolver.Resolved r = resolver.resolve(rc.documentId(), rc.chunkIndex());
-                enrichedCitations.add(new SessionDetailView.CitationView(
+                snapshotCitations.add(new SessionDetailView.CitationView(
                         rc.position(), rc.documentId(), rc.chunkIndex(),
-                        r.title(), r.excerpt(), r.deleted()));
+                        rc.title(), rc.excerpt(), false));
             }
             views.add(new SessionDetailView.MessageView(
                     m.id(), m.role(), m.content(), m.createdAt(), m.tokensIn(), m.tokensOut(),
-                    enrichedCitations,
+                    snapshotCitations,
                     Optional.ofNullable(attachmentByMessage.get(m.id()))));
         }
         return new SessionDetailView(session.id(), session.title(), views);
-    }
-
-    /** Pluggable citation resolver; the infra wires the cross-schema JOIN adapter. */
-    public interface CitationResolver {
-        Resolved resolve(com.playground.chat.domain.model.id.DocumentId documentId, int chunkIndex);
-
-        record Resolved(String title, String excerpt, boolean deleted) {
-
-            public static Resolved present(String title, String excerpt) {
-                return new Resolved(title, excerpt, false);
-            }
-
-            public static Resolved markDeleted() {
-                return new Resolved(null, null, true);
-            }
-        }
     }
 }

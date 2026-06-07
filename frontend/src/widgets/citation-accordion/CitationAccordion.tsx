@@ -147,8 +147,9 @@ function CitationCard({ citation, focused }: CitationCardProps) {
         // them through the same pipeline as the doc body so backticks,
         // **bold**, etc. don't bleed through as raw text. The
         // `line-clamp` here is approximate — block elements (code
-        // fences) inside an excerpt look odd, but excerpts are ≤ ~160
-        // chars so they rarely contain a full code fence. Citation
+        // fences) inside an excerpt look odd, but excerpts are ≤ 600
+        // chars (search-tool head-truncation) and the clamp caps the
+        // visible height anyway. Citation
         // pills are disabled here ({@code citationPill} omitted) — the
         // excerpt is source text, not a place to nest other citations.
         <div className="line-clamp-3 text-[12px] leading-snug text-text-muted [&>*:first-child]:mt-0">

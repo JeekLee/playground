@@ -2,7 +2,6 @@ package com.playground.chat.domain.service;
 
 import com.playground.chat.domain.enums.Role;
 import com.playground.chat.domain.model.Message;
-import com.playground.chat.domain.model.RetrievedChunk;
 import com.playground.chat.domain.model.UserDocumentRef;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -12,14 +11,15 @@ import org.springframework.stereotype.Service;
  * concatenation — no Spring AI prompt-template DSL, no Mustache, just
  * deterministic string building so the output is testable against fixtures.
  *
- * <p>Output shape:
+ * <p>Output shape (agentic-search spec D2 — the always-on RETRIEVED CONTEXT
+ * block was removed; the LLM searches via the search_documents tool on
+ * demand and cites turn-global [N] markers):
  * <pre>
  * [SYSTEM]
  * &lt;system prompt&gt;
  *
- * [RETRIEVED CONTEXT]
- * [1] &lt;title&gt; (visibility=&lt;v&gt;) — &lt;chunk text&gt;
- * [2] ...
+ * [YOUR DOCUMENTS]   (only when tools are available)
+ * 1. "title" id=...
  *
  * [CONVERSATION SO FAR]
  * user: ...
@@ -34,18 +34,20 @@ import org.springframework.stereotype.Service;
 public class PromptTemplate {
 
     /**
-     * Per spec §6.1 step 10 — the base prompt is exactly the first paragraph.
-     * The tool-honesty paragraph was appended 2026-06-05 after qwen3-vl
-     * answered a "다시 생성해줘" turn by PARROTING the previous tool result
-     * ("재생성했다") without invoking generate_massing — no artifact was
-     * produced. The rule is tool-agnostic so future file-producing tools
-     * inherit it.
+     * agentic-search spec D2 — the grounding paragraph now ties [N] citations
+     * to search_documents results retrieved IN THIS turn (the always-on
+     * RETRIEVED CONTEXT block is gone). The tool-honesty paragraph (appended
+     * 2026-06-05, PR #230, after qwen3-vl PARROTED a previous tool result
+     * "재생성했다" without invoking generate_massing) is kept verbatim — it is
+     * tool-agnostic so every file-producing tool inherits it.
      */
     public static final String SYSTEM_PROMPT =
-            "You are a helpful assistant grounded in the user's playground corpus.\n"
-                    + "Cite every factual claim with [N] markers where N is the 1-indexed\n"
-                    + "position from the RETRIEVED CONTEXT block. If no chunk supports a\n"
-                    + "claim, say so plainly — do not fabricate citations.\n"
+            "You are a helpful assistant for the user's playground workspace.\n"
+                    + "Claims about the user's documents must cite [N] markers that\n"
+                    + "refer ONLY to search_documents results retrieved in THIS turn.\n"
+                    + "Never assert document contents you have not retrieved this\n"
+                    + "turn — call search_documents first. Casual conversation and\n"
+                    + "general knowledge need no search and no citations.\n"
                     + "When tools are available: a request to create, generate, or\n"
                     + "REGENERATE an artifact is only satisfied by invoking the matching\n"
                     + "tool in THIS turn. Never state that a file or model was created,\n"
@@ -53,58 +55,34 @@ public class PromptTemplate {
                     + "earlier tool result in the conversation does not satisfy a new\n"
                     + "request. If you did not invoke the tool, say so instead.";
 
-    private final TokenCounter tokenCounter;
     private final CitationExtractor citationExtractor;
 
     public PromptTemplate(TokenCounter tokenCounter, CitationExtractor citationExtractor) {
-        this.tokenCounter = tokenCounter;
+        // tokenCounter is retained in the constructor signature for wiring
+        // compatibility; the per-chunk budget truncation it backed was removed
+        // with the RETRIEVED CONTEXT block (agentic-search spec D2).
         this.citationExtractor = citationExtractor;
     }
 
     /**
-     * Build the full prompt body. {@code perChunkTokenBudget} (typically 400
-     * per ADR-14 §8) head-truncates each retrieved chunk's text.
-     */
-    public String assemble(
-            List<RetrievedChunk> retrieved,
-            List<Message> truncatedHistory,
-            String currentUserMessage,
-            int perChunkTokenBudget) {
-        return assemble(retrieved, truncatedHistory, currentUserMessage, perChunkTokenBudget, List.of());
-    }
-
-    /**
-     * Build the full prompt body, additionally injecting a {@code [YOUR
-     * DOCUMENTS]} manifest so the model can resolve a natural-language document
+     * Build the full prompt body, injecting a {@code [YOUR DOCUMENTS]} manifest
+     * (when present) so the model can resolve a natural-language document
      * reference (ordinal like "두 번째 문서", title, or type) to a concrete
-     * {@code documentId} when a tool requires one. An empty/null {@code documents}
-     * list renders no section, keeping the M4 (no-tool) prompt byte-identical.
+     * {@code documentId} for a tool argument. An empty/null {@code documents}
+     * list renders no section, keeping the no-tool prompt byte-identical.
+     *
+     * <p>agentic-search spec D2: there is no longer a RETRIEVED CONTEXT block —
+     * document content reaches the model only via search_documents tool
+     * results within the turn.
      */
     public String assemble(
-            List<RetrievedChunk> retrieved,
             List<Message> truncatedHistory,
             String currentUserMessage,
-            int perChunkTokenBudget,
             List<UserDocumentRef> documents) {
 
         StringBuilder sb = new StringBuilder(8192);
 
         sb.append("[SYSTEM]\n").append(SYSTEM_PROMPT).append("\n\n");
-
-        sb.append("[RETRIEVED CONTEXT]\n");
-        if (retrieved == null || retrieved.isEmpty()) {
-            sb.append("(no chunks retrieved for this query)\n");
-        } else {
-            for (RetrievedChunk c : retrieved) {
-                String title = (c.title() == null || c.title().isBlank()) ? "(untitled)" : c.title();
-                String text = tokenCounter.truncateToTokens(c.text(), perChunkTokenBudget);
-                sb.append('[').append(c.position()).append("] ")
-                        .append(title)
-                        .append(" (visibility=").append(c.visibility().wireValue()).append(") — ")
-                        .append(text).append('\n');
-            }
-        }
-        sb.append('\n');
 
         if (documents != null && !documents.isEmpty()) {
             sb.append("[YOUR DOCUMENTS]\n");

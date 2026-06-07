@@ -4,6 +4,7 @@ import com.playground.docs.ingestion.application.port.EmbeddingPort;
 import com.playground.docs.ingestion.domain.exception.RagIngestionErrorCode;
 import com.playground.docs.ingestion.domain.model.vo.ChunkText;
 import com.playground.docs.ingestion.domain.model.vo.Embedding;
+import com.playground.docs.search.application.port.QueryEmbeddingPort;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +38,7 @@ import org.springframework.stereotype.Component;
  * the call.
  */
 @Component
-public class SparkInferenceEmbeddingAdapter implements EmbeddingPort {
+public class SparkInferenceEmbeddingAdapter implements EmbeddingPort, QueryEmbeddingPort {
 
     private static final Logger log = LoggerFactory.getLogger(SparkInferenceEmbeddingAdapter.class);
 
@@ -82,5 +83,29 @@ public class SparkInferenceEmbeddingAdapter implements EmbeddingPort {
             }
         }
         return all;
+    }
+
+    /** 검색 쿼리 단건 임베딩 (search_documents 도구 — agentic-search spec D1). */
+    @Override
+    public float[] embedQuery(String query) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("query must not be blank");
+        }
+        try {
+            // Batch-of-one, reusing the same EmbeddingResponse → float[] conversion
+            // as embed(). The OpenAI-compatible endpoint accepts a single-element list.
+            EmbeddingResponse response = embeddingModel.embedForResponse(List.of(query));
+            if (response.getResults().size() != 1) {
+                throw new IllegalStateException(
+                        "Embedding model returned " + response.getResults().size()
+                                + " vectors for 1 query");
+            }
+            return response.getResults().get(0).getOutput();
+        } catch (RuntimeException e) {
+            log.warn("spark-inference-gateway embedQuery failed", e);
+            throw ExceptionCreator
+                    .of(RagIngestionErrorCode.EMBEDDING_GATEWAY_UNAVAILABLE, e.getMessage())
+                    .build();
+        }
     }
 }

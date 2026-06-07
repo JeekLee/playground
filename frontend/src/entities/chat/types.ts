@@ -79,6 +79,10 @@ export type ToolCardState =
       toolResult: ToolResultPayload;
       calledAt: number;
       resolvedAt: number;
+      /** Carried over from the in_flight tool_call.displayName so the
+       *  generic result card can title an unregistered tool the same way
+       *  ToolRunCard did in-flight. Absent on a pre-streaming backend. */
+      displayName?: string;
     }
   | {
       kind: 'error';
@@ -86,6 +90,9 @@ export type ToolCardState =
       toolError: ToolErrorPayload;
       calledAt: number;
       resolvedAt: number;
+      /** Carried over from the in_flight tool_call.displayName (see the
+       *  result variant). Absent on a pre-streaming backend. */
+      displayName?: string;
     };
 
 /**

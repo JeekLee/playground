@@ -19,9 +19,7 @@ import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.playground.chat.application.dto.ChatTurnRequest;
 import com.playground.chat.application.port.ChatGenerationPort;
-import com.playground.chat.application.port.ChunkRetrievalPort;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
-import com.playground.chat.application.port.EmbeddingPort;
 import com.playground.chat.application.port.TokenBucketPort;
 import com.playground.chat.application.properties.ChatProperties;
 import com.playground.chat.application.repository.MessageRepository;
@@ -99,8 +97,6 @@ class ToolCallingE2ETest {
     private MessageRepository messageRepository;
     private TokenBucketPort tokenBucketPort;
     private ConcurrentStreamLockPort lockPort;
-    private EmbeddingPort embeddingPort;
-    private ChunkRetrievalPort chunkRetrievalPort;
     private ChatGenerationPort chatGenerationPort;
     private AutoTitleService autoTitleService;
 
@@ -120,8 +116,6 @@ class ToolCallingE2ETest {
         messageRepository = mock(MessageRepository.class);
         tokenBucketPort = mock(TokenBucketPort.class);
         lockPort = mock(ConcurrentStreamLockPort.class);
-        embeddingPort = mock(EmbeddingPort.class);
-        chunkRetrievalPort = mock(ChunkRetrievalPort.class);
         chatGenerationPort = mock(ChatGenerationPort.class);
         autoTitleService = mock(AutoTitleService.class);
 
@@ -134,8 +128,6 @@ class ToolCallingE2ETest {
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(List.of());
         when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         ConcurrentStreamLockPort.Handle handle = mock(ConcurrentStreamLockPort.Handle.class);
         when(lockPort.acquire(caller)).thenReturn(handle);
@@ -210,7 +202,7 @@ class ToolCallingE2ETest {
             ChatProperties props) {
         return new ChatTurnService(
                 sessionRepository, messageRepository, tokenBucketPort, lockPort,
-                embeddingPort, chunkRetrievalPort, chatGenerationPort,
+                chatGenerationPort,
                 new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), dispatcher,
@@ -269,8 +261,9 @@ class ToolCallingE2ETest {
         List<ChatStreamEvent> events = svc.stream(req).collectList().block();
         assertThat(events).isNotNull();
 
-        // Sequence: phase(retrieval), tool_call, tool_result, token×N, done.
-        assertThat(events.get(0)).isInstanceOf(ChatStreamEvent.Phase.class);
+        // Sequence (agentic-search spec D2 — no retrieval phase): tool_call,
+        // tool_result, token×N, done.
+        assertThat(events).noneMatch(e -> e instanceof ChatStreamEvent.Phase);
         long calls = events.stream().filter(e -> e instanceof ChatStreamEvent.ToolCall).count();
         long results = events.stream().filter(e -> e instanceof ChatStreamEvent.ToolResult).count();
         long errors = events.stream().filter(e -> e instanceof ChatStreamEvent.ToolError).count();
