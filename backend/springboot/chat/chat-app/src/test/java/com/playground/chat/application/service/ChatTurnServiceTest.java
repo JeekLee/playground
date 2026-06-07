@@ -12,22 +12,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.chat.application.dto.ChatTurnRequest;
 import com.playground.chat.application.port.ChatGenerationPort;
-import com.playground.chat.application.port.ChunkRetrievalPort;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
-import com.playground.chat.application.port.EmbeddingPort;
 import com.playground.chat.application.port.TokenBucketPort;
 import com.playground.chat.application.properties.ChatProperties;
 import com.playground.chat.application.repository.MessageRepository;
 import com.playground.chat.application.repository.SessionRepository;
+import com.playground.chat.application.tool.ToolBinding;
 import com.playground.chat.application.tool.ToolDispatcherPort;
-import com.playground.chat.domain.enums.Visibility;
+import com.playground.chat.application.tool.ToolInvocationResult;
 import com.playground.chat.domain.model.ChatSession;
 import com.playground.chat.domain.model.MessageCitation;
-import com.playground.chat.domain.model.RetrievedChunk;
-import com.playground.chat.domain.model.id.DocumentId;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.chat.domain.service.CitationExtractor;
@@ -52,8 +51,6 @@ class ChatTurnServiceTest {
     private MessageRepository messageRepository;
     private TokenBucketPort tokenBucketPort;
     private ConcurrentStreamLockPort lockPort;
-    private EmbeddingPort embeddingPort;
-    private ChunkRetrievalPort chunkRetrievalPort;
     private ChatGenerationPort chatGenerationPort;
     private AutoTitleService autoTitleService;
     private ToolDispatcherPort toolDispatcherPort;
@@ -69,8 +66,6 @@ class ChatTurnServiceTest {
         messageRepository = mock(MessageRepository.class);
         tokenBucketPort = mock(TokenBucketPort.class);
         lockPort = mock(ConcurrentStreamLockPort.class);
-        embeddingPort = mock(EmbeddingPort.class);
-        chunkRetrievalPort = mock(ChunkRetrievalPort.class);
         chatGenerationPort = mock(ChatGenerationPort.class);
         autoTitleService = mock(AutoTitleService.class);
         toolDispatcherPort = mock(ToolDispatcherPort.class);
@@ -85,8 +80,6 @@ class ChatTurnServiceTest {
                 messageRepository,
                 tokenBucketPort,
                 lockPort,
-                embeddingPort,
-                chunkRetrievalPort,
                 chatGenerationPort,
                 historyTruncator,
                 tokenCounter,
@@ -99,9 +92,7 @@ class ChatTurnServiceTest {
                 new ObjectMapper(),
                 ChatProperties.defaults(),
                 Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC),
-                // M8 ToolCatalog now contains MassingTool; force empty for
-                // the M4-grammar legacy test (preserves the original M4
-                // SSE shape contract).
+                // Empty catalog for the pre-stream guard tests (no tool path).
                 java.util.List::of);
 
         when(autoTitleService.generate(any(), any())).thenReturn(Mono.empty());
@@ -138,60 +129,85 @@ class ChatTurnServiceTest {
     }
 
     @Test
-    void happyPath_emitsRetrievalThenTokensThenDoneAndPersistsCitedSubset() {
+    void searchToolTurn_accumulatesCitations_andPersistsCitedSubset() {
+        // agentic-search spec D2: a search_documents tool result feeds the
+        // turn-global citation accumulator → existing renumber/persist path.
+        var desc = new com.playground.chat.domain.tool.ToolDescriptor(
+                "search_documents", "문서 검색", "search docs", null,
+                java.net.URI.create("http://t/"),
+                java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(30));
+
         when(tokenBucketPort.tryAcquire(caller)).thenReturn(TokenBucketPort.Decision.allow());
         Instant now = Instant.parse("2026-05-18T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "New chat", now, now)));
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of());
         when(messageRepository.countUserMessages(sessionId)).thenReturn(1);
-        when(embeddingPort.embedQuery(any())).thenReturn(new float[1024]);
 
-        DocumentId docA = DocumentId.of(UUID.randomUUID());
-        DocumentId docB = DocumentId.of(UUID.randomUUID());
-        DocumentId docC = DocumentId.of(UUID.randomUUID());
-        List<RetrievedChunk> chunks = List.of(
-                new RetrievedChunk(1, docA, 0, "text A", "Doc A", caller, Visibility.PUBLIC),
-                new RetrievedChunk(2, docB, 0, "text B", "Doc B", caller, Visibility.PUBLIC),
-                new RetrievedChunk(3, docC, 0, "text C", "Doc C", caller, Visibility.PRIVATE));
-        when(chunkRetrievalPort.retrieve(eq(caller), any(), anyInt())).thenReturn(chunks);
+        UUID docA = UUID.randomUUID();
+        UUID docB = UUID.randomUUID();
+        UUID docC = UUID.randomUUID();
 
-        // Stream cites only [1] and [3] — [2] is retrieved but not referenced.
-        when(chatGenerationPort.stream(any(), anyInt()))
-                .thenReturn(Flux.just("Per [1] the policy is ", "X. See also [3]."));
+        // The search tool returns 3 results (per-call positions 1..3); the
+        // dispatcher hands back the result body. The handler absorbs it into
+        // the accumulator (global positions 1..3 here — first search of turn).
+        ObjectNode searchBody = new ObjectMapper().createObjectNode();
+        ArrayNode results = searchBody.putArray("results");
+        addResult(results, 1, docA, 0, "Doc A", "text A", "public");
+        addResult(results, 2, docB, 0, "Doc B", "text B", "public");
+        addResult(results, 3, docC, 0, "Doc C", "text C", "private");
+        searchBody.put("totalFound", 3);
+        searchBody.put("summary", "policy — 3건");
+
+        when(toolDispatcherPort.invoke(any(), eq("search_documents"), any(), any(), any()))
+                .thenAnswer(inv -> new ToolInvocationResult.Success(
+                        inv.getArgument(0), "search_documents", searchBody));
+
+        // Spring AI invokes the tool callback, then streams text citing [1] and
+        // [3] (global positions). [2] retrieved but not referenced.
+        when(chatGenerationPort.streamWithTools(any(), anyInt(), any()))
+                .thenAnswer(inv -> {
+                    @SuppressWarnings("unchecked")
+                    List<ToolBinding> bindings = inv.getArgument(2);
+                    ToolBinding searchBinding = bindings.stream()
+                            .filter(b -> b.descriptor().name().equals("search_documents"))
+                            .findFirst().orElseThrow();
+                    return Flux.defer(() -> {
+                        searchBinding.handler().apply(new ObjectMapper().createObjectNode());
+                        return Flux.just("Per [1] the policy is ", "X. See also [3].");
+                    });
+                });
 
         ConcurrentStreamLockPort.Handle handle = mock(ConcurrentStreamLockPort.Handle.class);
         when(lockPort.acquire(caller)).thenReturn(handle);
         when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "what's the policy?");
+        ChatTurnService service = serviceWithCatalog(() -> List.of(desc));
 
-        List<ChatStreamEvent> events = chatTurnService.stream(req).collectList().block();
+        ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "what's the policy?");
+        List<ChatStreamEvent> events = service.stream(req).collectList().block();
         assertThat(events).isNotNull();
-        assertThat(events).hasSize(4);
-        assertThat(events.get(0)).isInstanceOf(ChatStreamEvent.Phase.class);
-        ChatStreamEvent.Phase retrieval = (ChatStreamEvent.Phase) events.get(0);
-        assertThat(retrieval.step()).isEqualTo("retrieval");
-        // PR B grammar: phase data carries the candidate count only, not
-        // the chunk list. Citation cards arrive via the terminal Done.
-        assertThat(retrieval.data()).containsEntry("count", 3);
-        assertThat(events.get(1)).isInstanceOf(ChatStreamEvent.Token.class);
-        assertThat(((ChatStreamEvent.Token) events.get(1)).delta()).startsWith("Per [1]");
-        assertThat(events.get(2)).isInstanceOf(ChatStreamEvent.Token.class);
-        assertThat(((ChatStreamEvent.Token) events.get(2)).delta()).contains("[3]");
-        assertThat(events.get(3)).isInstanceOf(ChatStreamEvent.Done.class);
-        ChatStreamEvent.Done done = (ChatStreamEvent.Done) events.get(3);
+
+        // No retrieval Phase event anymore (pipeline retrieval removed).
+        assertThat(events).noneMatch(e -> e instanceof ChatStreamEvent.Phase
+                && "retrieval".equals(((ChatStreamEvent.Phase) e).step()));
+        // tool_call + tool_result + tokens + done present.
+        assertThat(events).anyMatch(e -> e instanceof ChatStreamEvent.ToolCall);
+        assertThat(events).anyMatch(e -> e instanceof ChatStreamEvent.ToolResult);
+        assertThat(events.get(events.size() - 1)).isInstanceOf(ChatStreamEvent.Done.class);
+
+        ChatStreamEvent.Done done = (ChatStreamEvent.Done) events.get(events.size() - 1);
         @SuppressWarnings("unchecked")
         List<com.playground.chat.application.dto.CitationDto> citedDtos =
                 (List<com.playground.chat.application.dto.CitationDto>) done.citations();
         assertThat(citedDtos).hasSize(2);
-        // PR — renumbered citations: original [1] and [3] become [1] and [2]
-        // in first-encounter order; [2] never appeared in the text.
+        // Renumbered: global [1] and [3] become dense [1] and [2] in
+        // first-encounter order; global [2] never appeared in the text.
         assertThat(citedDtos).extracting(com.playground.chat.application.dto.CitationDto::n)
                 .containsExactly(1, 2);
 
-        // 2 messages saved (user + assistant). Persisted citations carry
-        // the new dense positions to match the rewritten message text.
+        // 2 messages saved (user + assistant). Persisted citations carry the
+        // new dense positions to match the rewritten message text.
         verify(messageRepository, times(2)).save(any());
         verify(messageRepository, times(1)).saveCitations(argThat((List<MessageCitation> list) ->
                 list.size() == 2
@@ -199,5 +215,31 @@ class ChatTurnServiceTest {
                 && list.stream().anyMatch(c -> c.position() == 2)
                 && list.stream().noneMatch(c -> c.position() == 3)));
         verify(handle, times(1)).release();
+    }
+
+    private static void addResult(ArrayNode results, int position, UUID docId, int chunkIndex,
+            String title, String excerpt, String visibility) {
+        ObjectNode item = results.addObject();
+        item.put("position", position);
+        item.put("documentId", docId.toString());
+        item.put("chunkIndex", chunkIndex);
+        item.put("title", title);
+        item.put("excerpt", excerpt);
+        item.put("visibility", visibility);
+    }
+
+    private ChatTurnService serviceWithCatalog(
+            java.util.function.Supplier<List<com.playground.chat.domain.tool.ToolDescriptor>> catalog) {
+        TokenCounter tokenCounter = new TokenCounter();
+        return new ChatTurnService(
+                sessionRepository, messageRepository, tokenBucketPort, lockPort,
+                chatGenerationPort, new HistoryTruncator(tokenCounter), tokenCounter,
+                new PromptTemplate(tokenCounter, new CitationExtractor()),
+                autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
+                (userId, limit) -> java.util.List.of(),
+                mock(com.playground.chat.application.repository.AttachmentRepository.class),
+                new ObjectMapper(), ChatProperties.defaults(),
+                Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC),
+                catalog);
     }
 }

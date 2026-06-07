@@ -25,6 +25,13 @@ class ToolCatalogTest {
     }
 
     @Test
+    void registers_searchTool_postM9() {
+        assertThat(ToolCatalog.descriptors())
+                .extracting(ToolDescriptor::name)
+                .contains("search_documents");
+    }
+
+    @Test
     void list_isImmutable() {
         List<ToolDescriptor> list = ToolCatalog.descriptors();
         ToolDescriptor d = new ToolDescriptor(

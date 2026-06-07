@@ -13,13 +13,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "playground.chat")
 public class ChatPropertiesBinding {
 
-    private final Retrieval retrieval = new Retrieval();
     private final Prompt prompt = new Prompt();
     private final Tool tool = new Tool();
-
-    public Retrieval getRetrieval() {
-        return retrieval;
-    }
 
     public Prompt getPrompt() {
         return prompt;
@@ -31,44 +26,17 @@ public class ChatPropertiesBinding {
 
     public ChatProperties toProperties() {
         return new ChatProperties(
-                retrieval.getK(),
-                retrieval.getEfSearch(),
                 prompt.getSystemPromptBudgetTokens(),
-                prompt.getRetrievalBlockTokenBudget(),
                 prompt.getMaxHistoryTokens(),
                 prompt.getMaxCompletionTokens(),
-                prompt.getPerChunkTokenBudget(),
                 tool.getMaxDepth(),
                 tool.getMaxResultBytes());
     }
 
-    public static class Retrieval {
-        private int k = ChatProperties.DEFAULT_RETRIEVAL_K;
-        private int efSearch = ChatProperties.DEFAULT_EF_SEARCH;
-
-        public int getK() {
-            return k;
-        }
-
-        public void setK(int k) {
-            this.k = k;
-        }
-
-        public int getEfSearch() {
-            return efSearch;
-        }
-
-        public void setEfSearch(int efSearch) {
-            this.efSearch = efSearch;
-        }
-    }
-
     public static class Prompt {
         private int systemPromptBudgetTokens = 200;
-        private int retrievalBlockTokenBudget = 2400;
         private int maxHistoryTokens = 24576;
         private int maxCompletionTokens = 4000;
-        private int perChunkTokenBudget = 400;
 
         public int getSystemPromptBudgetTokens() {
             return systemPromptBudgetTokens;
@@ -76,14 +44,6 @@ public class ChatPropertiesBinding {
 
         public void setSystemPromptBudgetTokens(int v) {
             this.systemPromptBudgetTokens = v;
-        }
-
-        public int getRetrievalBlockTokenBudget() {
-            return retrievalBlockTokenBudget;
-        }
-
-        public void setRetrievalBlockTokenBudget(int v) {
-            this.retrievalBlockTokenBudget = v;
         }
 
         public int getMaxHistoryTokens() {
@@ -100,14 +60,6 @@ public class ChatPropertiesBinding {
 
         public void setMaxCompletionTokens(int v) {
             this.maxCompletionTokens = v;
-        }
-
-        public int getPerChunkTokenBudget() {
-            return perChunkTokenBudget;
-        }
-
-        public void setPerChunkTokenBudget(int v) {
-            this.perChunkTokenBudget = v;
         }
     }
 

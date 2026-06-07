@@ -339,7 +339,7 @@ class WebClientToolDispatcherTest {
         // → truncate-and-warn envelope. Run with a small dispatcher byte cap so
         // a modest body trips it deterministically.
         ChatProperties small = new ChatProperties(
-                6, 40, 200, 2400, 24576, 4000, 400, 5, 256);
+                200, 24576, 4000, 5, 256);
         ToolBreakerRegistry breakers = new ToolBreakerRegistry(registry);
         WebClient.Builder builder = WebClient.builder()
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(64 * 1024));

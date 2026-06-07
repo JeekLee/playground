@@ -76,19 +76,16 @@ spring:
         - 413
         - 422
 
-# ADR-14 §7 + §8 — overridable retrieval + prompt budgets.
+# ADR-14 §8 — overridable prompt budgets. (agentic-search spec D2: the
+# always-on retrieval tunables were removed — search is the search_documents
+# tool, docs-api owns its own search tuning.)
 # ADR-17 §6 + §4 + §11 — overridable tool-calling tunables.
 playground:
   chat:
-    retrieval:
-      k: ${PLAYGROUND_CHAT_RETRIEVAL_K:6}
-      ef-search: ${PLAYGROUND_CHAT_EF_SEARCH:40}
     prompt:
       system-prompt-budget-tokens: 200
-      retrieval-block-token-budget: 2400
       max-history-tokens: 24576
       max-completion-tokens: 4000
-      per-chunk-token-budget: 400
     tool:
       # ADR-17 §6 — max tool-call depth per user turn (counts every LLM-driven
       # ToolCallback invocation). Cap exceeded → terminal `tool_error{MAX_DEPTH}`.
