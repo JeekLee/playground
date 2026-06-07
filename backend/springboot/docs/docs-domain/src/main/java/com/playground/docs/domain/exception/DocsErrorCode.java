@@ -55,6 +55,25 @@ public enum DocsErrorCode implements ErrorCode {
     SEARCH_SCOPE_INVALID("DOCS-VALIDATION-009",
             "search scope must be one of: public, mine"),
 
+    /**
+     * agentic-search spec D1 — the {@code /internal/tools/search-documents}
+     * tool route needs the caller's identity for the visibility filter; the
+     * tool dispatcher must inject {@code X-User-Id}. 400 (not 401) per the
+     * spec: a missing header here is a wiring bug in the dispatcher, not an
+     * end-user auth failure.
+     */
+    @MappedTo(BadRequestException.class)
+    TOOL_USER_HEADER_MISSING("DOCS-VALIDATION-012",
+            "X-User-Id header is required on the search-documents tool route"),
+
+    /**
+     * agentic-search spec D1 — the search-documents tool query was missing or
+     * blank.
+     */
+    @MappedTo(BadRequestException.class)
+    TOOL_QUERY_BLANK("DOCS-VALIDATION-013",
+            "search-documents tool query must not be blank"),
+
     @MappedTo(BadRequestException.class)
     CURSOR_INVALID("DOCS-VALIDATION-010",
             "pagination cursor is malformed"),
