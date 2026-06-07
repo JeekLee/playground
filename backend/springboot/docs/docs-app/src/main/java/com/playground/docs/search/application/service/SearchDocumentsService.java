@@ -43,7 +43,18 @@ public class SearchDocumentsService {
             String excerpt,
             String visibility) {}
 
-    /** Terminal tool result body: hits + total count + a human-readable summary. */
+    /**
+     * Terminal tool result body: hits + returned count + a human-readable summary.
+     *
+     * <p><strong>{@code totalFound} is the number of results RETURNED</strong>
+     * ({@code results.size()}, always ≤ {@code topK}) — <em>not</em> a
+     * corpus-wide count of every chunk that matched. pgvector runs a
+     * {@code LIMIT k} ANN search and has no cheap way to count total matches,
+     * so the wire contract (agentic-search spec D1) defines this field as the
+     * returned hit count. The field name stays {@code totalFound} because chat
+     * and the FE consume it by that name. The {@code summary} "&lt;query&gt; —
+     * N건" reports the same N (returned count), consistent with this.
+     */
     public record SearchOutcome(List<Result> results, int totalFound, String summary) {}
 
     public SearchOutcome search(UUID callerId, String query, Integer topK, UUID documentId) {

@@ -55,6 +55,14 @@ public enum DocsErrorCode implements ErrorCode {
     SEARCH_SCOPE_INVALID("DOCS-VALIDATION-009",
             "search scope must be one of: public, mine"),
 
+    @MappedTo(BadRequestException.class)
+    CURSOR_INVALID("DOCS-VALIDATION-010",
+            "pagination cursor is malformed"),
+
+    @MappedTo(BadRequestException.class)
+    AUTHOR_PARAM_INVALID("DOCS-VALIDATION-011",
+            "author query parameter must be a UUID"),
+
     /**
      * agentic-search spec D1 — the {@code /internal/tools/search-documents}
      * tool route needs the caller's identity for the visibility filter; the
@@ -73,14 +81,6 @@ public enum DocsErrorCode implements ErrorCode {
     @MappedTo(BadRequestException.class)
     TOOL_QUERY_BLANK("DOCS-VALIDATION-013",
             "search-documents tool query must not be blank"),
-
-    @MappedTo(BadRequestException.class)
-    CURSOR_INVALID("DOCS-VALIDATION-010",
-            "pagination cursor is malformed"),
-
-    @MappedTo(BadRequestException.class)
-    AUTHOR_PARAM_INVALID("DOCS-VALIDATION-011",
-            "author query parameter must be a UUID"),
 
     /**
      * M2 spec §10 "Search failure isolation" + spec §6.5: when OpenSearch is
