@@ -209,11 +209,20 @@ class ChatTurnServiceTest {
         // 2 messages saved (user + assistant). Persisted citations carry the
         // new dense positions to match the rewritten message text.
         verify(messageRepository, times(2)).save(any());
+        // Snapshot persistence (agentic-search spec D2): each persisted citation
+        // carries title/excerpt/visibility frozen from the search result so
+        // history reload never reads the docs schema. [1]→Doc A, [3]→Doc C.
         verify(messageRepository, times(1)).saveCitations(argThat((List<MessageCitation> list) ->
                 list.size() == 2
                 && list.stream().anyMatch(c -> c.position() == 1)
                 && list.stream().anyMatch(c -> c.position() == 2)
-                && list.stream().noneMatch(c -> c.position() == 3)));
+                && list.stream().noneMatch(c -> c.position() == 3)
+                && list.stream().anyMatch(c -> c.position() == 1
+                        && "Doc A".equals(c.title()) && "text A".equals(c.excerpt())
+                        && "public".equals(c.visibility()))
+                && list.stream().anyMatch(c -> c.position() == 2
+                        && "Doc C".equals(c.title()) && "text C".equals(c.excerpt())
+                        && "private".equals(c.visibility()))));
         verify(handle, times(1)).release();
     }
 

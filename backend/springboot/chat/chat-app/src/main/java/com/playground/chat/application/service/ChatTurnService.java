@@ -434,15 +434,23 @@ public class ChatTurnService {
             List<MessageCitation> toPersist = new java.util.ArrayList<>();
             List<CitationDto> wireCitations = new java.util.ArrayList<>();
             for (CitedChunk c : renumber.cited) {
+                // Snapshot persistence (agentic-search spec D2): freeze
+                // title/excerpt/visibility on the citation row so history reload
+                // reads them back without joining the docs schema. The live
+                // Done-event DTO and the persisted snapshot carry IDENTICAL
+                // values (same RetrievedChunk source, no re-truncation) — the
+                // excerpt is already ≤600 chars from docs-api search.
+                String visibility = c.chunk.visibility().wireValue();
                 toPersist.add(new MessageCitation(
-                        persisted.id(), c.newN, c.chunk.documentId(), c.chunk.chunkIndex()));
+                        persisted.id(), c.newN, c.chunk.documentId(), c.chunk.chunkIndex(),
+                        c.chunk.title(), c.chunk.text(), visibility));
                 wireCitations.add(new CitationDto(
                         c.newN,
                         c.chunk.documentId().value().toString(),
                         c.chunk.chunkIndex(),
                         c.chunk.title(),
-                        shortExcerpt(c.chunk.text()),
-                        c.chunk.visibility().wireValue()));
+                        c.chunk.text(),
+                        visibility));
             }
             if (!toPersist.isEmpty()) {
                 messageRepository.saveCitations(toPersist);
@@ -521,14 +529,6 @@ public class ChatTurnService {
 
     /** A retrieved chunk paired with its new dense citation number. */
     private record CitedChunk(int newN, RetrievedChunk chunk) {}
-
-    /** Wire-shape excerpt — first ~160 chars, matches the old retrieval payload. */
-    private static String shortExcerpt(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.length() > 160 ? text.substring(0, 160) : text;
-    }
 
     /**
      * Build one {@link ToolBinding} per registered descriptor. The binding's

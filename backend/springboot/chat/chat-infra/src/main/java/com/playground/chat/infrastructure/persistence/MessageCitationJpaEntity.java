@@ -29,15 +29,31 @@ public class MessageCitationJpaEntity {
     @Column(name = "chunk_index", nullable = false, updatable = false)
     private int chunkIndex;
 
+    /** Snapshot of docs.documents.title at persist time (agentic-search spec D2). */
+    @Column(name = "title", updatable = false)
+    private String title;
+
+    /** Snapshot of the cited chunk excerpt at persist time (agentic-search spec D2). */
+    @Column(name = "excerpt", updatable = false)
+    private String excerpt;
+
+    /** Snapshot of the chunk visibility wire value at persist time (agentic-search spec D2). */
+    @Column(name = "visibility", updatable = false)
+    private String visibility;
+
     protected MessageCitationJpaEntity() {
         // for JPA
     }
 
-    public MessageCitationJpaEntity(UUID messageId, int position, UUID documentId, int chunkIndex) {
+    public MessageCitationJpaEntity(UUID messageId, int position, UUID documentId, int chunkIndex,
+                                    String title, String excerpt, String visibility) {
         this.messageId = messageId;
         this.position = position;
         this.documentId = documentId;
         this.chunkIndex = chunkIndex;
+        this.title = title;
+        this.excerpt = excerpt;
+        this.visibility = visibility;
     }
 
     public UUID getMessageId() {
@@ -54,6 +70,18 @@ public class MessageCitationJpaEntity {
 
     public int getChunkIndex() {
         return chunkIndex;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getExcerpt() {
+        return excerpt;
+    }
+
+    public String getVisibility() {
+        return visibility;
     }
 
     /** Composite PK matching the (message_id, position) PRIMARY KEY in DDL. */

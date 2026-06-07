@@ -59,8 +59,8 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
         }
         jdbc.batchUpdate(
                 "INSERT INTO chat.message_citations "
-                        + "(message_id, position, document_id, chunk_index) "
-                        + "VALUES (?, ?, ?, ?)",
+                        + "(message_id, position, document_id, chunk_index, title, excerpt, visibility) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(PreparedStatement ps, int i) throws SQLException {
@@ -69,6 +69,9 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
                         ps.setInt(2, c.position());
                         ps.setObject(3, c.documentId().value());
                         ps.setInt(4, c.chunkIndex());
+                        ps.setString(5, c.title());
+                        ps.setString(6, c.excerpt());
+                        ps.setString(7, c.visibility());
                     }
 
                     @Override
@@ -97,7 +100,7 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
                 .map(id -> id.value().toString())
                 .collect(Collectors.joining(",", "{", "}"));
         return jdbc.query(
-                "SELECT message_id, position, document_id, chunk_index "
+                "SELECT message_id, position, document_id, chunk_index, title, excerpt, visibility "
                         + "FROM chat.message_citations "
                         + "WHERE message_id = ANY (?::uuid[]) "
                         + "ORDER BY message_id, position",
@@ -105,7 +108,10 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
                         MessageId.of((UUID) rs.getObject("message_id")),
                         rs.getInt("position"),
                         DocumentId.of((UUID) rs.getObject("document_id")),
-                        rs.getInt("chunk_index")),
+                        rs.getInt("chunk_index"),
+                        rs.getString("title"),
+                        rs.getString("excerpt"),
+                        rs.getString("visibility")),
                 idArray);
     }
 

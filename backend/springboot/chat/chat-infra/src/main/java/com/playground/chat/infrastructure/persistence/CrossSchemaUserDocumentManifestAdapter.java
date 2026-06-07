@@ -9,8 +9,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Cross-schema SELECT into {@code docs.documents} for the caller's document
- * manifest per ADR-14 §3 (same posture as {@link IdentityDisplayNameAdapter}
- * and {@link CrossSchemaCitationResolverAdapter}). Ordered by {@code created_at
+ * manifest per ADR-14 §3 (same posture as {@link IdentityDisplayNameAdapter}).
+ * This is the one cross-schema read the chat BC retains (agentic-search spec
+ * Out of Scope — tool-arg selection); citation title/excerpt is now snapshot-
+ * persisted (spec D2), not resolved cross-schema. Ordered by {@code created_at
  * ASC} so the 1-indexed ordinal matches upload order ("두 번째 문서" = the
  * document uploaded second), capped at {@code limit}.
  */

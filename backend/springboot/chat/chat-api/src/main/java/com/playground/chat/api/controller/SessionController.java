@@ -36,11 +36,9 @@ import reactor.core.scheduler.Schedulers;
 public class SessionController {
 
     private final SessionService sessionService;
-    private final SessionService.CitationResolver citationResolver;
 
-    public SessionController(SessionService sessionService, SessionService.CitationResolver citationResolver) {
+    public SessionController(SessionService sessionService) {
         this.sessionService = sessionService;
-        this.citationResolver = citationResolver;
     }
 
     @PostMapping
@@ -89,7 +87,7 @@ public class SessionController {
             @PathVariable UUID id,
             @RequestHeader(value = "X-User-Id", required = false) String xUserId) {
         UserId caller = requireCaller(xUserId);
-        return Mono.fromCallable(() -> sessionService.loadDetail(SessionId.of(id), caller, citationResolver))
+        return Mono.fromCallable(() -> sessionService.loadDetail(SessionId.of(id), caller))
                 .subscribeOn(Schedulers.boundedElastic())
                 .map(detail -> ResponseEntity.ok(SessionResponses.MessageHistoryResponse.from(detail)));
     }
