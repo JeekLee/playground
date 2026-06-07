@@ -59,8 +59,15 @@ chat이 매 턴 무조건 검색한다 — 인사말에도 embed+pgvector가 돌
 **삭제** (chat 모듈):
 - `EmbeddingPort` + `SparkInferenceEmbeddingAdapter`
 - `ChunkRetrievalPort` + `PgvectorChunkRetrievalAdapter`
-- `CrossSchemaCitationResolverAdapter` (+ 그 port) — title이 도구 결과에
-  동봉되므로 불필요
+- `CrossSchemaCitationResolverAdapter` (+ `SessionService.CitationResolver`
+  port) — 단, 이 어댑터는 **히스토리 리로드** 시 인용 title/excerpt를
+  해석하는 데도 쓰이므로 단순 삭제 불가. **인용 스냅샷 영속으로 대체**:
+  `chat.message_citations`에 `title`/`excerpt`/`visibility` 컬럼 추가
+  (Flyway 신규 마이그레이션 — 데이터 리셋 직후라 레거시 행 없음),
+  영속 시점에 누적기의 `RetrievedChunk` 값을 그대로 저장,
+  `SessionService.loadDetail`은 자기 테이블만 읽음. 부수 효과: 문서가
+  삭제돼도 인용은 마지막 스냅샷을 유지 (기존 stale-null 처리보다 나은
+  UX — FE `isStaleCitation`은 신규 행에서 발동 안 함, 코드 무변경)
 - `ChatTurnService`의 retrieval 단계 (embedQuery/retrieve 호출,
   `EMBEDDING_FAILED`/`RETRIEVAL_FAILED` 에러 경로) + retrieval `phase`
   이벤트 발신
