@@ -334,13 +334,16 @@ function applyToolResult(
     ];
   }
   const next = cards.slice();
-  const previous = next[idx]!;
+  const previous = next[idx] as Extract<ToolCardState, { kind: 'in_flight' }>;
   next[idx] = {
     kind: 'result',
     toolCall: previous.toolCall,
     toolResult: payload,
     calledAt: previous.calledAt,
     resolvedAt,
+    // Preserve the server-supplied display name so the generic result
+    // card titles an unregistered tool the same way ToolRunCard did.
+    displayName: previous.displayName,
   };
   return next;
 }
@@ -364,13 +367,15 @@ function applyToolError(
     ];
   }
   const next = cards.slice();
-  const previous = next[idx]!;
+  const previous = next[idx] as Extract<ToolCardState, { kind: 'in_flight' }>;
   next[idx] = {
     kind: 'error',
     toolCall: previous.toolCall,
     toolError: payload,
     calledAt: previous.calledAt,
     resolvedAt,
+    // Preserve the server-supplied display name (see applyToolResult).
+    displayName: previous.displayName,
   };
   return next;
 }

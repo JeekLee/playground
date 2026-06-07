@@ -1,6 +1,8 @@
 'use client';
 
 import type { ToolCardState } from '@/entities/chat';
+import { GenericErrorCard } from './GenericErrorCard';
+import { GenericResultCard } from './GenericResultCard';
 import { MassingErrorCard } from './MassingErrorCard';
 import { MassingResultCard } from './MassingResultCard';
 import { ToolRunCard } from './ToolRunCard';
@@ -14,10 +16,13 @@ import { ToolRunCard } from './ToolRunCard';
  *                              New tools get progress rendering for free.
  *   - `result` / `error`     → per-tool card, keyed by tool `name`:
  *       - `generate_massing` → `MassingResultCard` / `MassingErrorCard`
- *       - any other name     → currently dropped (M8 is the only
- *                              registered tool BC; future tool BCs add
- *                              their own result/error branches here in
- *                              their own milestone PRs)
+ *       - any other name     → `GenericResultCard` / `GenericErrorCard`
+ *                              (agentic-search spec D3) — the generic
+ *                              fallback so an unregistered tool
+ *                              (search_documents …) shows its completed /
+ *                              failed state instead of rendering nothing.
+ *                              A registered tool BC still forks its own
+ *                              rich card here in its milestone PR.
  *
  * Layout: a column with `gap-md` between cards, matching the chat-message
  * `gap-lg` rhythm one level out. The list lives BELOW the assistant
@@ -42,11 +47,15 @@ export function ToolCardList({ cards }: ToolCardListProps) {
           return <ToolRunCard key={key} state={card} />;
         }
         // Resolved cards (result / error) route by tool name. M8 ships
-        // `generate_massing` as the only registered tool; future tool BCs
-        // fork here, and anything else is dropped so an unknown tool
-        // doesn't crash the chat.
+        // `generate_massing` as the only tool with a rich, registered
+        // card; every other tool falls through to the generic fallback
+        // (agentic-search spec D3) so a completed/failed search renders
+        // instead of nothing.
         if (card.toolCall.name !== 'generate_massing') {
-          return null;
+          if (card.kind === 'error') {
+            return <GenericErrorCard key={key} state={card} />;
+          }
+          return <GenericResultCard key={key} state={card} />;
         }
         if (card.kind === 'error') {
           return <MassingErrorCard key={key} state={card} />;
