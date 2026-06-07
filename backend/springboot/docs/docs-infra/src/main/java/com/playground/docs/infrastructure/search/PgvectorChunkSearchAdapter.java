@@ -79,7 +79,11 @@ public class PgvectorChunkSearchAdapter implements ChunkSearchPort {
                                     + "WHERE (c.visibility = 'public' "
                                     + "   OR (c.user_id = ? AND c.visibility = 'private')) "
                                     + "  AND (?::uuid IS NULL OR c.document_id = ?::uuid) "
-                                    + "ORDER BY c.embedding <=> ?::public.vector "
+                                    // OPERATOR(public.<=>): docs' datasource search_path is
+                                    // `docs` only (?currentSchema=docs, no init-sql widening
+                                    // like chat had), so the pgvector operator — installed in
+                                    // `public` — must be schema-qualified explicitly.
+                                    + "ORDER BY c.embedding OPERATOR(public.<=>) ?::public.vector "
                                     + "LIMIT ?")) {
                         ps.setObject(1, callerId);
                         ps.setString(2, docIdLiteral);
