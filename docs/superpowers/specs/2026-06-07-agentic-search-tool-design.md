@@ -142,3 +142,23 @@ tool-honesty 단락, rate limit/락.
 - 하이브리드 검색 (BM25+벡터), 검색 캐싱, re-ranking
 - ADR-14 정식 어멘드 (spec이 기록)
 - 강제 first-search / tool_choice 강제
+
+---
+
+## 구현 중 확정된 deviation (2026-06-07)
+
+1. **excerpt 예산**: "per-chunk 400토큰"(D1) 대신 **600자 head-truncate**
+   (문자 기준 단순화 — docs-api는 chat의 TokenCounter를 갖지 않음).
+2. **Done 이벤트 excerpt 정합**: 라이브 CitationDto의 구 160자 트렁케이션
+   (`shortExcerpt`)을 제거 — 스냅샷 영속값과 라이브 이벤트가 동일한 전문
+   (≤600자)을 싣는다 (히스토리 리로드와 라이브 표시 불일치 제거).
+3. **ef_search**: docs-api에 설정 표면이 없어 어댑터 상수 40으로 고정
+   (chat의 구 기본값과 동일). 튜닝 필요 시 properties 바인딩은 후속.
+4. **에러 코드 단일화**: docs-api 도구 핸들러의 catch-all이 임베딩·검색
+   실패 모두 `SEARCH_EMBEDDING_FAILED`(502)로 보고 — D4의 단일 행과 정합,
+   코드명만 임베딩 편향 (장애 분류는 docs-api 로그가 담당).
+5. **visibility 스냅샷은 현재 write-only**: `message_citations.visibility`는
+   영속되지만 히스토리 리로드 `CitationView`엔 아직 미노출 (라이브 done
+   이벤트만 visibility 동봉). 필요 시 후속에서 view에 배선.
+6. **chat의 EMBEDDING_FAILED/RETRIEVAL_FAILED 에러코드 삭제** — 파이프라인
+   검색 제거로 생산처 소멸, FE 참조 없음 확인 후 enum에서 제거.

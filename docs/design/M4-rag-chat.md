@@ -6,6 +6,14 @@
 > 시점 기록으로 유지. Spec:
 > `docs/superpowers/specs/2026-06-06-rename-ragchat-to-chat-design.md`.
 
+> **2026-06-07 — Agentic Search (M9 SP2)**: 파이프라인 검색이
+> `search_documents` 도구(docs-api 소유)로 대체됐다. LLM이 필요할 때
+> 검색하고, 결과는 턴-누적 글로벌 [N]으로 인용·스냅샷 영속된다. 검색
+> 결과/오류는 제네릭 도구 카드(GenericResultCard/GenericErrorCard)로
+> 표시되며, "참고 문서 확인 중" retrieval phase 인디케이터는 사라졌다.
+> 본문의 RETRIEVED CONTEXT/retrieval 단계 서술은 작성 시점 기록. Spec:
+> `docs/superpowers/specs/2026-06-07-agentic-search-tool-design.md`.
+
 > PRD: `docs/prd/M4-rag-chat.md`
 > Spec: `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`
 > ADR: `docs/adr/14-m4-rag-chat.md` (per-milestone, includes the cross-doc amendments to ADR-09, ADR-05, ADR-04, roadmap §M4, M2 spec §8, M3 PRD §"M4 retrieval contract")
