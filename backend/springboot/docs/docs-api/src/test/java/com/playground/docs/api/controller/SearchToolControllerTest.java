@@ -10,8 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.playground.docs.search.application.service.SearchDocumentsService;
-import com.playground.docs.search.application.service.SearchDocumentsService.Result;
 import com.playground.docs.search.application.service.SearchDocumentsService.SearchOutcome;
+import com.playground.shared.chat.SourceRef;
 import com.playground.shared.error.SharedExceptionHandler;
 import java.util.List;
 import java.util.UUID;
@@ -58,7 +58,11 @@ class SearchToolControllerTest {
         UUID docId = UUID.randomUUID();
         when(service.search(eq(caller), eq("how to build"), any(), eq(null)))
                 .thenReturn(new SearchOutcome(
-                        List.of(new Result(1, docId, 3, "Guide", "excerpt body", "private")),
+                        List.of(new SourceRef(
+                                "document",
+                                "Guide",
+                                "excerpt body",
+                                "https://playground.jeeklee.com/docs/" + docId)),
                         1,
                         "how to build — 1건"));
 
@@ -76,7 +80,17 @@ class SearchToolControllerTest {
         Assertions.assertThat(body).contains("\"event\":\"result\"");
         Assertions.assertThat(body).contains("\"summary\":\"how to build — 1건\"");
         Assertions.assertThat(body).contains("\"totalFound\":1");
-        Assertions.assertThat(body).contains("\"position\":1");
+
+        // SourceRef field shape — corpus-agnostic citation (SP3b spec D2).
+        Assertions.assertThat(body).contains("\"sourceType\":\"document\"");
+        Assertions.assertThat(body).contains("\"title\":\"Guide\"");
+        Assertions.assertThat(body).contains("\"content\":\"excerpt body\"");
+        Assertions.assertThat(body)
+                .contains("\"uri\":\"https://playground.jeeklee.com/docs/" + docId + "\"");
+        // The retired doc-citation fields must NOT appear on the wire.
+        Assertions.assertThat(body).doesNotContain("documentId");
+        Assertions.assertThat(body).doesNotContain("chunkIndex");
+        Assertions.assertThat(body).doesNotContain("visibility");
     }
 
     @Test

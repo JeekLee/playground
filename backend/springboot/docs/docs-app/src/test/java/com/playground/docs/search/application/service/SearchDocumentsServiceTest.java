@@ -4,18 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.playground.docs.search.application.port.ChunkSearchPort;
 import com.playground.docs.search.application.port.QueryEmbeddingPort;
+import com.playground.shared.chat.SourceRef;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit test for {@link SearchDocumentsService} (agentic-search spec D1, D5).
- * Uses hand-rolled fake ports so the topK clamp, documentId pass-through,
- * row→result mapping, and excerpt truncation are asserted without Spring AI
- * or pgvector.
+ * Unit test for {@link SearchDocumentsService} (agentic-search spec D1, D5;
+ * SP3b spec D2). Uses hand-rolled fake ports so the topK clamp, documentId
+ * pass-through, row→{@link SourceRef} mapping, and content truncation are
+ * asserted without Spring AI or pgvector. {@code publicOrigin} is injected
+ * explicitly (the @Value-bound constructor arg).
  */
 class SearchDocumentsServiceTest {
+
+    private static final String ORIGIN = "https://playground.jeeklee.com";
 
     /** Captures the k + documentId the service forwards, returns canned rows. */
     private static final class FakeChunkSearchPort implements ChunkSearchPort {
@@ -38,7 +42,7 @@ class SearchDocumentsServiceTest {
     @Test
     void clampsTopKInto1to20() {
         FakeChunkSearchPort port = new FakeChunkSearchPort();
-        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port);
+        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port, ORIGIN);
         UUID caller = UUID.randomUUID();
 
         service.search(caller, "q", 0, null);
@@ -54,7 +58,7 @@ class SearchDocumentsServiceTest {
     @Test
     void passesDocumentIdFilterThrough() {
         FakeChunkSearchPort port = new FakeChunkSearchPort();
-        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port);
+        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port, ORIGIN);
         UUID caller = UUID.randomUUID();
         UUID docId = UUID.randomUUID();
 
@@ -65,18 +69,38 @@ class SearchDocumentsServiceTest {
     }
 
     @Test
-    void mapsRowsToResultsWithPositions1toK() {
+    void emitsSourceRefWithAbsoluteDocUriAndNoVisibility() {
+        FakeChunkSearchPort port = new FakeChunkSearchPort();
+        UUID d1 = UUID.randomUUID();
+        port.rows = new ArrayList<>(List.of(
+                new ChunkSearchPort.Row(d1, 3, "A", "본문", "private")));
+
+        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port, ORIGIN);
+        SearchDocumentsService.SearchOutcome outcome = service.search(UUID.randomUUID(), "q", 6, null);
+
+        assertThat(outcome.results()).hasSize(1);
+        SourceRef s = outcome.results().get(0);
+        assertThat(s.sourceType()).isEqualTo("document");
+        assertThat(s.title()).isEqualTo("A");
+        assertThat(s.content()).isEqualTo("본문");
+        assertThat(s.uri()).isEqualTo(ORIGIN + "/docs/" + d1);
+        // documentId/chunkIndex/visibility/position are NOT on SourceRef — compile-enforced.
+        assertThat(outcome.totalFound()).isEqualTo(1);
+        assertThat(outcome.summary()).isEqualTo("q — 1건");
+    }
+
+    @Test
+    void mapsMultipleRowsPreservingOrder() {
         FakeChunkSearchPort port = new FakeChunkSearchPort();
         UUID docA = UUID.randomUUID();
         UUID docB = UUID.randomUUID();
         UUID docC = UUID.randomUUID();
-        String longText = "x".repeat(900);
         port.rows = new ArrayList<>(List.of(
                 new ChunkSearchPort.Row(docA, 3, "Alpha", "short text", "private"),
-                new ChunkSearchPort.Row(docB, 7, "Beta", longText, "public"),
+                new ChunkSearchPort.Row(docB, 7, "Beta", "second", "public"),
                 new ChunkSearchPort.Row(docC, 0, "Gamma", "another", "private")));
 
-        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port);
+        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port, ORIGIN);
         SearchDocumentsService.SearchOutcome outcome =
                 service.search(UUID.randomUUID(), "alpha query", 6, null);
 
@@ -84,27 +108,34 @@ class SearchDocumentsServiceTest {
         assertThat(outcome.totalFound()).isEqualTo(3);
         assertThat(outcome.summary()).isEqualTo("alpha query — 3건");
 
-        SearchDocumentsService.Result r1 = outcome.results().get(0);
-        assertThat(r1.position()).isEqualTo(1);
-        assertThat(r1.documentId()).isEqualTo(docA);
-        assertThat(r1.chunkIndex()).isEqualTo(3);
-        assertThat(r1.title()).isEqualTo("Alpha");
-        assertThat(r1.excerpt()).isEqualTo("short text");
-        assertThat(r1.visibility()).isEqualTo("private");
+        assertThat(outcome.results().get(0).title()).isEqualTo("Alpha");
+        assertThat(outcome.results().get(0).content()).isEqualTo("short text");
+        assertThat(outcome.results().get(0).uri()).isEqualTo(ORIGIN + "/docs/" + docA);
+        assertThat(outcome.results().get(1).title()).isEqualTo("Beta");
+        assertThat(outcome.results().get(1).uri()).isEqualTo(ORIGIN + "/docs/" + docB);
+        assertThat(outcome.results().get(2).title()).isEqualTo("Gamma");
+        assertThat(outcome.results().get(2).uri()).isEqualTo(ORIGIN + "/docs/" + docC);
+    }
 
-        assertThat(outcome.results().get(1).position()).isEqualTo(2);
-        assertThat(outcome.results().get(2).position()).isEqualTo(3);
+    @Test
+    void truncatesContentTo600() {
+        FakeChunkSearchPort port = new FakeChunkSearchPort();
+        port.rows = new ArrayList<>(List.of(
+                new ChunkSearchPort.Row(UUID.randomUUID(), 0, "Long", "x".repeat(700), "public")));
 
-        // long text head-truncated to 600 chars
-        assertThat(outcome.results().get(1).excerpt()).hasSize(600);
-        assertThat(outcome.results().get(1).excerpt()).isEqualTo("x".repeat(600));
+        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port, ORIGIN);
+        SearchDocumentsService.SearchOutcome outcome =
+                service.search(UUID.randomUUID(), "q", 6, null);
+
+        assertThat(outcome.results().get(0).content()).hasSize(600);
+        assertThat(outcome.results().get(0).content()).isEqualTo("x".repeat(600));
     }
 
     @Test
     void emptyResultsIsNormal() {
         FakeChunkSearchPort port = new FakeChunkSearchPort();
         port.rows = List.of();
-        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port);
+        SearchDocumentsService service = new SearchDocumentsService(STUB_EMBEDDING, port, ORIGIN);
 
         SearchDocumentsService.SearchOutcome outcome =
                 service.search(UUID.randomUUID(), "nothing", 6, null);

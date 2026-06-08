@@ -320,6 +320,10 @@ services:
       PLAYGROUND_DOCS_MINIO_ENDPOINT: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:-http://minio-playground:9000}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
+      # SP3b — public origin for citation absolute uris (uri = ORIGIN/docs/{id}).
+      # docs-api requires this (application.yml has no default → boot fails if
+      # unset); the compose-level default keeps dev working out of the box.
+      PLAYGROUND_PUBLIC_ORIGIN: ${PLAYGROUND_PUBLIC_ORIGIN:-https://playground.jeeklee.com}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18082/actuator/health || exit 1"]
       interval: 15s
