@@ -1,6 +1,7 @@
 package com.playground.chat.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +42,8 @@ class TurnCitationAccumulatorTest {
         assertThat(c.source().title()).isEqualTo("A");
         assertThat(c.source().content()).isEqualTo("본문A");
         assertThat(c.source().uri()).isEqualTo("https://o/docs/d1");
+        // copy isolation: original input body must not gain a position
+        assertThat(body.path("results").get(0).has("position")).isFalse();
     }
 
     @Test
@@ -56,6 +59,13 @@ class TurnCitationAccumulatorTest {
         assertThat(acc.retrieved()).hasSize(3);
         assertThat(acc.retrieved().get(2).position()).isEqualTo(3);
         assertThat(acc.retrieved().get(2).source().title()).isEqualTo("C");
+    }
+
+    @Test
+    void missingSourceTypeThrows() {
+        var acc = new TurnCitationAccumulator();
+        assertThatThrownBy(() -> acc.absorb(json("{\"results\":[{\"title\":\"x\",\"content\":\"y\",\"uri\":\"u\"}]}")))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

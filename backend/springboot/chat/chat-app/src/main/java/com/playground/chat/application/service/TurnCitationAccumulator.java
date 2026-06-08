@@ -50,6 +50,9 @@ public class TurnCitationAccumulator {
         for (JsonNode item : arr) {
             int global = retrieved.size() + 1;
             ((ObjectNode) item).put("position", global); // LLM-visible — for [N] citation
+            // Missing/blank sourceType (external tool JSON) makes SourceRef's ctor throw
+            // IllegalArgumentException → aborts the turn (fail-fast). Acceptable: the
+            // search tool always sets sourceType="document".
             retrieved.add(new RetrievedChunk(global, new SourceRef(
                     item.path("sourceType").asText(),
                     item.path("title").asText(null),
