@@ -98,6 +98,20 @@ public class ChatTurnService {
      * section. Bounds prompt tokens; personal-scale corpora sit well under it.
      */
     static final int DOCUMENT_MANIFEST_LIMIT = 30;
+
+    /**
+     * Inactivity timeout on the streaming phase. Governs genuine LLM token
+     * silence; suspended while a tool is in-flight (the dispatcher's idle 60s /
+     * total 600s budget is the liveness authority then).
+     */
+    private static final Duration TOKEN_INACTIVITY_TIMEOUT = Duration.ofSeconds(150);
+    /**
+     * Keepalive tick cadence while a tool runs. Strictly less than
+     * {@link #TOKEN_INACTIVITY_TIMEOUT} so a tick always lands inside the
+     * inactivity window, holding it open (effectively suspending the guard).
+     */
+    private static final Duration TOOL_KEEPALIVE_INTERVAL = Duration.ofSeconds(30);
+
     /** Source of registered tool descriptors. Defaults to {@code ToolCatalog::descriptors}. */
     private final java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier;
 
@@ -293,11 +307,14 @@ public class ChatTurnService {
         // can interleave the events with the token flux as they arrive.
         Sinks.Many<ChatStreamEvent> toolEventSink = Sinks.many().multicast().onBackpressureBuffer();
         AtomicInteger depth = new AtomicInteger(0);
+        // Count of tools actively dispatching+handling. While > 0 the
+        // token-inactivity guard is suspended (the dispatcher governs liveness).
+        AtomicInteger inFlightTools = new AtomicInteger(0);
         UserContext userCtx = new UserContext(request.caller(), request.userSub());
 
         List<ToolBinding> bindings = descriptors.isEmpty()
                 ? List.of()
-                : buildBindings(descriptors, toolEventSink, depth, userCtx,
+                : buildBindings(descriptors, toolEventSink, depth, inFlightTools, userCtx,
                         prep.session().id(), assistantMessageId, stagedAttachments, acc);
 
         Flux<String> rawDeltas = bindings.isEmpty()
@@ -308,25 +325,12 @@ public class ChatTurnService {
         // The token flux signals upstream completion of the LLM (and all its
         // internal tool-calling round-trips done by Spring AI). When it
         // terminates, close the tool-event sink so the merge completes.
+        // The inactivity timeout + error mapping live on the merged flux below
+        // (withInactivityGuard + onErrorResume) — NOT here — so the timeout can
+        // be suspended while a tool is in-flight.
         Flux<ChatStreamEvent> tokens = rawDeltas
-                // Inactivity timeout between upstream items. A tool-calling turn
-                // emits no token until the tool round-trip finishes, and a tool may
-                // legitimately take up to its 120s budget (e.g. generate_massing's
-                // LLM brief extraction). So this MUST exceed the max tool budget
-                // (MassingTool 120s + 2s block) — 150s gives margin.
-                .timeout(java.time.Duration.ofSeconds(150))
                 .doOnNext(accumulated::append)
                 .map(delta -> (ChatStreamEvent) new ChatStreamEvent.Token(delta))
-                .onErrorResume(err -> {
-                    log.warn("stream_error sessionId=" + prep.session().id()
-                            + " userId=" + request.caller()
-                            + " reason=" + err.toString());
-                    errored.set(true);
-                    if (isCircuitOpen(err)) {
-                        return Flux.just(ChatStreamEvent.Error.gatewayDown());
-                    }
-                    return Flux.just(ChatStreamEvent.Error.internal(err.getMessage()));
-                })
                 .doFinally(sig -> toolEventSink.tryEmitComplete());
 
         // Merge the tool events (emitted from inside Spring AI's function-calling
@@ -336,6 +340,25 @@ public class ChatTurnService {
         Flux<ChatStreamEvent> mergedTokensAndToolEvents = bindings.isEmpty()
                 ? tokens
                 : Flux.merge(toolEventSink.asFlux(), tokens);
+
+        // Inactivity guard: 150s governs genuine LLM token silence, but is
+        // SUSPENDED while a tool is in-flight (a keepalive tick injected every
+        // 30s holds the window open) — then the dispatcher (idle 60s / total
+        // 600s) is the liveness authority. The onErrorResume catches BOTH the
+        // inactivity TimeoutException and any upstream LLM/circuit error and
+        // funnels them into the same Error-event handling.
+        Flux<ChatStreamEvent> guarded =
+                withInactivityGuard(mergedTokensAndToolEvents, inFlightTools)
+                .onErrorResume(err -> {
+                    log.warn("stream_error sessionId=" + prep.session().id()
+                            + " userId=" + request.caller()
+                            + " reason=" + err.toString());
+                    errored.set(true);
+                    if (isCircuitOpen(err)) {
+                        return Flux.just(ChatStreamEvent.Error.gatewayDown());
+                    }
+                    return Flux.just(ChatStreamEvent.Error.internal(err.getMessage()));
+                });
 
         Mono<ChatStreamEvent> done = Mono.defer(() -> {
             if (errored.get()) {
@@ -351,7 +374,7 @@ public class ChatTurnService {
         // land in `chat.messages` / `chat.message_citations`. Lock release and
         // auto-title fire from the source's terminal signal (not from the
         // client-facing flux).
-        Flux<ChatStreamEvent> source = Flux.concat(mergedTokensAndToolEvents, done)
+        Flux<ChatStreamEvent> source = Flux.concat(guarded, done)
                 .doFinally(signal -> {
                     activeTurnRegistry.unregister(prep.session().id());
                     try {
@@ -397,6 +420,34 @@ public class ChatTurnService {
     }
 
     private static final int MAX_REPLAY_EVENTS = 4096;
+
+    /**
+     * Inactivity guard for the streaming phase. Errors with TimeoutException when
+     * no signal arrives within {@link #TOKEN_INACTIVITY_TIMEOUT} — but ONLY while
+     * no tool is in-flight. While a tool runs ({@code inFlightTools > 0}) the
+     * dispatcher (idle 60s / total 600s) is the liveness authority, so a keepalive
+     * tick is injected every {@link #TOOL_KEEPALIVE_INTERVAL} to hold the window
+     * open (effectively suspending the guard). The keepalive sentinel is filtered
+     * out before the result. The keepalive stops when the source terminates (no
+     * leaked interval): {@code ticks} is bounded by {@code takeUntilOther(sourceDone)}
+     * and {@code sourceDone} fires in the source's {@code doFinally}, so once the
+     * source completes the merge completes too.
+     */
+    static Flux<ChatStreamEvent> withInactivityGuard(
+            Flux<ChatStreamEvent> source, AtomicInteger inFlightTools) {
+        final Object keepAlive = new Object();
+        Sinks.Empty<Void> sourceDone = Sinks.empty();
+        Flux<Object> ticks = Flux.interval(TOOL_KEEPALIVE_INTERVAL)
+                .filter(t -> inFlightTools.get() > 0)
+                .map(t -> keepAlive)
+                .takeUntilOther(sourceDone.asMono());
+        return Flux.merge(
+                    source.cast(Object.class).doFinally(sig -> sourceDone.tryEmitEmpty()),
+                    ticks)
+                .timeout(TOKEN_INACTIVITY_TIMEOUT)
+                .filter(o -> o != keepAlive)
+                .cast(ChatStreamEvent.class);
+    }
 
     private Mono<ChatStreamEvent> persistAssistantAndDone(
             Preparation prep, List<RetrievedChunk> retrieved, String accumulatedText,
@@ -555,6 +606,7 @@ public class ChatTurnService {
             List<ToolDescriptor> descriptors,
             Sinks.Many<ChatStreamEvent> sink,
             AtomicInteger depth,
+            AtomicInteger inFlightTools,
             UserContext userCtx,
             SessionId sessionId,
             MessageId assistantMessageId,
@@ -564,7 +616,7 @@ public class ChatTurnService {
         for (ToolDescriptor d : descriptors) {
             ToolDescriptor desc = d;
             bindings.add(new ToolBinding(desc, args -> handleToolInvocation(
-                    desc, args, sink, depth, userCtx, sessionId, assistantMessageId,
+                    desc, args, sink, depth, inFlightTools, userCtx, sessionId, assistantMessageId,
                     stagedAttachments, acc)));
         }
         return bindings;
@@ -575,6 +627,7 @@ public class ChatTurnService {
             JsonNode args,
             Sinks.Many<ChatStreamEvent> sink,
             AtomicInteger depth,
+            AtomicInteger inFlightTools,
             UserContext userCtx,
             SessionId sessionId,
             MessageId assistantMessageId,
@@ -609,6 +662,14 @@ public class ChatTurnService {
         // droppable + resume-recoverable. emitNext may throw on exhaustion,
         // but the dispatcher's emitProgress isolates RuntimeException from
         // the listener, so the stream stays safe.
+        // The in-flight window spans the dispatch AND its result handling: while
+        // it is open the outer token-inactivity guard is suspended (the
+        // dispatcher's idle 60s / total 600s budget is the liveness authority).
+        // The finally decrements on EVERY exit — Success return, CIRCUIT_OPEN /
+        // terminal throw, non-terminal synthetic-error return, or any exception
+        // from invoke itself — exactly once.
+        inFlightTools.incrementAndGet();
+        try {
         ToolInvocationResult result = toolDispatcherPort.invoke(
                 id, desc.name(), args, userCtx,
                 p -> sink.emitNext(
@@ -665,6 +726,9 @@ public class ChatTurnService {
         err.put("code", f.code().name());
         err.put("message", f.message() == null ? "" : f.message());
         return err;
+        } finally {
+            inFlightTools.decrementAndGet();
+        }
     }
 
     /**

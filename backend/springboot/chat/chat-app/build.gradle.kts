@@ -19,4 +19,9 @@ dependencies {
     // adapter boundary. Jackson is not a Spring module so bc-app's exclusion
     // list does not block it. Version comes from the Spring Boot BOM.
     "implementation"("com.fasterxml.jackson.core:jackson-databind")
+
+    // StepVerifier + VirtualTimeScheduler for the inactivity-guard virtual-time
+    // tests (token-inactivity timeout vs. tool-in-flight keepalive). Not a Spring
+    // module, so bc-app's webflux exclusion does not block it; version from BOM.
+    "testImplementation"("io.projectreactor:reactor-test")
 }
