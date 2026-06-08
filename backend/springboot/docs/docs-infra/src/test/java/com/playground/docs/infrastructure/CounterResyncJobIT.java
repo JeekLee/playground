@@ -72,6 +72,7 @@ class CounterResyncJobIT {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+        registry.add("playground.docs.public-origin", () -> "https://test.example");
     }
 
     @Autowired
