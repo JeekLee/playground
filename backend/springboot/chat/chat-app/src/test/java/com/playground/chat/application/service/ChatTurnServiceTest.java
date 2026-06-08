@@ -153,9 +153,9 @@ class ChatTurnServiceTest {
         // the accumulator (global positions 1..3 here — first search of turn).
         ObjectNode searchBody = new ObjectMapper().createObjectNode();
         ArrayNode results = searchBody.putArray("results");
-        addResult(results, 1, docA, 0, "Doc A", "text A", "public");
-        addResult(results, 2, docB, 0, "Doc B", "text B", "public");
-        addResult(results, 3, docC, 0, "Doc C", "text C", "private");
+        addResult(results, "Doc A", "text A", "https://o/docs/" + docA);
+        addResult(results, "Doc B", "text B", "https://o/docs/" + docB);
+        addResult(results, "Doc C", "text C", "https://o/docs/" + docC);
         searchBody.put("totalFound", 3);
         searchBody.put("summary", "policy — 3건");
 
@@ -209,32 +209,35 @@ class ChatTurnServiceTest {
         // 2 messages saved (user + assistant). Persisted citations carry the
         // new dense positions to match the rewritten message text.
         verify(messageRepository, times(2)).save(any());
-        // Snapshot persistence (agentic-search spec D2): each persisted citation
-        // carries title/excerpt/visibility frozen from the search result so
-        // history reload never reads the docs schema. [1]→Doc A, [3]→Doc C.
+        // Snapshot persistence (SP3b spec D4): each persisted citation carries
+        // the corpus-agnostic SourceRef (sourceType/title/content/uri) frozen
+        // from the search result so history reload never reads the docs schema.
+        // [1]→Doc A, [3]→Doc C.
         verify(messageRepository, times(1)).saveCitations(argThat((List<MessageCitation> list) ->
                 list.size() == 2
                 && list.stream().anyMatch(c -> c.position() == 1)
                 && list.stream().anyMatch(c -> c.position() == 2)
                 && list.stream().noneMatch(c -> c.position() == 3)
                 && list.stream().anyMatch(c -> c.position() == 1
-                        && "Doc A".equals(c.title()) && "text A".equals(c.excerpt())
-                        && "public".equals(c.visibility()))
+                        && "document".equals(c.source().sourceType())
+                        && "Doc A".equals(c.source().title())
+                        && "text A".equals(c.source().content())
+                        && ("https://o/docs/" + docA).equals(c.source().uri()))
                 && list.stream().anyMatch(c -> c.position() == 2
-                        && "Doc C".equals(c.title()) && "text C".equals(c.excerpt())
-                        && "private".equals(c.visibility()))));
+                        && "document".equals(c.source().sourceType())
+                        && "Doc C".equals(c.source().title())
+                        && "text C".equals(c.source().content())
+                        && ("https://o/docs/" + docC).equals(c.source().uri()))));
         verify(handle, times(1)).release();
     }
 
-    private static void addResult(ArrayNode results, int position, UUID docId, int chunkIndex,
-            String title, String excerpt, String visibility) {
+    private static void addResult(ArrayNode results,
+            String title, String content, String uri) {
         ObjectNode item = results.addObject();
-        item.put("position", position);
-        item.put("documentId", docId.toString());
-        item.put("chunkIndex", chunkIndex);
+        item.put("sourceType", "document");
         item.put("title", title);
-        item.put("excerpt", excerpt);
-        item.put("visibility", visibility);
+        item.put("content", content);
+        item.put("uri", uri);
     }
 
     private ChatTurnService serviceWithCatalog(

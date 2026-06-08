@@ -9,7 +9,12 @@ import java.io.Serializable;
 import java.util.Objects;
 import java.util.UUID;
 
-/** JPA mirror of {@link com.playground.chat.domain.model.MessageCitation} per ADR-14 §F. */
+/**
+ * JPA mirror of {@link com.playground.chat.domain.model.MessageCitation} (SP3b
+ * spec D6). Manual mirror only — real read/write goes through
+ * {@link MessageRepositoryJdbcAdapter}; this entity exists to keep Hibernate
+ * {@code ddl-auto=validate} in sync with the corpus-agnostic schema.
+ */
 @Entity
 @Table(name = "message_citations", schema = "chat")
 @IdClass(MessageCitationJpaEntity.Pk.class)
@@ -23,37 +28,34 @@ public class MessageCitationJpaEntity {
     @Column(name = "position", nullable = false, updatable = false)
     private int position;
 
-    @Column(name = "document_id", nullable = false, updatable = false)
-    private UUID documentId;
+    /** Corpus discriminator ("document" today). Non-null per SourceRef. */
+    @Column(name = "source_type", nullable = false, updatable = false)
+    private String sourceType;
 
-    @Column(name = "chunk_index", nullable = false, updatable = false)
-    private int chunkIndex;
-
-    /** Snapshot of docs.documents.title at persist time (agentic-search spec D2). */
+    /** Snapshot of the human-facing label at persist time (SP3b spec D6). */
     @Column(name = "title", updatable = false)
     private String title;
 
-    /** Snapshot of the cited chunk excerpt at persist time (agentic-search spec D2). */
-    @Column(name = "excerpt", updatable = false)
-    private String excerpt;
+    /** Snapshot of the cited text at persist time (≤600 chars; SP3b spec D6). */
+    @Column(name = "content", updatable = false)
+    private String content;
 
-    /** Snapshot of the chunk visibility wire value at persist time (agentic-search spec D2). */
-    @Column(name = "visibility", updatable = false)
-    private String visibility;
+    /** Snapshot of the absolute source access URL at persist time (SP3b spec D6). */
+    @Column(name = "uri", updatable = false)
+    private String uri;
 
     protected MessageCitationJpaEntity() {
         // for JPA
     }
 
-    public MessageCitationJpaEntity(UUID messageId, int position, UUID documentId, int chunkIndex,
-                                    String title, String excerpt, String visibility) {
+    public MessageCitationJpaEntity(UUID messageId, int position, String sourceType,
+                                    String title, String content, String uri) {
         this.messageId = messageId;
         this.position = position;
-        this.documentId = documentId;
-        this.chunkIndex = chunkIndex;
+        this.sourceType = sourceType;
         this.title = title;
-        this.excerpt = excerpt;
-        this.visibility = visibility;
+        this.content = content;
+        this.uri = uri;
     }
 
     public UUID getMessageId() {
@@ -64,24 +66,20 @@ public class MessageCitationJpaEntity {
         return position;
     }
 
-    public UUID getDocumentId() {
-        return documentId;
-    }
-
-    public int getChunkIndex() {
-        return chunkIndex;
+    public String getSourceType() {
+        return sourceType;
     }
 
     public String getTitle() {
         return title;
     }
 
-    public String getExcerpt() {
-        return excerpt;
+    public String getContent() {
+        return content;
     }
 
-    public String getVisibility() {
-        return visibility;
+    public String getUri() {
+        return uri;
     }
 
     /** Composite PK matching the (message_id, position) PRIMARY KEY in DDL. */

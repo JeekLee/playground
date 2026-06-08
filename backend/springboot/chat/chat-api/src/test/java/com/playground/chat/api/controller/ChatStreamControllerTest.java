@@ -60,8 +60,8 @@ class ChatStreamControllerTest {
     void toSse_doneCarriesCitedSubset() {
         MessageId mid = MessageId.of(UUID.randomUUID());
         List<CitationDto> cited = List.of(
-                new CitationDto(1, UUID.randomUUID().toString(), 3, "Doc title", "excerpt…", "public"),
-                new CitationDto(3, UUID.randomUUID().toString(), 7, "Another", "excerpt…", "public"));
+                new CitationDto(1, "document", "Doc title", "excerpt…", "https://o/docs/a"),
+                new CitationDto(2, "document", "Another", "excerpt…", "https://o/docs/b"));
         ServerSentEvent<Object> sse = ChatStreamController.toSse(
                 new ChatStreamEvent.Done(mid.value().toString(), 100, 200, cited));
         assertThat(sse.event()).isEqualTo("done");

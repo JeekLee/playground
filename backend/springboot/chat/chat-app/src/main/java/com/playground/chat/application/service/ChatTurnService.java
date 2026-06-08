@@ -37,6 +37,7 @@ import com.playground.chat.domain.tool.ToolCatalog;
 import com.playground.chat.domain.tool.ToolDescriptor;
 import com.playground.chat.domain.tool.ToolErrorCode;
 import com.playground.shared.chat.ChatStreamEvent;
+import com.playground.shared.chat.SourceRef;
 import com.playground.shared.error.ExceptionCreator;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -485,23 +486,15 @@ public class ChatTurnService {
             List<MessageCitation> toPersist = new java.util.ArrayList<>();
             List<CitationDto> wireCitations = new java.util.ArrayList<>();
             for (CitedChunk c : renumber.cited) {
-                // Snapshot persistence (agentic-search spec D2): freeze
-                // title/excerpt/visibility on the citation row so history reload
-                // reads them back without joining the docs schema. The live
-                // Done-event DTO and the persisted snapshot carry IDENTICAL
-                // values (same RetrievedChunk source, no re-truncation) — the
-                // excerpt is already ≤600 chars from docs-api search.
-                String visibility = c.chunk.visibility().wireValue();
-                toPersist.add(new MessageCitation(
-                        persisted.id(), c.newN, c.chunk.documentId(), c.chunk.chunkIndex(),
-                        c.chunk.title(), c.chunk.text(), visibility));
+                // Snapshot persistence (SP3b spec D4): freeze the corpus-agnostic
+                // SourceRef (sourceType/title/content/uri) on the citation row so
+                // history reload reads it back without joining the docs schema.
+                // The live Done-event DTO and the persisted snapshot carry
+                // IDENTICAL values (same RetrievedChunk source, no re-truncation).
+                SourceRef s = c.chunk().source();
+                toPersist.add(new MessageCitation(persisted.id(), c.newN(), s));
                 wireCitations.add(new CitationDto(
-                        c.newN,
-                        c.chunk.documentId().value().toString(),
-                        c.chunk.chunkIndex(),
-                        c.chunk.title(),
-                        c.chunk.text(),
-                        visibility));
+                        c.newN(), s.sourceType(), s.title(), s.content(), s.uri()));
             }
             if (!toPersist.isEmpty()) {
                 messageRepository.saveCitations(toPersist);
@@ -684,7 +677,7 @@ public class ChatTurnService {
             // cites line up with the citation cards. Other tools bypass absorb.
             JsonNode llmVisibleBody = s.body();
             if ("search_documents".equals(desc.name()) && s.body() != null) {
-                llmVisibleBody = acc.absorb(userCtx.userId(), s.body());
+                llmVisibleBody = acc.absorb(s.body());
             }
             // ADR-20 §D3 — if the tool emitted an artifact, store it to MinIO
             // and stage an Attachment linked to the (pre-allocated) assistant

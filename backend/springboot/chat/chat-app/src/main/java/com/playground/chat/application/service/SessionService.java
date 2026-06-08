@@ -1,5 +1,6 @@
 package com.playground.chat.application.service;
 
+import com.playground.chat.application.dto.CitationDto;
 import com.playground.chat.application.dto.SessionDetailView;
 import com.playground.chat.application.repository.AttachmentRepository;
 import com.playground.chat.application.repository.MessageRepository;
@@ -12,6 +13,7 @@ import com.playground.chat.domain.model.MessageCitation;
 import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
+import com.playground.shared.chat.SourceRef;
 import com.playground.shared.error.ExceptionCreator;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -107,19 +109,18 @@ public class SessionService {
             attachmentByMessage.put(a.messageId(), a);
         }
 
-        // Build each CitationView straight from the persisted snapshot
-        // (title/excerpt/visibility frozen at persist time per agentic-search
-        // spec D2). No cross-schema read — history reload reads chat's own table
-        // only. Snapshot rows always carry a title, so deleted=false: the FE
-        // isStaleCitation (title-null) heuristic never fires for new rows.
+        // Build each CitationDto straight from the persisted snapshot
+        // (the corpus-agnostic SourceRef frozen at persist time per SP3b spec
+        // D5). No cross-schema read — history reload reads chat's own table
+        // only. The FE isStaleCitation heuristic keys off title === null.
         List<SessionDetailView.MessageView> views = new ArrayList<>(messages.size());
         for (Message m : messages) {
             List<MessageCitation> raw = citationsByMessage.getOrDefault(m.id(), List.of());
-            List<SessionDetailView.CitationView> snapshotCitations = new ArrayList<>(raw.size());
+            List<CitationDto> snapshotCitations = new ArrayList<>(raw.size());
             for (MessageCitation rc : raw) {
-                snapshotCitations.add(new SessionDetailView.CitationView(
-                        rc.position(), rc.documentId(), rc.chunkIndex(),
-                        rc.title(), rc.excerpt(), false));
+                SourceRef s = rc.source();
+                snapshotCitations.add(new CitationDto(
+                        rc.position(), s.sourceType(), s.title(), s.content(), s.uri()));
             }
             views.add(new SessionDetailView.MessageView(
                     m.id(), m.role(), m.content(), m.createdAt(), m.tokensIn(), m.tokensOut(),

@@ -2,7 +2,6 @@ package com.playground.chat.application.dto;
 
 import com.playground.chat.domain.enums.Role;
 import com.playground.chat.domain.model.Attachment;
-import com.playground.chat.domain.model.id.DocumentId;
 import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.model.id.SessionId;
 import java.time.Instant;
@@ -19,14 +18,6 @@ public record SessionDetailView(SessionId sessionId, String title, List<MessageV
             Instant createdAt,
             Integer tokensIn,
             Integer tokensOut,
-            List<CitationView> citations,
+            List<CitationDto> citations,
             Optional<Attachment> attachment) {}
-
-    public record CitationView(
-            int position,
-            DocumentId documentId,
-            int chunkIndex,
-            String title,
-            String excerpt,
-            boolean deleted) {}
 }
