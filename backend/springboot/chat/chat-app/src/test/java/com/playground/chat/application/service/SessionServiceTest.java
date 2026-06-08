@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.playground.chat.application.dto.CitationDto;
 import com.playground.chat.application.dto.SessionDetailView;
 import com.playground.chat.application.repository.AttachmentRepository;
 import com.playground.chat.application.repository.MessageRepository;
@@ -13,10 +14,10 @@ import com.playground.chat.domain.enums.Role;
 import com.playground.chat.domain.model.ChatSession;
 import com.playground.chat.domain.model.Message;
 import com.playground.chat.domain.model.MessageCitation;
-import com.playground.chat.domain.model.id.DocumentId;
 import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
+import com.playground.shared.chat.SourceRef;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -27,9 +28,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * loadDetail builds CitationView straight from the persisted snapshot
- * (title/excerpt/visibility on chat.message_citations) — no cross-schema
- * resolver (agentic-search spec D2).
+ * loadDetail builds {@link CitationDto} straight from the persisted snapshot
+ * (the corpus-agnostic SourceRef on chat.message_citations) — no cross-schema
+ * resolver (SP3b spec D5).
  */
 class SessionServiceTest {
 
@@ -52,7 +53,7 @@ class SessionServiceTest {
     }
 
     @Test
-    void loadDetail_buildsCitationViewFromSnapshot_withoutResolver() {
+    void loadDetail_buildsCitationDtoFromSnapshot_withoutResolver() {
         Instant now = Instant.parse("2026-06-07T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "T", now, now)));
@@ -63,26 +64,24 @@ class SessionServiceTest {
                 3, 4, 1, now);
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of(assistant));
 
-        DocumentId docId = DocumentId.of(UUID.randomUUID());
         MessageCitation snapshot = new MessageCitation(
-                assistantId, 1, docId, 2, "Doc Title", "the cited excerpt text", "private");
+                assistantId, 1, new SourceRef(
+                        "document", "Doc Title", "the cited excerpt text",
+                        "https://o/docs/d1"));
         when(messageRepository.findCitationsForMessages(any())).thenReturn(List.of(snapshot));
         when(attachmentRepository.findByMessages(any())).thenReturn(List.of());
 
         SessionDetailView detail = service.loadDetail(sessionId, caller);
 
         assertThat(detail.messages()).hasSize(1);
-        List<SessionDetailView.CitationView> citations = detail.messages().get(0).citations();
+        List<CitationDto> citations = detail.messages().get(0).citations();
         assertThat(citations).hasSize(1);
-        SessionDetailView.CitationView view = citations.get(0);
-        assertThat(view.position()).isEqualTo(1);
-        assertThat(view.documentId()).isEqualTo(docId);
-        assertThat(view.chunkIndex()).isEqualTo(2);
+        CitationDto view = citations.get(0);
+        assertThat(view.n()).isEqualTo(1);
+        assertThat(view.sourceType()).isEqualTo("document");
         assertThat(view.title()).isEqualTo("Doc Title");
-        assertThat(view.excerpt()).isEqualTo("the cited excerpt text");
-        // Snapshot rows are never stale — title is non-null, so the FE
-        // isStaleCitation heuristic does not fire.
-        assertThat(view.deleted()).isFalse();
+        assertThat(view.content()).isEqualTo("the cited excerpt text");
+        assertThat(view.uri()).isEqualTo("https://o/docs/d1");
     }
 
     @Test

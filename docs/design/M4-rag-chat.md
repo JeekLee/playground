@@ -22,6 +22,17 @@
 > mime/extraction 표기가 사라졌다. 실패·타임아웃은 빈 manifest로 degrade.
 > Spec: `docs/superpowers/specs/2026-06-08-sp3a-manifest-extraction-design.md`.
 
+> **2026-06-08 — Corpus-무관 Citation (M9 SP3b)**: citation 모델이
+> document/chunk 전용에서 `SourceRef{sourceType,title,content,uri}`(shared-kernel,
+> ChatStreamEvent 옆)로 일반화됐다. 검색 도구(docs-api)가 generic citation을
+> 방출하고 chat 누적기는 해석 없이 복사·영속한다. `uri`는 절대 URL
+> (`${PLAYGROUND_PUBLIC_ORIGIN}/docs/{id}`, 동결 스냅샷). FE는 `uri`로 균일
+> 렌더(sourceType navigation 분기 없음). `message_citations`의 document_id/
+> chunk_index/visibility 컬럼 폐기(→ source_type/content/uri), `DocumentId`/
+> `Visibility` value object 삭제, `[N]` 번호 기계 무변경. 미래 web_search는
+> `sourceType:"web"`만 바꿔 같은 형상으로 흐름 → 파이프라인 변경 0. Spec:
+> `docs/superpowers/specs/2026-06-08-sp3b-corpus-agnostic-citations-design.md`.
+
 > PRD: `docs/prd/M4-rag-chat.md`
 > Spec: `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`
 > ADR: `docs/adr/14-m4-rag-chat.md` (per-milestone, includes the cross-doc amendments to ADR-09, ADR-05, ADR-04, roadmap §M4, M2 spec §8, M3 PRD §"M4 retrieval contract")

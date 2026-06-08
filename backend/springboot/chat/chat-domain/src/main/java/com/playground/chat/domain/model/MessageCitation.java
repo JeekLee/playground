@@ -1,44 +1,31 @@
 package com.playground.chat.domain.model;
 
-import com.playground.chat.domain.model.id.DocumentId;
 import com.playground.chat.domain.model.id.MessageId;
+import com.playground.shared.chat.SourceRef;
 import java.util.Objects;
 
 /**
- * One row in {@code chat.message_citations} per ADR-14 §F. Only the citations
- * whose {@code [N]} marker actually appeared in the streamed assistant text
- * are persisted (cite-persistence policy from ADR-14 §10).
+ * One row in {@code chat.message_citations} (SP3b spec D3). Only the citations
+ * whose {@code [N]} marker actually appeared in the streamed assistant text are
+ * persisted (cite-persistence policy from ADR-14 §10).
  *
- * <p>{@code title}/{@code excerpt}/{@code visibility} are the snapshot frozen at
- * persist time (agentic-search spec D2) — history reload reads them back
- * directly instead of joining the {@code docs} schema. They are nullable: a
- * legacy or non-search citation may not carry them.
+ * <p>The corpus-agnostic {@link SourceRef} (sourceType/title/content/uri) is
+ * the snapshot frozen at persist time — history reload reads it back directly
+ * instead of joining the {@code docs} schema. {@code title}/{@code content}/
+ * {@code uri} are nullable (a stale or non-search citation may not carry them);
+ * {@code sourceType} is non-blank by the SourceRef contract.
  *
- * @param messageId  parent assistant message
- * @param position   the 1-indexed {@code [N]} slot in the assistant body
- * @param documentId app-level FK to {@code docs.documents.id}
- * @param chunkIndex app-level FK to {@code docs.document_chunks.chunk_index}
- * @param title      snapshot of the document title (nullable)
- * @param excerpt    snapshot of the cited chunk excerpt (nullable)
- * @param visibility snapshot of the chunk visibility wire value (nullable)
+ * @param messageId parent assistant message
+ * @param position  the 1-indexed {@code [N]} slot in the assistant body
+ * @param source    the frozen corpus-agnostic source reference
  */
-public record MessageCitation(
-        MessageId messageId,
-        int position,
-        DocumentId documentId,
-        int chunkIndex,
-        String title,
-        String excerpt,
-        String visibility) {
+public record MessageCitation(MessageId messageId, int position, SourceRef source) {
 
     public MessageCitation {
         Objects.requireNonNull(messageId, "messageId");
-        Objects.requireNonNull(documentId, "documentId");
+        Objects.requireNonNull(source, "source");
         if (position < 1) {
             throw new IllegalArgumentException("position must be >= 1, got " + position);
-        }
-        if (chunkIndex < 0) {
-            throw new IllegalArgumentException("chunkIndex must be >= 0, got " + chunkIndex);
         }
     }
 }

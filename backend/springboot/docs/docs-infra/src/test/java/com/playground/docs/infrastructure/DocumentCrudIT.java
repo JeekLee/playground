@@ -63,6 +63,7 @@ class DocumentCrudIT {
         registry.add("spring.flyway.password", POSTGRES::getPassword);
         registry.add("spring.flyway.create-schemas", () -> "true");
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        registry.add("playground.docs.public-origin", () -> "https://test.example");
     }
 
     @Autowired

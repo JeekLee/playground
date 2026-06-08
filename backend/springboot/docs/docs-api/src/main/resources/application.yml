@@ -161,6 +161,11 @@ playground:
       document-id: null
       inter-document-delay-millis: 0
   docs:
+    # SP3b (spec D2/D10) — public origin prepended to citation uris
+    # (uri = ${public-origin}/docs/{id}). NO default on purpose: an unset
+    # PLAYGROUND_PUBLIC_ORIGIN leaves this placeholder unresolved and docs-api
+    # fails to boot, rather than silently emitting broken citation links.
+    public-origin: ${PLAYGROUND_PUBLIC_ORIGIN}
     minio:
       endpoint: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:http://minio-playground:9000}
       access-key: ${MINIO_ROOT_USER:playground}

@@ -4,7 +4,6 @@ import com.playground.chat.application.repository.MessageRepository;
 import com.playground.chat.domain.enums.Role;
 import com.playground.chat.domain.model.Message;
 import com.playground.chat.domain.model.MessageCitation;
-import com.playground.chat.domain.model.id.DocumentId;
 import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
@@ -59,19 +58,18 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
         }
         jdbc.batchUpdate(
                 "INSERT INTO chat.message_citations "
-                        + "(message_id, position, document_id, chunk_index, title, excerpt, visibility) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        + "(message_id, position, source_type, title, content, uri) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
                 new BatchPreparedStatementSetter() {
                     @Override
                     public void setValues(PreparedStatement ps, int i) throws SQLException {
                         MessageCitation c = citations.get(i);
                         ps.setObject(1, c.messageId().value());
                         ps.setInt(2, c.position());
-                        ps.setObject(3, c.documentId().value());
-                        ps.setInt(4, c.chunkIndex());
-                        ps.setString(5, c.title());
-                        ps.setString(6, c.excerpt());
-                        ps.setString(7, c.visibility());
+                        ps.setString(3, c.source().sourceType());
+                        ps.setString(4, c.source().title());
+                        ps.setString(5, c.source().content());
+                        ps.setString(6, c.source().uri());
                     }
 
                     @Override
@@ -100,18 +98,18 @@ public class MessageRepositoryJdbcAdapter implements MessageRepository {
                 .map(id -> id.value().toString())
                 .collect(Collectors.joining(",", "{", "}"));
         return jdbc.query(
-                "SELECT message_id, position, document_id, chunk_index, title, excerpt, visibility "
+                "SELECT message_id, position, source_type, title, content, uri "
                         + "FROM chat.message_citations "
                         + "WHERE message_id = ANY (?::uuid[]) "
                         + "ORDER BY message_id, position",
                 (RowMapper<MessageCitation>) (rs, n) -> new MessageCitation(
                         MessageId.of((UUID) rs.getObject("message_id")),
                         rs.getInt("position"),
-                        DocumentId.of((UUID) rs.getObject("document_id")),
-                        rs.getInt("chunk_index"),
-                        rs.getString("title"),
-                        rs.getString("excerpt"),
-                        rs.getString("visibility")),
+                        new com.playground.shared.chat.SourceRef(
+                                rs.getString("source_type"),
+                                rs.getString("title"),
+                                rs.getString("content"),
+                                rs.getString("uri"))),
                 idArray);
     }
 

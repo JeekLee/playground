@@ -1,104 +1,79 @@
 package com.playground.chat.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.playground.chat.domain.enums.Visibility;
 import com.playground.chat.domain.model.RetrievedChunk;
-import com.playground.chat.domain.model.id.UserId;
-import java.util.List;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests the per-turn global renumbering of {@code search_documents} results
- * (agentic-search spec D2). Each tool call returns per-call positions 1..k;
- * the accumulator rewrites them into turn-global positions and accumulates a
- * {@link RetrievedChunk} list that feeds the existing renumber/persist path.
+ * Tests the corpus-blind absorption and per-turn global renumbering of
+ * {@code search_documents} results (SP3b spec D4). The accumulator copies the
+ * generic {@code SourceRef} fields without interpretation and rewrites each
+ * item's {@code position} into a turn-global slot.
  */
 class TurnCitationAccumulatorTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final UserId caller = UserId.of(UUID.randomUUID());
 
-    /** Build a {@code {"results":[...], "totalFound":n}} body with positions 1..n. */
-    private JsonNode searchResultBody(int n) {
-        ObjectNode body = objectMapper.createObjectNode();
-        ArrayNode results = body.putArray("results");
-        for (int i = 1; i <= n; i++) {
-            ObjectNode item = results.addObject();
-            item.put("position", i);
-            item.put("documentId", UUID.randomUUID().toString());
-            item.put("chunkIndex", i - 1);
-            item.put("title", "Doc " + i);
-            item.put("excerpt", "excerpt " + i);
-            item.put("visibility", "private");
+    private JsonNode json(String raw) {
+        try {
+            return objectMapper.readTree(raw);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        body.put("totalFound", n);
-        return body;
-    }
-
-    private List<Integer> positions(JsonNode body) {
-        List<Integer> out = new java.util.ArrayList<>();
-        body.path("results").forEach(n -> out.add(n.path("position").asInt()));
-        return out;
     }
 
     @Test
-    void renumbersAcrossSearches() {
+    void copiesGenericFieldsBlindAndInjectsGlobalPosition() {
         var acc = new TurnCitationAccumulator();
-        JsonNode first = searchResultBody(3); // per-call positions 1..3
-        JsonNode rewritten1 = acc.absorb(caller, first);
-        assertThat(positions(rewritten1)).containsExactly(1, 2, 3);
+        JsonNode body = json("{\"results\":[{\"sourceType\":\"document\",\"title\":\"A\","
+                + "\"content\":\"본문A\",\"uri\":\"https://o/docs/d1\"}]}");
 
-        JsonNode second = searchResultBody(2);
-        JsonNode rewritten2 = acc.absorb(caller, second);
-        assertThat(positions(rewritten2)).containsExactly(4, 5); // global renumber
+        JsonNode rewritten = acc.absorb(body);
 
-        assertThat(acc.retrieved()).hasSize(5);
-        assertThat(acc.retrieved().get(3).position()).isEqualTo(4);
-    }
-
-    @Test
-    void mapsFieldsIntoRetrievedChunk() {
-        var acc = new TurnCitationAccumulator();
-        UUID docId = UUID.randomUUID();
-        ObjectNode body = objectMapper.createObjectNode();
-        ArrayNode results = body.putArray("results");
-        ObjectNode item = results.addObject();
-        item.put("position", 1);
-        item.put("documentId", docId.toString());
-        item.put("chunkIndex", 7);
-        item.put("title", "Site Brief");
-        item.put("excerpt", "연면적 1200 m2");
-        item.put("visibility", "public");
-
-        acc.absorb(caller, body);
-
+        assertThat(rewritten.path("results").get(0).path("position").asInt()).isEqualTo(1);
         assertThat(acc.retrieved()).hasSize(1);
         RetrievedChunk c = acc.retrieved().get(0);
         assertThat(c.position()).isEqualTo(1);
-        assertThat(c.documentId().value()).isEqualTo(docId);
-        assertThat(c.chunkIndex()).isEqualTo(7);
-        assertThat(c.title()).isEqualTo("Site Brief");
-        assertThat(c.text()).isEqualTo("연면적 1200 m2"); // excerpt → text
-        assertThat(c.visibility()).isEqualTo(Visibility.PUBLIC);
-        assertThat(c.chunkOwner()).isEqualTo(caller); // owner from caller
+        assertThat(c.source().sourceType()).isEqualTo("document");
+        assertThat(c.source().title()).isEqualTo("A");
+        assertThat(c.source().content()).isEqualTo("본문A");
+        assertThat(c.source().uri()).isEqualTo("https://o/docs/d1");
+        // copy isolation: original input body must not gain a position
+        assertThat(body.path("results").get(0).has("position")).isFalse();
     }
 
     @Test
-    void emptyResultsAbsorbsNothing() {
+    void renumbersAcrossTwoSearchesGlobally() {
         var acc = new TurnCitationAccumulator();
-        ObjectNode body = objectMapper.createObjectNode();
-        body.putArray("results");
-        body.put("totalFound", 0);
+        acc.absorb(json("{\"results\":[{\"sourceType\":\"document\",\"title\":\"A\",\"content\":\"x\","
+                + "\"uri\":\"u1\"},{\"sourceType\":\"document\",\"title\":\"B\",\"content\":\"y\","
+                + "\"uri\":\"u2\"}]}"));
+        JsonNode second = acc.absorb(json("{\"results\":[{\"sourceType\":\"document\",\"title\":\"C\","
+                + "\"content\":\"z\",\"uri\":\"u3\"}]}"));
 
-        JsonNode out = acc.absorb(caller, body);
+        assertThat(second.path("results").get(0).path("position").asInt()).isEqualTo(3); // global
+        assertThat(acc.retrieved()).hasSize(3);
+        assertThat(acc.retrieved().get(2).position()).isEqualTo(3);
+        assertThat(acc.retrieved().get(2).source().title()).isEqualTo("C");
+    }
 
-        assertThat(out).isSameAs(body); // body returned as-is
+    @Test
+    void missingSourceTypeThrows() {
+        var acc = new TurnCitationAccumulator();
+        assertThatThrownBy(() -> acc.absorb(json("{\"results\":[{\"title\":\"x\",\"content\":\"y\",\"uri\":\"u\"}]}")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void emptyResultsNoop() {
+        var acc = new TurnCitationAccumulator();
+        JsonNode body = json("{\"results\":[]}");
+
+        assertThat(acc.absorb(body)).isSameAs(body);
         assertThat(acc.retrieved()).isEmpty();
     }
 }
