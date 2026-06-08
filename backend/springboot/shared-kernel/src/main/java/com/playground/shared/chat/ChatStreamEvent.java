@@ -1,5 +1,6 @@
 package com.playground.shared.chat;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -27,10 +28,15 @@ import java.util.Map;
  *
  * <p>Wire envelope is identical across BCs: SSE event name = the record
  * type name lower-cased ({@code phase}, {@code token}, {@code done},
- * {@code error}); JSON payload = the record fields. Each chat BC owns
- * its own controller-side {@code toSse} mapper so it can decorate
- * {@code data} / {@code citations} with its domain shapes; the mapper
- * is mechanical because the envelope is fixed here.
+ * {@code error}); JSON payload = the record fields. The envelope mapping
+ * (event name + field→key, including conditional key omissions) now lives
+ * on each variant via {@link #toWire()}, producing a framework-neutral
+ * {@link WireFrame}. The -api controller only wraps that {@code WireFrame}
+ * into the transport {@code ServerSentEvent} — it owns no per-variant
+ * mapping logic. BCs still control the domain payloads they place inside
+ * the event ({@code data} / {@code citations} / {@code args} / {@code result}
+ * are {@code Object} / {@code Map} fields the BC populates before
+ * constructing the event); {@code toWire()} just lays out the wire keys.
  *
  * <h2>Pre-PR-B compat note</h2>
  * Today chat (M4) still emits the wire event {@code retrieval} as
@@ -46,6 +52,15 @@ public sealed interface ChatStreamEvent
                 ChatStreamEvent.ToolError {
 
     /**
+     * Produces this event's framework-neutral SSE {@link WireFrame} — the
+     * {@code event:} name plus the JSON {@code data} map (with this variant's
+     * conditional key omissions applied). Each variant owns its own wire shape
+     * here, so the transport-side controller is a mechanical wrapper and a new
+     * variant is compile-enforced to declare its wire mapping.
+     */
+    WireFrame toWire();
+
+    /**
      * Progress / status update during the turn. {@code step} is the
      * machine-readable discriminator the frontend uses to pick a label /
      * icon; {@code label} is a fallback display string for steps the
@@ -57,10 +72,28 @@ public sealed interface ChatStreamEvent
                 throw new IllegalArgumentException("Phase.step must not be blank");
             }
         }
+
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("step", step);
+            payload.put("label", label);
+            if (data != null && !data.isEmpty()) {
+                payload.put("data", data);
+            }
+            return new WireFrame("phase", payload);
+        }
     }
 
     /** A single text delta from the assistant stream. */
-    record Token(String delta) implements ChatStreamEvent {}
+    record Token(String delta) implements ChatStreamEvent {
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("delta", delta);
+            return new WireFrame("token", payload);
+        }
+    }
 
     /**
      * Terminal success — assistant message persisted, stream closing.
@@ -69,7 +102,19 @@ public sealed interface ChatStreamEvent
      * or leave it {@code null}.
      */
     record Done(String messageId, Integer tokensIn, Integer tokensOut, Object citations)
-            implements ChatStreamEvent {}
+            implements ChatStreamEvent {
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("messageId", messageId);
+            payload.put("tokensIn", tokensIn);
+            payload.put("tokensOut", tokensOut);
+            if (citations != null) {
+                payload.put("citations", citations);
+            }
+            return new WireFrame("done", payload);
+        }
+    }
 
     /**
      * Tool-calling event — LLM has decided to invoke a registered tool.
@@ -91,6 +136,18 @@ public sealed interface ChatStreamEvent
                 throw new IllegalArgumentException("ToolCall.name must not be blank");
             }
         }
+
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", id);
+            payload.put("name", name);
+            if (displayName != null) {
+                payload.put("displayName", displayName);
+            }
+            payload.put("args", args);
+            return new WireFrame("tool_call", payload);
+        }
     }
 
     /**
@@ -104,7 +161,22 @@ public sealed interface ChatStreamEvent
      * {@code null} on the first attempt.
      */
     record ToolProgress(String id, String name, String stage, String label,
-            int stageIndex, int stageCount, Integer attempt) implements ChatStreamEvent {}
+            int stageIndex, int stageCount, Integer attempt) implements ChatStreamEvent {
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", id);
+            payload.put("name", name);
+            payload.put("stage", stage);
+            payload.put("label", label);
+            payload.put("stageIndex", stageIndex);
+            payload.put("stageCount", stageCount);
+            if (attempt != null) {
+                payload.put("attempt", attempt);
+            }
+            return new WireFrame("tool_progress", payload);
+        }
+    }
 
     /**
      * Tool-calling event — tool BC returned a successful result.
@@ -122,6 +194,15 @@ public sealed interface ChatStreamEvent
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("ToolResult.name must not be blank");
             }
+        }
+
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", id);
+            payload.put("name", name);
+            payload.put("result", result);
+            return new WireFrame("tool_result", payload);
         }
     }
 
@@ -153,6 +234,16 @@ public sealed interface ChatStreamEvent
                 throw new IllegalArgumentException("ToolError.code must not be blank");
             }
         }
+
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", id);
+            payload.put("name", name);
+            payload.put("code", code);
+            payload.put("message", message);
+            return new WireFrame("tool_error", payload);
+        }
     }
 
     /**
@@ -175,6 +266,17 @@ public sealed interface ChatStreamEvent
         /** Catch-all server error — caller should pass the underlying cause. */
         public static Error internal(String message) {
             return new Error("INTERNAL", message == null ? "Internal error" : message, null);
+        }
+
+        @Override
+        public WireFrame toWire() {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("code", code);
+            payload.put("message", message);
+            if (retryAfterSeconds != null) {
+                payload.put("retryAfter", retryAfterSeconds);
+            }
+            return new WireFrame("error", payload);
         }
     }
 }

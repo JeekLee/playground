@@ -7,13 +7,9 @@ import com.playground.chat.domain.exception.ChatErrorCode;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.chat.ChatStreamEvent;
+import com.playground.shared.chat.WireFrame;
 import com.playground.shared.error.ExceptionCreator;
 import jakarta.validation.Valid;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,8 +33,6 @@ import reactor.core.publisher.Flux;
  */
 @RestController
 public class ChatStreamController {
-
-    private static final Logger log = LoggerFactory.getLogger(ChatStreamController.class);
 
     private final ChatTurnService chatTurnService;
 
@@ -70,100 +64,17 @@ public class ChatStreamController {
         return chatTurnService.stream(req).map(ChatStreamController::toSse);
     }
 
+    /**
+     * Maps a {@link ChatStreamEvent} onto the transport {@link ServerSentEvent}.
+     * The per-variant wire shape (event name + data keys + conditional omissions)
+     * lives on each event variant via {@link ChatStreamEvent#toWire()}; this
+     * method only wraps the resulting framework-neutral {@link WireFrame} into
+     * Spring's SSE carrier. Reused by {@link ChatResumeController} so both
+     * endpoints emit identical wire grammar.
+     */
     static ServerSentEvent<Object> toSse(ChatStreamEvent evt) {
-        if (evt instanceof ChatStreamEvent.Phase p) {
-            // Wire grammar revision (PR B / spec §5.2 revised): every
-            // progress event ships as SSE `event: phase`. The legacy
-            // `event: retrieval` is gone — citation cards now arrive
-            // only on the terminal `done` event.
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("step", p.step());
-            data.put("label", p.label());
-            if (p.data() != null && !p.data().isEmpty()) {
-                data.put("data", p.data());
-            }
-            return ServerSentEvent.<Object>builder((Object) data).event("phase").build();
-        }
-        if (evt instanceof ChatStreamEvent.Token t) {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("delta", t.delta());
-            return ServerSentEvent.<Object>builder((Object) data).event("token").build();
-        }
-        if (evt instanceof ChatStreamEvent.Done d) {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("messageId", d.messageId());
-            data.put("tokensIn", d.tokensIn());
-            data.put("tokensOut", d.tokensOut());
-            // PR B: cited subset arrives with the terminal event. The
-            // BC's CitationDto record serializes naturally via Jackson.
-            if (d.citations() != null) {
-                data.put("citations", d.citations());
-            }
-            return ServerSentEvent.<Object>builder((Object) data).event("done").build();
-        }
-        if (evt instanceof ChatStreamEvent.Error e) {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("code", e.code());
-            data.put("message", e.message());
-            if (e.retryAfterSeconds() != null) {
-                data.put("retryAfter", e.retryAfterSeconds());
-            }
-            return ServerSentEvent.<Object>builder((Object) data).event("error").build();
-        }
-        if (evt instanceof ChatStreamEvent.ToolCall tc) {
-            // ADR-17 §3 + §A14.3 — wire shape carries id + name + args. Args is
-            // the LLM-produced JsonNode (or Jackson-serializable carrier); the
-            // controller defers JSON serialization to Spring's reactive codec.
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", tc.id());
-            data.put("name", tc.name());
-            // tool-streaming spec W2 — short human label for the in-flight
-            // card. Null (forward-compat) drops the key entirely.
-            if (tc.displayName() != null) {
-                data.put("displayName", tc.displayName());
-            }
-            data.put("args", tc.args());
-            return ServerSentEvent.<Object>builder((Object) data).event("tool_call").build();
-        }
-        if (evt instanceof ChatStreamEvent.ToolProgress tp) {
-            // tool-streaming spec W2 — node-level progress relayed from the
-            // dispatcher's NDJSON `progress` lines. Wire event `tool_progress`.
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", tp.id());
-            data.put("name", tp.name());
-            data.put("stage", tp.stage());
-            data.put("label", tp.label());
-            data.put("stageIndex", tp.stageIndex());
-            data.put("stageCount", tp.stageCount());
-            if (tp.attempt() != null) {
-                data.put("attempt", tp.attempt());
-            }
-            return ServerSentEvent.<Object>builder((Object) data).event("tool_progress").build();
-        }
-        if (evt instanceof ChatStreamEvent.ToolResult tr) {
-            // ADR-17 §3 — wire shape carries id + name + result. Result may be
-            // a Jackson JsonNode (truncated per §4) or any Jackson-serializable
-            // carrier.
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", tr.id());
-            data.put("name", tr.name());
-            data.put("result", tr.result());
-            return ServerSentEvent.<Object>builder((Object) data).event("tool_result").build();
-        }
-        if (evt instanceof ChatStreamEvent.ToolError te) {
-            // ADR-17 §3 — wire shape carries id + name + code (ToolErrorCode
-            // enum name string) + message. Note `tool_error` is NOT a
-            // fall-back to `error` — frontend dispatches them separately.
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", te.id());
-            data.put("name", te.name());
-            data.put("code", te.code());
-            data.put("message", te.message());
-            return ServerSentEvent.<Object>builder((Object) data).event("tool_error").build();
-        }
-        log.warn("unknown chat stream event type: {}", evt.getClass());
-        return ServerSentEvent.<Object>builder((Object) Map.of("code", "INTERNAL", "message", "unknown event"))
-                .event("error").build();
+        WireFrame wf = evt.toWire();
+        return ServerSentEvent.<Object>builder((Object) wf.data()).event(wf.event()).build();
     }
 
 }
