@@ -30,13 +30,13 @@ import java.util.Map;
  * type name lower-cased ({@code phase}, {@code token}, {@code done},
  * {@code error}); JSON payload = the record fields. The envelope mapping
  * (event name + field→key, including conditional key omissions) now lives
- * on each variant via {@link #toWire()}, producing a framework-neutral
- * {@link WireFrame}. The -api controller only wraps that {@code WireFrame}
+ * on each variant via {@link #toSseFrame()}, producing a framework-neutral
+ * {@link SseFrame}. The -api controller only wraps that {@code SseFrame}
  * into the transport {@code ServerSentEvent} — it owns no per-variant
  * mapping logic. BCs still control the domain payloads they place inside
  * the event ({@code data} / {@code citations} / {@code args} / {@code result}
  * are {@code Object} / {@code Map} fields the BC populates before
- * constructing the event); {@code toWire()} just lays out the wire keys.
+ * constructing the event); {@code toSseFrame()} just lays out the wire keys.
  *
  * <h2>Pre-PR-B compat note</h2>
  * Today chat (M4) still emits the wire event {@code retrieval} as
@@ -52,13 +52,13 @@ public sealed interface ChatStreamEvent
                 ChatStreamEvent.ToolError {
 
     /**
-     * Produces this event's framework-neutral SSE {@link WireFrame} — the
+     * Produces this event's framework-neutral SSE {@link SseFrame} — the
      * {@code event:} name plus the JSON {@code data} map (with this variant's
      * conditional key omissions applied). Each variant owns its own wire shape
      * here, so the transport-side controller is a mechanical wrapper and a new
      * variant is compile-enforced to declare its wire mapping.
      */
-    WireFrame toWire();
+    SseFrame toSseFrame();
 
     /**
      * Progress / status update during the turn. {@code step} is the
@@ -74,24 +74,24 @@ public sealed interface ChatStreamEvent
         }
 
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("step", step);
             payload.put("label", label);
             if (data != null && !data.isEmpty()) {
                 payload.put("data", data);
             }
-            return new WireFrame("phase", payload);
+            return new SseFrame("phase", payload);
         }
     }
 
     /** A single text delta from the assistant stream. */
     record Token(String delta) implements ChatStreamEvent {
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("delta", delta);
-            return new WireFrame("token", payload);
+            return new SseFrame("token", payload);
         }
     }
 
@@ -104,7 +104,7 @@ public sealed interface ChatStreamEvent
     record Done(String messageId, Integer tokensIn, Integer tokensOut, Object citations)
             implements ChatStreamEvent {
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("messageId", messageId);
             payload.put("tokensIn", tokensIn);
@@ -112,7 +112,7 @@ public sealed interface ChatStreamEvent
             if (citations != null) {
                 payload.put("citations", citations);
             }
-            return new WireFrame("done", payload);
+            return new SseFrame("done", payload);
         }
     }
 
@@ -138,7 +138,7 @@ public sealed interface ChatStreamEvent
         }
 
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("id", id);
             payload.put("name", name);
@@ -146,7 +146,7 @@ public sealed interface ChatStreamEvent
                 payload.put("displayName", displayName);
             }
             payload.put("args", args);
-            return new WireFrame("tool_call", payload);
+            return new SseFrame("tool_call", payload);
         }
     }
 
@@ -163,7 +163,7 @@ public sealed interface ChatStreamEvent
     record ToolProgress(String id, String name, String stage, String label,
             int stageIndex, int stageCount, Integer attempt) implements ChatStreamEvent {
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("id", id);
             payload.put("name", name);
@@ -174,7 +174,7 @@ public sealed interface ChatStreamEvent
             if (attempt != null) {
                 payload.put("attempt", attempt);
             }
-            return new WireFrame("tool_progress", payload);
+            return new SseFrame("tool_progress", payload);
         }
     }
 
@@ -197,12 +197,12 @@ public sealed interface ChatStreamEvent
         }
 
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("id", id);
             payload.put("name", name);
             payload.put("result", result);
-            return new WireFrame("tool_result", payload);
+            return new SseFrame("tool_result", payload);
         }
     }
 
@@ -236,13 +236,13 @@ public sealed interface ChatStreamEvent
         }
 
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("id", id);
             payload.put("name", name);
             payload.put("code", code);
             payload.put("message", message);
-            return new WireFrame("tool_error", payload);
+            return new SseFrame("tool_error", payload);
         }
     }
 
@@ -269,14 +269,14 @@ public sealed interface ChatStreamEvent
         }
 
         @Override
-        public WireFrame toWire() {
+        public SseFrame toSseFrame() {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("code", code);
             payload.put("message", message);
             if (retryAfterSeconds != null) {
                 payload.put("retryAfter", retryAfterSeconds);
             }
-            return new WireFrame("error", payload);
+            return new SseFrame("error", payload);
         }
     }
 }

@@ -7,7 +7,7 @@ import com.playground.chat.domain.exception.ChatErrorCode;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.chat.ChatStreamEvent;
-import com.playground.shared.chat.WireFrame;
+import com.playground.shared.chat.SseFrame;
 import com.playground.shared.error.ExceptionCreator;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -67,14 +67,14 @@ public class ChatStreamController {
     /**
      * Maps a {@link ChatStreamEvent} onto the transport {@link ServerSentEvent}.
      * The per-variant wire shape (event name + data keys + conditional omissions)
-     * lives on each event variant via {@link ChatStreamEvent#toWire()}; this
-     * method only wraps the resulting framework-neutral {@link WireFrame} into
+     * lives on each event variant via {@link ChatStreamEvent#toSseFrame()}; this
+     * method only wraps the resulting framework-neutral {@link SseFrame} into
      * Spring's SSE carrier. Reused by {@link ChatResumeController} so both
      * endpoints emit identical wire grammar.
      */
     static ServerSentEvent<Object> toSse(ChatStreamEvent evt) {
-        WireFrame wf = evt.toWire();
-        return ServerSentEvent.<Object>builder((Object) wf.data()).event(wf.event()).build();
+        SseFrame frame = evt.toSseFrame();
+        return ServerSentEvent.<Object>builder((Object) frame.data()).event(frame.event()).build();
     }
 
 }

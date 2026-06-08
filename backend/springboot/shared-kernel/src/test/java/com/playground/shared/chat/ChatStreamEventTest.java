@@ -7,8 +7,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * Wire-contract tests for {@link ChatStreamEvent#toWire()}. Each variant owns
- * its own {@link WireFrame} (event name + data keys + conditional omissions);
+ * Wire-contract tests for {@link ChatStreamEvent#toSseFrame()}. Each variant owns
+ * its own {@link SseFrame} (event name + data keys + conditional omissions);
  * this is the canonical home of the SSE wire contract. The byte-identical
  * controller-side projection is separately covered by
  * {@code ChatStreamControllerTest} in chat-api.
@@ -17,7 +17,7 @@ class ChatStreamEventTest {
 
     @Test
     void phaseCarriesStepLabelAndData() {
-        WireFrame wf = new ChatStreamEvent.Phase("retrieval", "참고 문서 확인 중", Map.of("count", 6)).toWire();
+        SseFrame wf = new ChatStreamEvent.Phase("retrieval", "참고 문서 확인 중", Map.of("count", 6)).toSseFrame();
         assertThat(wf.event()).isEqualTo("phase");
         assertThat(wf.data()).containsEntry("step", "retrieval");
         assertThat(wf.data()).containsEntry("label", "참고 문서 확인 중");
@@ -28,20 +28,20 @@ class ChatStreamEventTest {
 
     @Test
     void phaseOmitsDataWhenEmpty() {
-        WireFrame wf = new ChatStreamEvent.Phase("thinking", "사고 중", Map.of()).toWire();
+        SseFrame wf = new ChatStreamEvent.Phase("thinking", "사고 중", Map.of()).toSseFrame();
         assertThat(wf.event()).isEqualTo("phase");
         assertThat(wf.data()).doesNotContainKey("data");
     }
 
     @Test
     void phaseOmitsDataWhenNull() {
-        WireFrame wf = new ChatStreamEvent.Phase("thinking", "사고 중", null).toWire();
+        SseFrame wf = new ChatStreamEvent.Phase("thinking", "사고 중", null).toSseFrame();
         assertThat(wf.data()).doesNotContainKey("data");
     }
 
     @Test
     void tokenCarriesDelta() {
-        WireFrame wf = new ChatStreamEvent.Token("hello").toWire();
+        SseFrame wf = new ChatStreamEvent.Token("hello").toSseFrame();
         assertThat(wf.event()).isEqualTo("token");
         assertThat(wf.data()).containsEntry("delta", "hello");
     }
@@ -49,7 +49,7 @@ class ChatStreamEventTest {
     @Test
     void doneCarriesIdsAndCitations() {
         List<String> cited = List.of("c1", "c2");
-        WireFrame wf = new ChatStreamEvent.Done("m1", 100, 200, cited).toWire();
+        SseFrame wf = new ChatStreamEvent.Done("m1", 100, 200, cited).toSseFrame();
         assertThat(wf.event()).isEqualTo("done");
         assertThat(wf.data()).containsEntry("messageId", "m1");
         assertThat(wf.data()).containsEntry("tokensIn", 100);
@@ -59,7 +59,7 @@ class ChatStreamEventTest {
 
     @Test
     void doneOmitsCitationsWhenNull() {
-        WireFrame wf = new ChatStreamEvent.Done("m1", 10, 20, null).toWire();
+        SseFrame wf = new ChatStreamEvent.Done("m1", 10, 20, null).toSseFrame();
         assertThat(wf.event()).isEqualTo("done");
         assertThat(wf.data()).doesNotContainKey("citations");
         assertThat(wf.data()).containsEntry("messageId", "m1");
@@ -67,7 +67,7 @@ class ChatStreamEventTest {
 
     @Test
     void errorCarriesCodeMessageAndRetryAfter() {
-        WireFrame wf = ChatStreamEvent.Error.gatewayDown().toWire();
+        SseFrame wf = ChatStreamEvent.Error.gatewayDown().toSseFrame();
         assertThat(wf.event()).isEqualTo("error");
         assertThat(wf.data()).containsEntry("code", "GATEWAY_5XX");
         assertThat(wf.data()).containsKey("message");
@@ -76,7 +76,7 @@ class ChatStreamEventTest {
 
     @Test
     void errorOmitsRetryAfterWhenNull() {
-        WireFrame wf = ChatStreamEvent.Error.aborted().toWire();
+        SseFrame wf = ChatStreamEvent.Error.aborted().toSseFrame();
         assertThat(wf.event()).isEqualTo("error");
         assertThat(wf.data()).containsEntry("code", "ABORTED");
         assertThat(wf.data()).doesNotContainKey("retryAfter");
@@ -84,8 +84,8 @@ class ChatStreamEventTest {
 
     @Test
     void toolCallCarriesIdNameDisplayNameArgs() {
-        WireFrame wf = new ChatStreamEvent.ToolCall(
-                "call_1", "generate_massing", "매싱 모델", Map.of("k", "v")).toWire();
+        SseFrame wf = new ChatStreamEvent.ToolCall(
+                "call_1", "generate_massing", "매싱 모델", Map.of("k", "v")).toSseFrame();
         assertThat(wf.event()).isEqualTo("tool_call");
         assertThat(wf.data()).containsEntry("id", "call_1");
         assertThat(wf.data()).containsEntry("name", "generate_massing");
@@ -95,8 +95,8 @@ class ChatStreamEventTest {
 
     @Test
     void toolCallOmitsDisplayNameWhenNull() {
-        WireFrame wf = new ChatStreamEvent.ToolCall(
-                "call_1", "generate_massing", null, Map.of("k", "v")).toWire();
+        SseFrame wf = new ChatStreamEvent.ToolCall(
+                "call_1", "generate_massing", null, Map.of("k", "v")).toSseFrame();
         assertThat(wf.event()).isEqualTo("tool_call");
         assertThat(wf.data()).doesNotContainKey("displayName");
         assertThat(wf.data()).containsKey("args");
@@ -104,8 +104,8 @@ class ChatStreamEventTest {
 
     @Test
     void toolProgressCarriesAllFieldsWithAttempt() {
-        WireFrame wf = new ChatStreamEvent.ToolProgress(
-                "t1", "generate_massing", "extract", "공간 프로그램 추출 중", 3, 10, 2).toWire();
+        SseFrame wf = new ChatStreamEvent.ToolProgress(
+                "t1", "generate_massing", "extract", "공간 프로그램 추출 중", 3, 10, 2).toSseFrame();
         assertThat(wf.event()).isEqualTo("tool_progress");
         assertThat(wf.data())
                 .containsEntry("id", "t1")
@@ -119,16 +119,16 @@ class ChatStreamEventTest {
 
     @Test
     void toolProgressOmitsAttemptWhenNull() {
-        WireFrame wf = new ChatStreamEvent.ToolProgress(
-                "t1", "generate_massing", "compute", "매싱 계산", 7, 10, null).toWire();
+        SseFrame wf = new ChatStreamEvent.ToolProgress(
+                "t1", "generate_massing", "compute", "매싱 계산", 7, 10, null).toSseFrame();
         assertThat(wf.event()).isEqualTo("tool_progress");
         assertThat(wf.data()).doesNotContainKey("attempt");
     }
 
     @Test
     void toolResultCarriesIdNameResult() {
-        WireFrame wf = new ChatStreamEvent.ToolResult(
-                "call_1", "generate_massing", Map.of("summary", "12 rooms")).toWire();
+        SseFrame wf = new ChatStreamEvent.ToolResult(
+                "call_1", "generate_massing", Map.of("summary", "12 rooms")).toSseFrame();
         assertThat(wf.event()).isEqualTo("tool_result");
         assertThat(wf.data()).containsEntry("id", "call_1");
         assertThat(wf.data()).containsEntry("name", "generate_massing");
@@ -137,8 +137,8 @@ class ChatStreamEventTest {
 
     @Test
     void toolErrorCarriesIdNameCodeMessage() {
-        WireFrame wf = new ChatStreamEvent.ToolError(
-                "call_1", "generate_massing", "TIMEOUT", "did not respond within 30s").toWire();
+        SseFrame wf = new ChatStreamEvent.ToolError(
+                "call_1", "generate_massing", "TIMEOUT", "did not respond within 30s").toSseFrame();
         assertThat(wf.event()).isEqualTo("tool_error");
         assertThat(wf.data()).containsEntry("id", "call_1");
         assertThat(wf.data()).containsEntry("name", "generate_massing");
