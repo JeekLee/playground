@@ -1,6 +1,7 @@
 package com.playground.docs.api.controller;
 
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -8,11 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.playground.docs.application.dto.DocumentBodyDto;
+import com.playground.docs.application.dto.DocumentManifestEntry;
 import com.playground.docs.application.service.DocumentAppService;
 import com.playground.docs.domain.exception.DocumentNotFoundException;
 import com.playground.docs.domain.model.id.DocumentId;
 import com.playground.shared.error.SharedExceptionHandler;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,5 +66,54 @@ class InternalDocumentControllerTest {
 
         mockMvc.perform(get("/internal/docs/{id}/body", docId))
                 .andExpect(status().isNotFound());
+    }
+
+    // --- SP3a manifest route (GET /internal/docs/manifest) ---
+
+    @Test
+    void manifest_returnsIdTitleList() throws Exception {
+        UUID user = UUID.randomUUID();
+        UUID docId = UUID.randomUUID();
+        when(docService.manifestForUser(eq(user), eq(30)))
+                .thenReturn(List.of(new DocumentManifestEntry(docId, "My Brief")));
+
+        mockMvc.perform(get("/internal/docs/manifest").param("userId", user.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documents[0].id", is(docId.toString())))
+                .andExpect(jsonPath("$.documents[0].title", is("My Brief")));
+    }
+
+    @Test
+    void manifest_emptyIsOk() throws Exception {
+        UUID user = UUID.randomUUID();
+        when(docService.manifestForUser(eq(user), eq(30))).thenReturn(List.of());
+
+        mockMvc.perform(get("/internal/docs/manifest").param("userId", user.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documents").isArray())
+                .andExpect(jsonPath("$.documents").isEmpty());
+    }
+
+    @Test
+    void manifest_clampsLimit() throws Exception {
+        UUID user = UUID.randomUUID();
+        when(docService.manifestForUser(eq(user), eq(100))).thenReturn(List.of());
+
+        mockMvc.perform(get("/internal/docs/manifest")
+                        .param("userId", user.toString())
+                        .param("limit", "9999"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void manifest_missingUserId_is400() throws Exception {
+        mockMvc.perform(get("/internal/docs/manifest"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void manifest_badUserId_is400() throws Exception {
+        mockMvc.perform(get("/internal/docs/manifest").param("userId", "not-a-uuid"))
+                .andExpect(status().isBadRequest());
     }
 }

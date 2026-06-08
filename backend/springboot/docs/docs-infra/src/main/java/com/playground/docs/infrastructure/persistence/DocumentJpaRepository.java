@@ -24,6 +24,20 @@ public interface DocumentJpaRepository extends JpaRepository<DocumentJpaEntity, 
             """)
     List<DocumentJpaEntity> findAllByUserOrderedForMine(@Param("userId") UUID userId);
 
+    /**
+     * SP3a spec D1 — lightweight {@code {id,title}} manifest projection for the
+     * chat {@code [YOUR DOCUMENTS]} prompt section. Caller-owned docs in upload
+     * order ({@code created_at ASC}), capped by {@link Limit}.
+     */
+    @Query("""
+            select new com.playground.docs.application.dto.DocumentManifestEntry(d.id, d.title)
+            from DocumentJpaEntity d
+            where d.userId = :userId
+            order by d.createdAt asc
+            """)
+    List<com.playground.docs.application.dto.DocumentManifestEntry> findManifest(
+            @Param("userId") UUID userId, Limit limit);
+
     // --- M2 S2: community + per-author public feed (cursor pagination) ---
 
     /**

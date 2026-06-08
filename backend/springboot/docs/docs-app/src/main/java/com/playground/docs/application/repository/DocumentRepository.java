@@ -1,5 +1,6 @@
 package com.playground.docs.application.repository;
 
+import com.playground.docs.application.dto.DocumentManifestEntry;
 import com.playground.docs.application.dto.FolderListItemDto;
 import com.playground.docs.domain.model.Document;
 import com.playground.docs.domain.model.id.AuthorId;
@@ -65,6 +66,9 @@ public interface DocumentRepository {
      */
     List<Document> findPublicFeedByAuthor(
             AuthorId author, Instant cursorPublishedAt, java.util.UUID cursorId, int limit);
+
+    /** 호출자 소유 문서의 {id,title} 경량 목록 — 업로드 순서(created_at ASC), limit개 (SP3a spec D1). */
+    List<DocumentManifestEntry> findManifestByAuthor(AuthorId author, int limit);
 
     Document save(Document document);
 

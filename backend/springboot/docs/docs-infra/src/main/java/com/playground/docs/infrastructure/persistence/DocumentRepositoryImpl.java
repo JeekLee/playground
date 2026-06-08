@@ -1,5 +1,6 @@
 package com.playground.docs.infrastructure.persistence;
 
+import com.playground.docs.application.dto.DocumentManifestEntry;
 import com.playground.docs.application.dto.FolderListItemDto;
 import com.playground.docs.application.repository.DocumentRepository;
 import com.playground.docs.domain.model.Document;
@@ -57,6 +58,14 @@ public class DocumentRepositoryImpl implements DocumentRepository {
                 : jpaRepository.findPublicFeedByAuthorAfter(
                         author.value(), cursorPublishedAt, cursorId, Limit.of(limit));
         return rows.stream().map(DocumentMapper::toDomain).toList();
+    }
+
+    @Override
+    public List<DocumentManifestEntry> findManifestByAuthor(AuthorId author, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return jpaRepository.findManifest(author.value(), Limit.of(limit));
     }
 
     @Override

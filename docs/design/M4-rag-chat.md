@@ -14,6 +14,14 @@
 > 본문의 RETRIEVED CONTEXT/retrieval 단계 서술은 작성 시점 기록. Spec:
 > `docs/superpowers/specs/2026-06-07-agentic-search-tool-design.md`.
 
+> **2026-06-08 — Manifest 추출 (M9 SP3a)**: `[YOUR DOCUMENTS]` manifest가
+> docs-api 내부 엔드포인트(`GET /internal/docs/manifest`, `{id,title}`,
+> created_at ASC)로 이관됐다. chat은 docs 스키마를 직접 읽지 않으며
+> (datasource search_path에서 `docs` 제거 → `chat,identity,public`),
+> `UserDocumentRef`는 `{ordinal,id,title}`로 슬림화돼 프롬프트에서
+> mime/extraction 표기가 사라졌다. 실패·타임아웃은 빈 manifest로 degrade.
+> Spec: `docs/superpowers/specs/2026-06-08-sp3a-manifest-extraction-design.md`.
+
 > PRD: `docs/prd/M4-rag-chat.md`
 > Spec: `docs/superpowers/specs/2026-05-18-m4-rag-chat-design.md`
 > ADR: `docs/adr/14-m4-rag-chat.md` (per-milestone, includes the cross-doc amendments to ADR-09, ADR-05, ADR-04, roadmap §M4, M2 spec §8, M3 PRD §"M4 retrieval contract")

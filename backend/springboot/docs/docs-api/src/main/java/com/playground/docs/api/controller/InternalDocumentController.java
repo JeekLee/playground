@@ -1,6 +1,7 @@
 package com.playground.docs.api.controller;
 
 import com.playground.docs.api.response.DocumentBodyResponse;
+import com.playground.docs.api.response.DocumentManifestResponse;
 import com.playground.docs.application.service.DocumentAppService;
 import com.playground.docs.domain.exception.DocsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
@@ -9,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -28,10 +30,36 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/internal/docs")
 public class InternalDocumentController {
 
+    private static final int MAX_MANIFEST_LIMIT = 100;
+
     private final DocumentAppService docService;
 
     public InternalDocumentController(DocumentAppService docService) {
         this.docService = docService;
+    }
+
+    /**
+     * SP3a spec D1 — lightweight {@code {id,title}} manifest for the chat
+     * {@code [YOUR DOCUMENTS]} prompt section. The caller (chat) passes the
+     * target {@code userId} explicitly — {@code /internal/**} reads no auth
+     * header. Ordering is {@code created_at ASC}; {@code limit} is clamped to
+     * {@code [1, 100]}. Malformed/missing userId → 400; empty result → 200 with
+     * an empty array.
+     */
+    @GetMapping("/manifest")
+    public ResponseEntity<DocumentManifestResponse> manifest(
+            @RequestParam("userId") String userId,
+            @RequestParam(value = "limit", defaultValue = "30") int limit) {
+        UUID uid;
+        try {
+            uid = UUID.fromString(userId);
+        } catch (IllegalArgumentException e) {
+            ExceptionCreator.of(DocsErrorCode.MANIFEST_USER_INVALID).throwIt();
+            return null; // unreachable
+        }
+        int clamped = Math.max(1, Math.min(MAX_MANIFEST_LIMIT, limit));
+        return ResponseEntity.ok(
+                DocumentManifestResponse.from(docService.manifestForUser(uid, clamped)));
     }
 
     @GetMapping("/{id}/body")

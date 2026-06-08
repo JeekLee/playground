@@ -67,7 +67,7 @@ public class PromptTemplate {
     /**
      * Build the full prompt body, injecting a {@code [YOUR DOCUMENTS]} manifest
      * (when present) so the model can resolve a natural-language document
-     * reference (ordinal like "두 번째 문서", title, or type) to a concrete
+     * reference (ordinal like "두 번째 문서" or title) to a concrete
      * {@code documentId} for a tool argument. An empty/null {@code documents}
      * list renders no section, keeping the no-tool prompt byte-identical.
      *
@@ -88,24 +88,12 @@ public class PromptTemplate {
             sb.append("[YOUR DOCUMENTS]\n");
             sb.append("The caller's uploaded documents, in upload order. When you call a tool that\n"
                     + "needs a document id (e.g. briefDocId), pick the exact id from this list that\n"
-                    + "matches the document the user refers to — by ordinal (\"두 번째\"/\"second\"), by\n"
-                    + "title, or by type. Never invent an id; if none matches, ask the user.\n");
+                    + "matches the document the user refers to — by ordinal (\"두 번째\"/\"second\") or by\n"
+                    + "title. Never invent an id; if none matches, ask the user.\n");
             for (UserDocumentRef d : documents) {
                 String title = (d.title() == null || d.title().isBlank()) ? "(untitled)" : d.title();
-                sb.append(d.ordinal()).append(". \"").append(title).append("\"");
-                String type = d.mimeType();
-                String status = d.extractionStatus();
-                if ((type != null && !type.isBlank()) || (status != null && !status.isBlank())) {
-                    sb.append(" [");
-                    if (type != null && !type.isBlank()) {
-                        sb.append(type);
-                    }
-                    if (status != null && !status.isBlank()) {
-                        sb.append(type != null && !type.isBlank() ? ", " : "").append(status);
-                    }
-                    sb.append(']');
-                }
-                sb.append(" id=").append(d.documentId()).append('\n');
+                sb.append(d.ordinal()).append(". \"").append(title).append("\"")
+                  .append(" id=").append(d.documentId()).append('\n');
             }
             sb.append('\n');
         }
