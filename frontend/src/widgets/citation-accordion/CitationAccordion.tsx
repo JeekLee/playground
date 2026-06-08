@@ -13,10 +13,11 @@ import { isStaleCitation, type Citation } from '@/entities/chat';
  *  - Collapsed: `▸ Citations · N` in `text-muted` 12px / 500.
  *  - Expanded:  `▾ Citations · N` in `accent` 12px / 600, with a card list
  *               (`surface` bg + `border` + `radius-md`, 1px dividers).
- *  - Each card: `[n] <title>` (text 13 / 600) left, `↗ open` accent link right,
- *               excerpt (`text-muted` 12 / 400, max 2 lines, ellipsis).
+ *  - Each card: `[n] <title>` (text 13 / 600) left, `↗ open` accent link right
+ *               (href = the source's absolute `uri`, SP3b spec D7),
+ *               content (`text-muted` 12 / 400, max 2 lines, ellipsis).
  *  - Stale citation (title null): `[n] (deleted) — 이 문서는 더 이상…`,
- *               NO ↗ open link, NO chunk_index shown.
+ *               NO ↗ open link, NO content shown.
  *  - RETRIEVAL_EMPTY (N=0): header reads `▾ Citations · none`; expanded
  *               body is single line "(no citations — answer was unsupported)".
  *
@@ -87,7 +88,7 @@ export function CitationAccordion({ citations, defaultOpen = false, focusN = nul
           ) : (
             <ul className="divide-y divide-border">
               {citations.map((c) => (
-                <CitationCard key={`${c.n}-${c.documentId}-${c.chunkIndex}`} citation={c} focused={focusN === c.n} />
+                <CitationCard key={`${c.n}`} citation={c} focused={focusN === c.n} />
               ))}
             </ul>
           )}
@@ -130,9 +131,9 @@ function CitationCard({ citation, focused }: CitationCardProps) {
             </>
           )}
         </p>
-        {!stale && (
+        {!stale && citation.uri && (
           <a
-            href={`/docs/${encodeURIComponent(citation.documentId)}`}
+            href={citation.uri}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-[3px] text-[12px] font-medium text-accent transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
@@ -142,18 +143,18 @@ function CitationCard({ citation, focused }: CitationCardProps) {
           </a>
         )}
       </div>
-      {!stale && citation.excerpt && (
-        // Excerpts are slices of the source Markdown chunk, so render
-        // them through the same pipeline as the doc body so backticks,
+      {!stale && citation.content && (
+        // The cited text is a slice of the source Markdown, so render it
+        // through the same pipeline as the doc body so backticks,
         // **bold**, etc. don't bleed through as raw text. The
         // `line-clamp` here is approximate — block elements (code
-        // fences) inside an excerpt look odd, but excerpts are ≤ 600
+        // fences) inside the snippet look odd, but `content` is ≤ 600
         // chars (search-tool head-truncation) and the clamp caps the
-        // visible height anyway. Citation
-        // pills are disabled here ({@code citationPill} omitted) — the
-        // excerpt is source text, not a place to nest other citations.
+        // visible height anyway. Citation pills are disabled here
+        // ({@code citationPill} omitted) — the snippet is source text,
+        // not a place to nest other citations.
         <div className="line-clamp-3 text-[12px] leading-snug text-text-muted [&>*:first-child]:mt-0">
-          <MarkdownReader body={citation.excerpt} />
+          <MarkdownReader body={citation.content} />
         </div>
       )}
     </li>

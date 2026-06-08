@@ -1,6 +1,5 @@
 export type {
   Role,
-  Visibility,
   ChatSession,
   Citation,
   Message,

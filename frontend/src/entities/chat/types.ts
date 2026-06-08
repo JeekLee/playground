@@ -8,7 +8,6 @@
  */
 
 import type {
-  CitationVisibility,
   DoneEventPayload,
   ErrorEventPayload,
   MassingProgramJson,
@@ -29,7 +28,6 @@ import type {
 import type { ChatStreamEvent } from '@/shared/api/chat.sse';
 
 export type Role = MessageRole;
-export type Visibility = CitationVisibility;
 export type ChatSession = SessionListItemDto;
 export type Citation = MessageCitationDto;
 export type Message = MessageDto;

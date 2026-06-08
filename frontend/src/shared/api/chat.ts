@@ -46,26 +46,25 @@ export interface PatchSessionRequestDto {
 }
 
 /**
- * Spec §5.3 — `GET /api/chat/sessions/{id}/messages`. Citations carry
- * the resolved title + excerpt (server-side JOIN to `docs.documents` +
- * `rag.document_chunks` per ADR-14 §3, §11). When the cited doc was
- * deleted (stale citation per ADR-14 §11), `title` is null and `excerpt`
- * is absent; the frontend renders `(deleted) — 이 문서는 더 이상 사용할 수
+ * Spec §5.3 — `GET /api/chat/sessions/{id}/messages`. Citations are the
+ * corpus-agnostic `SourceRef` shape (SP3b spec D7): a `sourceType`
+ * discriminator + resolved `title`, snapshot `content`, and an absolute
+ * `uri` link target (documents → `${ORIGIN}/docs/{id}`, web sources →
+ * the page URL). When the cited source was deleted post-cite (stale
+ * citation per ADR-14 §11), `title` is null and `content`/`uri` are
+ * absent; the frontend renders `(deleted) — 이 문서는 더 이상 사용할 수
  * 없습니다`.
  */
-export type CitationVisibility = 'public' | 'private';
-
 export interface MessageCitationDto {
   /** 1-indexed; matches `[N]` markers in the message body. */
   n: number;
-  documentId: string;
-  chunkIndex: number;
-  /** Null when the source document has been deleted post-cite (ADR-14 §11). */
+  sourceType: string;
+  /** Null when the source is deleted post-cite (ADR-14 §11). */
   title: string | null;
-  /** Absent for deleted citations. */
-  excerpt?: string;
-  /** Absent for deleted citations. */
-  visibility?: CitationVisibility;
+  /** The cited text. */
+  content?: string;
+  /** Absolute access URL for the source; absent for deleted citations. */
+  uri?: string | null;
 }
 
 export type MessageRole = 'user' | 'assistant';
