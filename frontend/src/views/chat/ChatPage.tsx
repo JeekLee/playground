@@ -379,7 +379,18 @@ export function ChatPage({
                   onStop={streamApi.stop}
                   toolCards={streamingAssistant.toolCards}
                   accordion={
-                    streamingAssistant.citations.length > 0 || streamingAssistant.status === 'done'
+                    // Mount the accordion only when there are real citations —
+                    // identical to the history-row condition (line ~351) so the
+                    // streaming→history handoff doesn't flicker. The cited subset
+                    // arrives in the same `done` setTurn that flips status to
+                    // 'done' (useChatStream §done), so `citations.length > 0`
+                    // already covers the populated case; the old extra
+                    // `|| status === 'done'` clause only ever fired for *empty*
+                    // citations, mounting an auto-opened "(no citations)" card
+                    // that vanished the instant the row became history. A
+                    // genuinely unsupported answer (RETRIEVAL_EMPTY) says so in
+                    // its own body text — no empty accordion.
+                    streamingAssistant.citations.length > 0
                       ? (focusedN) => (
                           <CitationAccordion
                             citations={streamingAssistant.citations}
