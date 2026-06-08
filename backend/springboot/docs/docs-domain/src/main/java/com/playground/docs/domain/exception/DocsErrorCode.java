@@ -83,6 +83,16 @@ public enum DocsErrorCode implements ErrorCode {
             "search-documents tool query must not be blank"),
 
     /**
+     * SP3a spec D1 — the {@code /internal/docs/manifest} userId query parameter
+     * was missing or not a UUID. 400 (not 401) per the spec: {@code /internal/**}
+     * reads no auth header and the caller passes the target user explicitly, so a
+     * malformed userId is a caller wiring bug, not an end-user auth failure.
+     */
+    @MappedTo(BadRequestException.class)
+    MANIFEST_USER_INVALID("DOCS-VALIDATION-014",
+            "manifest userId query parameter must be a UUID"),
+
+    /**
      * M2 spec §10 "Search failure isolation" + spec §6.5: when OpenSearch is
      * unreachable, search routes return 503 with this code so callers can
      * distinguish "no hits" from "search subsystem down".

@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.playground.docs.application.dto.CreateDocumentCommand;
 import com.playground.docs.application.dto.DocumentDetailDto;
+import com.playground.docs.application.dto.DocumentManifestEntry;
 import com.playground.docs.application.dto.PatchDocumentCommand;
 import com.playground.docs.application.service.DocumentAppService;
 import com.playground.docs.domain.exception.DocumentNotFoundException;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -176,6 +178,33 @@ class DocumentCrudIT {
         service.delete(id, author);
 
         assertThatThrownBy(() -> service.getById(id, author)).isInstanceOf(DocumentNotFoundException.class);
+    }
+
+    @Test
+    void manifest_returns_earliest_by_created_at_asc_capped_by_limit() {
+        UUID author = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        // Created sequentially → monotonically non-decreasing created_at.
+        service.create(new CreateDocumentCommand(author, "First", "body", null));
+        service.create(new CreateDocumentCommand(author, "Second", "body", null));
+        service.create(new CreateDocumentCommand(author, "Third", "body", null));
+        service.create(new CreateDocumentCommand(other, "Other", "body", null));
+
+        List<DocumentManifestEntry> top2 = service.manifestForUser(author, 2);
+
+        // created_at ASC, limit 2 → the two earliest, in upload order.
+        assertThat(top2).hasSize(2);
+        assertThat(top2).extracting(DocumentManifestEntry::title)
+                .containsExactly("First", "Second");
+        assertThat(top2).allSatisfy(e -> {
+            assertThat(e.id()).isNotNull();
+            assertThat(e.title()).isNotBlank();
+        });
+
+        // Full list excludes the other user's doc and stays in upload order.
+        List<DocumentManifestEntry> all = service.manifestForUser(author, 30);
+        assertThat(all).extracting(DocumentManifestEntry::title)
+                .containsExactly("First", "Second", "Third");
     }
 
     @Test

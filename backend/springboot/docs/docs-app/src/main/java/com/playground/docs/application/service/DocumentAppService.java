@@ -4,6 +4,7 @@ import com.playground.docs.application.dto.AuthorDto;
 import com.playground.docs.application.dto.CreateDocumentCommand;
 import com.playground.docs.application.dto.DocumentBodyDto;
 import com.playground.docs.application.dto.DocumentDetailDto;
+import com.playground.docs.application.dto.DocumentManifestEntry;
 import com.playground.docs.application.dto.MyDocumentListItemDto;
 import com.playground.docs.application.dto.PatchDocumentCommand;
 import com.playground.docs.application.port.BlobStoragePort;
@@ -231,6 +232,12 @@ public class DocumentAppService {
         }
         Boolean likedByMe = resolveLikedByMe(id, callerId);
         return toDetailDto(doc, callerOwnsRow(doc, callerId), likedByMe);
+    }
+
+    /** chat의 [YOUR DOCUMENTS] manifest용 내부 read (SP3a spec D1). 무인증·visibility-agnostic. */
+    @Transactional(readOnly = true)
+    public List<DocumentManifestEntry> manifestForUser(UUID userId, int limit) {
+        return repository.findManifestByAuthor(AuthorId.of(userId), limit);
     }
 
     /** Internal body-fetch for M3 rag-ingestion (ADR-12 §2). No auth filter; visibility-agnostic. */
