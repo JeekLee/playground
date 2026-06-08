@@ -87,6 +87,20 @@ class WebClientUserDocumentManifestAdapterTest {
     }
 
     @Test
+    void malformedUuidEntryReturnsEmpty() {
+        // A non-UUID id slips through bodyToMono (no schema validation) and only
+        // blows up at UUID.fromString after .block(), in the mapping loop — i.e.
+        // the post-block catch(RuntimeException). The whole list degrades to empty.
+        UUID u = UUID.randomUUID();
+        wm.stubFor(get(urlPathEqualTo("/internal/docs/manifest"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"documents\":[{\"id\":\"not-a-uuid\",\"title\":\"X\"}]}")));
+
+        assertThat(adapter().recentForUser(UserId.of(u), 30)).isEmpty();
+    }
+
+    @Test
     void limitZeroReturnsEmptyWithoutCall() {
         UUID u = UUID.randomUUID();
 

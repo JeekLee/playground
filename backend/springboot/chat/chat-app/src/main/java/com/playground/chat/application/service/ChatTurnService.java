@@ -241,7 +241,7 @@ public class ChatTurnService {
         boolean firstTurn = userMessageCount == 1;
 
         // Caller's document manifest for the [YOUR DOCUMENTS] prompt section, so
-        // the model can resolve an ordinal/title/type reference to a briefDocId.
+        // the model can resolve an ordinal/title reference to a briefDocId.
         // Degrades gracefully — a failed lookup just omits the section.
         List<UserDocumentRef> documents;
         try {

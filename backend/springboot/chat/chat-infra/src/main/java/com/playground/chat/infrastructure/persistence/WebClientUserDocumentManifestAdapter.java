@@ -56,7 +56,7 @@ public class WebClientUserDocumentManifestAdapter implements UserDocumentManifes
                     .bodyToMono(ManifestResponse.class)
                     .timeout(TIMEOUT)
                     .onErrorResume(e -> {
-                        log.warn("manifest fetch failed userId=" + userId.value() + " reason=" + e);
+                        log.warn("manifest_fetch_failed userId={} reason={}", userId.value(), e.toString());
                         return Mono.empty();
                     })
                     .block();
@@ -70,7 +70,7 @@ public class WebClientUserDocumentManifestAdapter implements UserDocumentManifes
             }
             return refs;
         } catch (RuntimeException e) {
-            log.warn("manifest fetch error userId=" + userId.value() + " reason=" + e);
+            log.warn("manifest_parse_failed userId={} reason={}", userId.value(), e.toString());
             return List.of();
         }
     }
