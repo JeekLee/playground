@@ -11,9 +11,10 @@ spring:
     web-application-type: reactive
   datasource:
     # ADR-14 §3.1 + ADR-08 §A08.5 — single Hikari datasource with search_path
-    # covering the three schemas chat reads (chat write, docs/identity
-    # read). The `rag` schema was retired by M6.1 (ADR-05 §A05.1); chunks
-    # now live in `docs.document_chunks`. Fully-qualified table names are
+    # covering the schemas chat touches (chat write, identity read). SP3a spec
+    # D4: the document manifest now arrives via docs-api's internal endpoint, so
+    # chat no longer reads docs.* — `docs` is dropped from search_path. The `rag`
+    # schema was retired by M6.1 (ADR-05 §A05.1). Fully-qualified table names are
     # used in adapters too; search_path is belt-and-suspenders for diagnostic
     # SQL via psql.
     url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=chat
@@ -22,7 +23,7 @@ spring:
     hikari:
       maximum-pool-size: 5
       pool-name: chat-pool
-      connection-init-sql: "SET search_path TO chat,docs,identity,public"
+      connection-init-sql: "SET search_path TO chat,identity,public"
   jpa:
     open-in-view: false
     hibernate:

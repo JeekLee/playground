@@ -41,8 +41,8 @@ class PromptTemplateTest {
         UUID firstId = UUID.fromString("11111111-1111-1111-1111-111111111111");
         UUID secondId = UUID.fromString("22222222-2222-2222-2222-222222222222");
         List<UserDocumentRef> docs = List.of(
-                new UserDocumentRef(1, firstId, "사업계획서", "application/pdf", "extracted"),
-                new UserDocumentRef(2, secondId, "KFI 설계공모지침서", "application/pdf", "extracted"));
+                new UserDocumentRef(1, firstId, "사업계획서"),
+                new UserDocumentRef(2, secondId, "KFI 설계공모지침서"));
         String out = template.assemble(List.of(), "두 번째 문서로 매싱 만들어줘", docs);
 
         assertThat(out).contains("[YOUR DOCUMENTS]");
