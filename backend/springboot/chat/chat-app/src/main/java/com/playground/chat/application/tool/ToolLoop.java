@@ -110,12 +110,14 @@ public final class ToolLoop {
         int newDepth = depth.incrementAndGet();
         int maxDepth = properties.toolMaxDepth();
         if (newDepth > maxDepth) {
+            // Single message source — the SSE tool_error and the terminal
+            // exception carry the identical text (no divergence).
+            String msg = "Tool-call depth cap of " + maxDepth + " exceeded";
             log.warn("tool_max_depth_exceeded tool=" + desc.name() + " depth=" + newDepth + " cap=" + maxDepth);
             sink.tryEmitNext(new ChatStreamEvent.ToolError(
-                    id, desc.name(), ToolErrorCode.MAX_DEPTH.name(),
-                    "Tool-call depth cap of " + maxDepth + " exceeded"));
+                    id, desc.name(), ToolErrorCode.MAX_DEPTH.name(), msg));
             sink.tryEmitComplete();
-            throw new MaxDepthExceededException(desc.name(), maxDepth);
+            throw new ToolCallTerminalException(ToolErrorCode.MAX_DEPTH, msg);
         }
         // tool_call BEFORE dispatching (ADR-17 §3.1 step 3a). tool_call /
         // tool_result / tool_error all emit from THIS (dispatch) thread — a
@@ -184,9 +186,11 @@ public final class ToolLoop {
         }
         ToolInvocationResult.Failure f = (ToolInvocationResult.Failure) result;
         sink.tryEmitNext(new ChatStreamEvent.ToolError(f.id(), f.name(), f.code().name(), f.message()));
-        if (f.code() == ToolErrorCode.CIRCUIT_OPEN) {
-            // Terminal — abort the round-trip so the LLM does not get a chance
-            // to retry (ADR-17 §3.1 + Story 6 operator cost-protection).
+        if (f.code().isTerminal()) {
+            // Terminal (CIRCUIT_OPEN per ADR-17 §3.1 + Story 6 operator
+            // cost-protection) — abort the round-trip so the LLM does not get a
+            // chance to retry. Driven by ToolErrorCode.isTerminal() so any future
+            // terminal code is handled without editing this branch.
             sink.tryEmitComplete();
             throw new ToolCallTerminalException(f.code(), f.message());
         }

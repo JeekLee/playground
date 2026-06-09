@@ -303,7 +303,7 @@ class ChatTurnServiceToolCallingTest {
                             }
                             sink.complete();
                         } catch (RuntimeException e) {
-                            // The 6th invocation throws MaxDepthExceededException
+                            // The 6th invocation throws ToolCallTerminalException(MAX_DEPTH)
                             // — Spring AI in real life would propagate it; we
                             // complete the stream so the merged sink emits the
                             // terminal tool_error and we observe it.

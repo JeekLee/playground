@@ -28,11 +28,29 @@ package com.playground.chat.domain.tool;
  * </ul>
  */
 public enum ToolErrorCode {
-    TIMEOUT,
-    CIRCUIT_OPEN,
-    MAX_DEPTH,
-    UPSTREAM_4XX,
-    UPSTREAM_5XX,
-    SCHEMA_INVALID,
-    INTERNAL
+    TIMEOUT(false),
+    CIRCUIT_OPEN(true),
+    MAX_DEPTH(true),
+    UPSTREAM_4XX(false),
+    UPSTREAM_5XX(false),
+    SCHEMA_INVALID(false),
+    INTERNAL(false);
+
+    private final boolean terminal;
+
+    ToolErrorCode(boolean terminal) {
+        this.terminal = terminal;
+    }
+
+    /**
+     * Whether this code aborts the turn's tool round-trip (ADR-17 §2): the LLM
+     * gets no further round-trip — the orchestrator throws {@code
+     * ToolCallTerminalException} to unwind. The two terminal codes are
+     * {@link #CIRCUIT_OPEN} (operator cost-protection) and {@link #MAX_DEPTH}
+     * (per-turn depth cap). Non-terminal codes are fed back to the LLM as a
+     * synthetic error result so it can retry or apologize.
+     */
+    public boolean isTerminal() {
+        return terminal;
+    }
 }
