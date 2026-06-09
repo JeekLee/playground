@@ -2,14 +2,10 @@ package com.playground.chat.application.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.playground.chat.application.dto.ChatTurnRequest;
-import com.playground.chat.application.dto.CitationDto;
 import com.playground.chat.application.port.ChatGenerationPort;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
 import com.playground.chat.application.port.TokenBucketPort;
-import com.playground.chat.application.port.UserDocumentManifestPort;
 import com.playground.chat.application.properties.ChatProperties;
-import com.playground.chat.application.repository.AttachmentRepository;
-import com.playground.chat.application.repository.MessageRepository;
 import com.playground.chat.application.repository.SessionRepository;
 import com.playground.chat.application.tool.ToolBinding;
 import com.playground.chat.application.tool.ToolDispatcherPort;
@@ -18,21 +14,12 @@ import com.playground.chat.application.tool.UserContext;
 import com.playground.chat.domain.exception.ChatErrorCode;
 import com.playground.chat.domain.model.Attachment;
 import com.playground.chat.domain.model.ChatSession;
-import com.playground.chat.domain.model.Message;
-import com.playground.chat.domain.model.MessageCitation;
-import com.playground.chat.domain.model.RetrievedChunk;
 import com.playground.chat.domain.model.UserDocumentRef;
 import com.playground.chat.domain.model.id.MessageId;
-import com.playground.chat.domain.model.id.UserId;
-import com.playground.chat.domain.model.vo.TokenCount;
-import com.playground.chat.domain.service.CitationRenumberer;
-import com.playground.chat.domain.service.HistoryTruncator;
 import com.playground.chat.domain.service.PromptTemplate;
-import com.playground.chat.domain.service.TokenCounter;
 import com.playground.chat.domain.tool.ToolCatalog;
 import com.playground.chat.domain.tool.ToolDescriptor;
 import com.playground.shared.chat.ChatStreamEvent;
-import com.playground.shared.chat.SourceRef;
 import com.playground.shared.error.ExceptionCreator;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -70,27 +57,18 @@ public class ChatTurnService {
     private static final Log log = LogFactory.getLog(ChatTurnService.class);
 
     private final SessionRepository sessionRepository;
-    private final MessageRepository messageRepository;
     private final TokenBucketPort tokenBucketPort;
     private final ConcurrentStreamLockPort lockPort;
     private final ChatGenerationPort chatGenerationPort;
-    private final HistoryTruncator historyTruncator;
-    private final TokenCounter tokenCounter;
     private final PromptTemplate promptTemplate;
     private final AutoTitleService autoTitleService;
     private final ActiveTurnRegistry activeTurnRegistry;
     private final ToolDispatcherPort toolDispatcherPort;
-    private final UserDocumentManifestPort userDocumentManifestPort;
-    private final AttachmentRepository attachmentRepository;
+    private final TurnContextAssembler turnContextAssembler;
+    private final TurnRecorder turnRecorder;
     private final ObjectMapper objectMapper;
     private final ChatProperties properties;
     private final Clock clock;
-
-    /**
-     * Cap on the document manifest injected into the prompt's [YOUR DOCUMENTS]
-     * section. Bounds prompt tokens; personal-scale corpora sit well under it.
-     */
-    static final int DOCUMENT_MANIFEST_LIMIT = 30;
 
     /**
      * Inactivity timeout on the streaming phase. Governs genuine LLM token
@@ -111,25 +89,22 @@ public class ChatTurnService {
     @org.springframework.beans.factory.annotation.Autowired
     public ChatTurnService(
             SessionRepository sessionRepository,
-            MessageRepository messageRepository,
             TokenBucketPort tokenBucketPort,
             ConcurrentStreamLockPort lockPort,
             ChatGenerationPort chatGenerationPort,
-            HistoryTruncator historyTruncator,
-            TokenCounter tokenCounter,
             PromptTemplate promptTemplate,
             AutoTitleService autoTitleService,
             ActiveTurnRegistry activeTurnRegistry,
             ToolDispatcherPort toolDispatcherPort,
-            UserDocumentManifestPort userDocumentManifestPort,
-            AttachmentRepository attachmentRepository,
+            TurnContextAssembler turnContextAssembler,
+            TurnRecorder turnRecorder,
             ObjectMapper objectMapper,
             ChatProperties properties,
             Clock clock) {
-        this(sessionRepository, messageRepository, tokenBucketPort, lockPort,
-                chatGenerationPort, historyTruncator, tokenCounter,
+        this(sessionRepository, tokenBucketPort, lockPort,
+                chatGenerationPort,
                 promptTemplate, autoTitleService, activeTurnRegistry, toolDispatcherPort,
-                userDocumentManifestPort, attachmentRepository,
+                turnContextAssembler, turnRecorder,
                 objectMapper, properties, clock, ToolCatalog::descriptors);
     }
 
@@ -142,35 +117,29 @@ public class ChatTurnService {
      */
     public ChatTurnService(
             SessionRepository sessionRepository,
-            MessageRepository messageRepository,
             TokenBucketPort tokenBucketPort,
             ConcurrentStreamLockPort lockPort,
             ChatGenerationPort chatGenerationPort,
-            HistoryTruncator historyTruncator,
-            TokenCounter tokenCounter,
             PromptTemplate promptTemplate,
             AutoTitleService autoTitleService,
             ActiveTurnRegistry activeTurnRegistry,
             ToolDispatcherPort toolDispatcherPort,
-            UserDocumentManifestPort userDocumentManifestPort,
-            AttachmentRepository attachmentRepository,
+            TurnContextAssembler turnContextAssembler,
+            TurnRecorder turnRecorder,
             ObjectMapper objectMapper,
             ChatProperties properties,
             Clock clock,
             java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier) {
         this.sessionRepository = sessionRepository;
-        this.messageRepository = messageRepository;
         this.tokenBucketPort = tokenBucketPort;
         this.lockPort = lockPort;
         this.chatGenerationPort = chatGenerationPort;
-        this.historyTruncator = historyTruncator;
-        this.tokenCounter = tokenCounter;
         this.promptTemplate = promptTemplate;
         this.autoTitleService = autoTitleService;
         this.activeTurnRegistry = activeTurnRegistry;
         this.toolDispatcherPort = toolDispatcherPort;
-        this.userDocumentManifestPort = userDocumentManifestPort;
-        this.attachmentRepository = attachmentRepository;
+        this.turnContextAssembler = turnContextAssembler;
+        this.turnRecorder = turnRecorder;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.clock = clock;
@@ -187,7 +156,7 @@ public class ChatTurnService {
 
         return Mono.fromCallable(() -> guardAndPrepare(request))
                 .subscribeOn(Schedulers.boundedElastic())
-                .flatMapMany(prep -> streamWithLock(request, prep));
+                .flatMapMany(ctx -> streamWithLock(request, ctx));
     }
 
     private void validateMessageSize(String message) {
@@ -201,7 +170,7 @@ public class ChatTurnService {
     }
 
     /** Phase 1: pre-stream side-effects that may throw HTTP errors. */
-    private Preparation guardAndPrepare(ChatTurnRequest request) {
+    private TurnContext guardAndPrepare(ChatTurnRequest request) {
         // 1. Rate limit.
         TokenBucketPort.Decision decision = tokenBucketPort.tryAcquire(request.caller());
         if (!decision.allowed()) {
@@ -214,48 +183,11 @@ public class ChatTurnService {
         ChatSession session = sessionRepository.findOwned(request.sessionId(), request.caller())
                 .orElseThrow(() -> ExceptionCreator.of(ChatErrorCode.SESSION_NOT_FOUND).build());
 
-        // 3. History load + truncate.
-        List<Message> rawHistory = messageRepository.findBySession(session.id());
-        TokenCount currentMessageTokens = tokenCounter.count(request.message());
-        List<Message> truncated = historyTruncator.truncate(
-                rawHistory, properties.maxHistoryTokens(), currentMessageTokens);
-
-        // 4. Persist the user message before opening the stream so a mid-stream
-        // refresh shows the user turn even if the assistant never lands.
-        // (agentic-search spec D2: the always-on embed+pgvector retrieval was
-        // removed — the LLM searches via the search_documents tool only when
-        // the question concerns uploaded-document content.)
-        Message userMessage = Message.newUserTurn(
-                session.id(), request.caller(), request.message(), clock.instant());
-        Message savedUser = messageRepository.save(userMessage);
-
-        // 5. Determine whether this is the first user turn for the auto-title trigger.
-        int userMessageCount = messageRepository.countUserMessages(session.id());
-        boolean firstTurn = userMessageCount == 1;
-
-        // Caller's document manifest for the [YOUR DOCUMENTS] prompt section, so
-        // the model can resolve an ordinal/title reference to a briefDocId.
-        // Degrades gracefully — a failed lookup just omits the section.
-        List<UserDocumentRef> documents;
-        try {
-            documents = userDocumentManifestPort.recentForUser(request.caller(), DOCUMENT_MANIFEST_LIMIT);
-        } catch (RuntimeException e) {
-            log.warn("document_manifest_lookup_failed userId=" + request.caller()
-                    + " error=" + e.getMessage());
-            documents = List.of();
-        }
-
-        log.info("turn_start sessionId=" + session.id()
-                + " userId=" + request.caller()
-                + " userSub=" + maskSub(request.userSub())
-                + " historyTurns=" + truncated.size()
-                + " docManifest=" + documents.size());
-
-        return new Preparation(session, truncated, savedUser, firstTurn, documents);
+        return turnContextAssembler.assemble(request, session);
     }
 
     /** Phase 2: lock + stream. The lock is released in doFinally. */
-    private Flux<ChatStreamEvent> streamWithLock(ChatTurnRequest request, Preparation prep) {
+    private Flux<ChatStreamEvent> streamWithLock(ChatTurnRequest request, TurnContext ctx) {
         ConcurrentStreamLockPort.Handle handle = lockPort.acquire(request.caller());
         if (handle == null) {
             // ADR-14 §D — latest-wins should have freed the previous holder; a
@@ -284,10 +216,10 @@ public class ChatTurnService {
         // the [YOUR DOCUMENTS] section is injected ONLY when tools are present.
         // Empty catalog → M4-invariant prompt shape (PRD Story 10), byte-identical.
         List<ToolDescriptor> descriptors = toolDescriptorSupplier.get();
-        List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : prep.documents();
+        List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : ctx.documents();
 
         String prompt = promptTemplate.assemble(
-                prep.truncatedHistory(), request.message(), promptDocuments);
+                ctx.truncatedHistory(), request.message(), promptDocuments);
 
         // Turn-scoped citation accumulator (agentic-search spec D2). Each
         // search_documents tool result is renumbered into a turn-global
@@ -309,7 +241,7 @@ public class ChatTurnService {
                 ? List.of()
                 : new ToolLoop(toolDispatcherPort, objectMapper, properties, clock, toolEventSink,
                         depth, inFlightTools, stagedAttachments, acc, assistantMessageId, userCtx,
-                        prep.session().id()).bindings(descriptors);
+                        ctx.session().id()).bindings(descriptors);
 
         Flux<String> rawDeltas = bindings.isEmpty()
                 ? chatGenerationPort.stream(prompt, properties.maxCompletionTokens())
@@ -344,7 +276,7 @@ public class ChatTurnService {
         Flux<ChatStreamEvent> guarded =
                 withInactivityGuard(mergedTokensAndToolEvents, inFlightTools)
                 .onErrorResume(err -> {
-                    log.warn("stream_error sessionId=" + prep.session().id()
+                    log.warn("stream_error sessionId=" + ctx.session().id()
                             + " userId=" + request.caller()
                             + " reason=" + err.toString());
                     errored.set(true);
@@ -358,8 +290,8 @@ public class ChatTurnService {
             if (errored.get()) {
                 return Mono.empty();
             }
-            return persistAssistantAndDone(
-                    prep, acc.retrieved(), accumulated.toString(), request,
+            return turnRecorder.record(
+                    ctx, acc.retrieved(), accumulated.toString(), request,
                     assistantMessageId, stagedAttachments);
         });
 
@@ -370,15 +302,15 @@ public class ChatTurnService {
         // client-facing flux).
         Flux<ChatStreamEvent> source = Flux.concat(guarded, done)
                 .doFinally(signal -> {
-                    activeTurnRegistry.unregister(prep.session().id());
+                    activeTurnRegistry.unregister(ctx.session().id());
                     try {
                         handle.release();
                     } catch (RuntimeException e) {
-                        log.warn("lock release failed sessionId=" + prep.session().id()
+                        log.warn("lock release failed sessionId=" + ctx.session().id()
                                 + " reason=" + e.toString());
                     }
-                    if (prep.firstTurn() && signal == reactor.core.publisher.SignalType.ON_COMPLETE) {
-                        autoTitleService.generate(prep.session().id(), request.message())
+                    if (ctx.firstTurn() && signal == reactor.core.publisher.SignalType.ON_COMPLETE) {
+                        autoTitleService.generate(ctx.session().id(), request.message())
                                 .subscribeOn(Schedulers.boundedElastic())
                                 .subscribe();
                     }
@@ -398,16 +330,16 @@ public class ChatTurnService {
         // subscribers (mid-stream re-join) before the keep-alive subscribe
         // wires the source up. Unregister happens in source.doFinally above so
         // the entry disappears as soon as the pipeline terminates.
-        activeTurnRegistry.register(prep.session().id(), request.caller(), shared);
+        activeTurnRegistry.register(ctx.session().id(), request.caller(), shared);
 
         shared.subscribe(
                 event -> { /* drain — side effects accumulate + persist via the source */ },
-                err -> log.warn("chat stream upstream error sessionId=" + prep.session().id()
+                err -> log.warn("chat stream upstream error sessionId=" + ctx.session().id()
                         + " userId=" + request.caller() + " reason=" + err, err),
                 () -> { /* upstream completed; doFinally already ran */ });
 
         return shared
-                .doOnCancel(() -> log.info("stream_abort_client sessionId=" + prep.session().id()
+                .doOnCancel(() -> log.info("stream_abort_client sessionId=" + ctx.session().id()
                         + " userId=" + request.caller()
                         + " bytesEmitted=" + accumulated.length()
                         + " (server pipeline keeps going — assistant message will persist)"));
@@ -443,89 +375,6 @@ public class ChatTurnService {
                 .cast(ChatStreamEvent.class);
     }
 
-    private Mono<ChatStreamEvent> persistAssistantAndDone(
-            Preparation prep, List<RetrievedChunk> retrieved, String accumulatedText,
-            ChatTurnRequest request,
-            MessageId assistantMessageId, List<Attachment> stagedAttachments) {
-        return Mono.fromCallable(() -> {
-            if (accumulatedText == null || accumulatedText.isEmpty()) {
-                // The LLM produced no tokens — emit done with empty content so
-                // the client can close the stream cleanly. We still persist an
-                // empty assistant message so the message count remains paired.
-            }
-
-            // Renumber the [N] markers so the cited subset is rendered as
-            // a dense [1][2]… sequence regardless of which positions in
-            // the original retrieval window the LLM actually used. The
-            // assistant text shipped to the client (and persisted) gets
-            // its markers rewritten to the new sequence; the per-row
-            // citation cards line up 1:1.
-            CitationRenumberer.CitationRenumber renumber =
-                    CitationRenumberer.renumberCitations(accumulatedText, retrieved);
-
-            // Approximate token counts — we don't get them from the streaming
-            // ChatResponse uniformly; the assistant counter is the byte/token
-            // count of the accumulated text via JTokkit.
-            int tokensIn = tokenCounter.count(prep.lastUserMessageContent(request)).value();
-            int tokensOut = tokenCounter.count(renumber.text()).value();
-            int retrievalK = retrieved.size();
-
-            // Reuse the UP-FRONT-allocated assistant messageId (ADR-20 §D3) so
-            // any attachments staged mid-stream already point at this row.
-            Message assistant = Message.newAssistantTurn(
-                    assistantMessageId, prep.session().id(), request.caller(), renumber.text(),
-                    tokensIn, tokensOut, retrievalK, clock.instant());
-            Message persisted = messageRepository.save(assistant);
-
-            List<MessageCitation> toPersist = new java.util.ArrayList<>();
-            List<CitationDto> wireCitations = new java.util.ArrayList<>();
-            for (CitationRenumberer.CitedChunk c : renumber.cited()) {
-                // Snapshot persistence (SP3b spec D4): freeze the corpus-agnostic
-                // SourceRef (sourceType/title/content/uri) on the citation row so
-                // history reload reads it back without joining the docs schema.
-                // The live Done-event DTO and the persisted snapshot carry
-                // IDENTICAL values (same RetrievedChunk source, no re-truncation).
-                SourceRef s = c.chunk().source();
-                toPersist.add(new MessageCitation(persisted.id(), c.newN(), s));
-                wireCitations.add(new CitationDto(
-                        c.newN(), s.sourceType(), s.title(), s.content(), s.uri()));
-            }
-            if (!toPersist.isEmpty()) {
-                messageRepository.saveCitations(toPersist);
-            }
-
-            // ADR-20 §D3 — persist the staged attachments (already in MinIO,
-            // already linked to assistantMessageId). The snapshot copy avoids a
-            // concurrent-modification read while the (now-terminated) tool
-            // callbacks could in theory still be appending.
-            List<Attachment> attachments;
-            synchronized (stagedAttachments) {
-                attachments = new ArrayList<>(stagedAttachments);
-            }
-            if (!attachments.isEmpty()) {
-                attachmentRepository.saveAll(attachments);
-            }
-
-            log.info("stream_end sessionId=" + prep.session().id()
-                    + " userId=" + request.caller()
-                    + " userSub=" + maskSub(request.userSub())
-                    + " messageId=" + persisted.id()
-                    + " tokensIn=" + tokensIn
-                    + " tokensOut=" + tokensOut
-                    + " cited=" + toPersist.size()
-                    + " attachments=" + attachments.size());
-
-            // The tool_result SSE event already carries fileUrl for the streaming
-            // card; history loads via loadMessages carry the attachment DTO.
-            // Never put attachment data inside the citations field — the frontend
-            // calls citations.map() and crashes when it receives an object.
-            ChatStreamEvent.Done done = new ChatStreamEvent.Done(
-                    persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
-            return (ChatStreamEvent) done;
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-
     private static boolean isCircuitOpen(Throwable err) {
         Throwable t = err;
         while (t != null) {
@@ -536,25 +385,5 @@ public class ChatTurnService {
             t = t.getCause();
         }
         return false;
-    }
-
-    private static String maskSub(String sub) {
-        if (sub == null || sub.length() <= 4) {
-            return "***";
-        }
-        return sub.substring(0, 4) + "***";
-    }
-
-    /** Snapshot of pre-stream side-effects bound to one turn. */
-    private record Preparation(
-            ChatSession session,
-            List<Message> truncatedHistory,
-            Message savedUser,
-            boolean firstTurn,
-            List<UserDocumentRef> documents) {
-
-        String lastUserMessageContent(ChatTurnRequest request) {
-            return request.message();
-        }
     }
 }

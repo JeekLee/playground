@@ -27,6 +27,8 @@ import com.playground.chat.application.repository.SessionRepository;
 import com.playground.chat.application.service.ActiveTurnRegistry;
 import com.playground.chat.application.service.AutoTitleService;
 import com.playground.chat.application.service.ChatTurnService;
+import com.playground.chat.application.service.TurnContextAssembler;
+import com.playground.chat.application.service.TurnRecorder;
 import com.playground.chat.application.tool.ToolBinding;
 import com.playground.chat.domain.model.ChatSession;
 import com.playground.chat.domain.model.id.SessionId;
@@ -200,16 +202,19 @@ class ToolCallingE2ETest {
 
     private ChatTurnService service(WebClientToolDispatcher dispatcher, ToolDescriptor desc,
             ChatProperties props) {
+        Clock clock = Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC);
         return new ChatTurnService(
-                sessionRepository, messageRepository, tokenBucketPort, lockPort,
+                sessionRepository, tokenBucketPort, lockPort,
                 chatGenerationPort,
-                new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), dispatcher,
-                (userId, limit) -> java.util.List.of(),
-                attachmentRepository(),
+                new TurnContextAssembler(messageRepository, new TokenCounter(),
+                        new HistoryTruncator(new TokenCounter()),
+                        (userId, limit) -> java.util.List.of(), clock, props),
+                new TurnRecorder(messageRepository, attachmentRepository(),
+                        new TokenCounter(), clock),
                 objectMapper, props,
-                Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
+                clock,
                 () -> List.of(desc));
     }
 
