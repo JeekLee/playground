@@ -16,6 +16,7 @@ import com.playground.chat.domain.exception.ChatErrorCode;
 import com.playground.chat.domain.model.Attachment;
 import com.playground.chat.domain.model.ChatSession;
 import com.playground.chat.domain.model.UserDocumentRef;
+import com.playground.chat.domain.model.UserModelRef;
 import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.service.PromptTemplate;
 import com.playground.chat.domain.tool.ToolDescriptor;
@@ -70,6 +71,12 @@ public class ChatTurnService {
     private final ObjectMapper objectMapper;
     private final ChatProperties properties;
     private final Clock clock;
+    /**
+     * Resolves the {@code refine_massing} {@code baseAttachmentId} the LLM picked
+     * from the {@code [YOUR MODELS]} manifest to a storage key before dispatch
+     * (M9). Forwarded into the per-turn {@link ToolLoop}.
+     */
+    private final com.playground.chat.application.repository.AttachmentRepository attachmentRepository;
 
     /**
      * Inactivity timeout on the streaming phase. Governs genuine LLM token
@@ -155,9 +162,10 @@ public class ChatTurnService {
         // Empty catalog → M4-invariant prompt shape (PRD Story 10), byte-identical.
         List<ToolDescriptor> descriptors = toolRegistry.descriptorsFor(userCtx);
         List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : ctx.documents();
+        List<UserModelRef> promptModels = descriptors.isEmpty() ? List.of() : ctx.models();
 
         String prompt = promptTemplate.assemble(
-                ctx.truncatedHistory(), request.message(), promptDocuments);
+                ctx.truncatedHistory(), request.message(), promptDocuments, promptModels);
 
         // Turn-scoped citation accumulator (agentic-search spec D2). Each
         // search_documents tool result is renumbered into a turn-global
@@ -176,9 +184,9 @@ public class ChatTurnService {
 
         List<ToolBinding> bindings = descriptors.isEmpty()
                 ? List.of()
-                : new ToolLoop(toolDispatcherPort, objectMapper, properties, clock, toolEventSink,
-                        depth, inFlightTools, stagedAttachments, acc, assistantMessageId, userCtx,
-                        ctx.session().id()).bindings(descriptors);
+                : new ToolLoop(toolDispatcherPort, attachmentRepository, objectMapper, properties,
+                        clock, toolEventSink, depth, inFlightTools, stagedAttachments, acc,
+                        assistantMessageId, userCtx, ctx.session().id()).bindings(descriptors);
 
         Flux<String> rawDeltas = bindings.isEmpty()
                 ? chatGenerationPort.stream(prompt, properties.maxCompletionTokens())

@@ -215,13 +215,14 @@ class ToolCallingE2ETest {
                 chatGenerationPort,
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), dispatcher,
-                new TurnContextAssembler(messageRepository, new TokenCounter(),
+                new TurnContextAssembler(messageRepository, attachmentRepository(), new TokenCounter(),
                         new HistoryTruncator(new TokenCounter()),
                         (userId, limit) -> java.util.List.of(), clock, props),
                 new TurnRecorder(messageRepository, attachmentRepository(),
                         new TokenCounter(), clock),
                 objectMapper, props,
                 clock,
+                attachmentRepository(),
                 user -> List.of(desc));
     }
 
