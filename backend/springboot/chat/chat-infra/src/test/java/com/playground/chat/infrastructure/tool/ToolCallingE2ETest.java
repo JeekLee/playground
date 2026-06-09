@@ -197,6 +197,13 @@ class ToolCallingE2ETest {
                 return savedAttachments.stream()
                         .filter(a -> messageIds.contains(a.messageId())).toList();
             }
+
+            @Override
+            public java.util.List<com.playground.chat.domain.model.Attachment> findModelAttachments(
+                    com.playground.chat.domain.model.id.SessionId sessionId,
+                    com.playground.chat.domain.model.id.UserId callerId, int limit) {
+                return java.util.List.of();
+            }
         };
     }
 

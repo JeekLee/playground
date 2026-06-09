@@ -67,6 +67,12 @@ class AttachmentDownloadServiceTest {
         public List<Attachment> findByMessages(List<MessageId> messageIds) {
             return rows.values().stream().filter(a -> messageIds.contains(a.messageId())).toList();
         }
+
+        @Override
+        public List<Attachment> findModelAttachments(
+                com.playground.chat.domain.model.id.SessionId sessionId, UserId caller, int limit) {
+            return List.of();
+        }
     }
 
     private static final class FakeBlobStorage implements BlobStoragePort {
