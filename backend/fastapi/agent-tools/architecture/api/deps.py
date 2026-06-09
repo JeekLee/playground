@@ -21,6 +21,7 @@ from shared_kernel.context import (
 )
 from shared_kernel.docs_client import DocsClient
 
+from architecture.app.refine_workflow import RefineMassingWorkflow
 from architecture.app.workflow import MassingWorkflow
 
 __all__ = [
@@ -31,14 +32,23 @@ __all__ = [
     "SettingsDep",
     "UserContextDep",
     "get_workflow",
+    "get_refine_workflow",
     "get_docs_client",
     "WorkflowDep",
+    "RefineWorkflowDep",
     "DocsClientDep",
 ]
 
 
 def get_workflow(request: Request) -> MassingWorkflow:
     return request.app.state.workflow
+
+
+def get_refine_workflow(request: Request) -> RefineMassingWorkflow:
+    return request.app.state.refine_workflow
+
+
+RefineWorkflowDep = Annotated[RefineMassingWorkflow, Depends(get_refine_workflow)]
 
 
 def get_docs_client(request: Request) -> DocsClient:
