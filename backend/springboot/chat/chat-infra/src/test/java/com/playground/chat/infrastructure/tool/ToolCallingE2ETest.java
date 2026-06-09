@@ -497,12 +497,13 @@ class ToolCallingE2ETest {
         assertThat(result.path("attachment").path("downloadUrl").asText())
                 .isEqualTo("/api/chat/attachments/" + att.id());
 
-        // The terminal done event also carries the attachment + fileUrl (§D4).
+        // §D4: the attachment + fileUrl ride on the tool_result event (asserted
+        // above) and on history reload — NOT on the done event. done.citations()
+        // is the List<CitationDto> cited subset (empty here — a massing turn
+        // cites nothing). Smuggling a Map into the citations field would crash
+        // the FE (citations.map()), which the persist path forbids by contract.
         ChatStreamEvent.Done done = (ChatStreamEvent.Done) events.get(events.size() - 1);
-        assertThat(done.citations()).isInstanceOf(java.util.Map.class);
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> donePayload = (java.util.Map<String, Object>) done.citations();
-        assertThat(donePayload.get("fileUrl")).isEqualTo("/api/chat/attachments/" + att.id());
-        assertThat(donePayload).containsKey("attachment");
+        assertThat(done.citations()).isInstanceOf(java.util.List.class);
+        assertThat((java.util.List<?>) done.citations()).isEmpty();
     }
 }
