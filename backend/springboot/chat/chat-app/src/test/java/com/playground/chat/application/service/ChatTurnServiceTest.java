@@ -95,7 +95,7 @@ class ChatTurnServiceTest {
                 properties,
                 clock,
                 // Empty catalog for the pre-stream guard tests (no tool path).
-                java.util.List::of);
+                user -> java.util.List.of());
 
         when(autoTitleService.generate(any(), any())).thenReturn(Mono.empty());
     }
@@ -184,7 +184,7 @@ class ChatTurnServiceTest {
         when(lockPort.acquire(caller)).thenReturn(handle);
         when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        ChatTurnService service = serviceWithCatalog(() -> List.of(desc));
+        ChatTurnService service = serviceWithCatalog(user -> List.of(desc));
 
         ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "what's the policy?");
         List<ChatStreamEvent> events = service.stream(req).collectList().block();
@@ -243,7 +243,7 @@ class ChatTurnServiceTest {
     }
 
     private ChatTurnService serviceWithCatalog(
-            java.util.function.Supplier<List<com.playground.chat.domain.tool.ToolDescriptor>> catalog) {
+            com.playground.chat.application.port.ToolRegistry catalog) {
         TokenCounter tokenCounter = new TokenCounter();
         ChatProperties properties = ChatProperties.defaults();
         Clock clock = Clock.fixed(Instant.parse("2026-05-18T12:00:00Z"), ZoneOffset.UTC);

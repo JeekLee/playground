@@ -215,7 +215,7 @@ class ToolCallingE2ETest {
                         new TokenCounter(), clock),
                 objectMapper, props,
                 clock,
-                () -> List.of(desc));
+                user -> List.of(desc));
     }
 
     /**

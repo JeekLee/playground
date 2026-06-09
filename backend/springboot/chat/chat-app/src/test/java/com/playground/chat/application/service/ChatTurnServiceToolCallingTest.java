@@ -101,7 +101,7 @@ class ChatTurnServiceToolCallingTest {
                 clock,
                 // The production catalog has descriptors; tests in this file
                 // simulate the catalog explicitly per scenario.
-                java.util.List::of);
+                user -> java.util.List.of());
 
         when(autoTitleService.generate(any(), any())).thenReturn(Mono.empty());
     }
@@ -259,7 +259,7 @@ class ChatTurnServiceToolCallingTest {
                         new TokenCounter(), clock),
                 new ObjectMapper(), props,
                 clock,
-                () -> List.of(desc));
+                user -> List.of(desc));
 
         ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "hi");
         List<ChatStreamEvent> events = service.stream(req).collectList().block();
@@ -345,7 +345,7 @@ class ChatTurnServiceToolCallingTest {
                         new TokenCounter(), clock),
                 new ObjectMapper(), props,
                 clock,
-                () -> List.of(desc));
+                user -> List.of(desc));
 
         ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "hi");
         List<ChatStreamEvent> events = service.stream(req).collectList().block();

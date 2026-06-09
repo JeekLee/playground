@@ -5,6 +5,7 @@ import com.playground.chat.application.dto.ChatTurnRequest;
 import com.playground.chat.application.port.ChatGenerationPort;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
 import com.playground.chat.application.port.TokenBucketPort;
+import com.playground.chat.application.port.ToolRegistry;
 import com.playground.chat.application.properties.ChatProperties;
 import com.playground.chat.application.repository.SessionRepository;
 import com.playground.chat.application.tool.ToolBinding;
@@ -17,7 +18,6 @@ import com.playground.chat.domain.model.ChatSession;
 import com.playground.chat.domain.model.UserDocumentRef;
 import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.service.PromptTemplate;
-import com.playground.chat.domain.tool.ToolCatalog;
 import com.playground.chat.domain.tool.ToolDescriptor;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,7 @@ import reactor.core.scheduler.Schedulers;
  * is NOT persisted (§13).
  */
 @Service
+@RequiredArgsConstructor
 public class ChatTurnService {
 
     private static final Log log = LogFactory.getLog(ChatTurnService.class);
@@ -83,68 +85,12 @@ public class ChatTurnService {
      */
     private static final Duration TOOL_KEEPALIVE_INTERVAL = Duration.ofSeconds(30);
 
-    /** Source of registered tool descriptors. Defaults to {@code ToolCatalog::descriptors}. */
-    private final java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    public ChatTurnService(
-            SessionRepository sessionRepository,
-            TokenBucketPort tokenBucketPort,
-            ConcurrentStreamLockPort lockPort,
-            ChatGenerationPort chatGenerationPort,
-            PromptTemplate promptTemplate,
-            AutoTitleService autoTitleService,
-            ActiveTurnRegistry activeTurnRegistry,
-            ToolDispatcherPort toolDispatcherPort,
-            TurnContextAssembler turnContextAssembler,
-            TurnRecorder turnRecorder,
-            ObjectMapper objectMapper,
-            ChatProperties properties,
-            Clock clock) {
-        this(sessionRepository, tokenBucketPort, lockPort,
-                chatGenerationPort,
-                promptTemplate, autoTitleService, activeTurnRegistry, toolDispatcherPort,
-                turnContextAssembler, turnRecorder,
-                objectMapper, properties, clock, ToolCatalog::descriptors);
-    }
-
     /**
-     * Test-friendly constructor — pluggable tool-descriptor supplier.
-     * Public so end-to-end tests in {@code chat-infra} (different
-     * package) can wire a synthetic catalog without reaching for
-     * reflection. Production wiring uses the primary constructor which
-     * binds the supplier to {@code ToolCatalog::descriptors}.
+     * Source of the tools offered to the LLM each turn. Declared last so the
+     * Lombok-generated constructor's parameter order puts it last (matching the
+     * tests' constructor-arg position). Production binds {@code StaticToolRegistry}.
      */
-    public ChatTurnService(
-            SessionRepository sessionRepository,
-            TokenBucketPort tokenBucketPort,
-            ConcurrentStreamLockPort lockPort,
-            ChatGenerationPort chatGenerationPort,
-            PromptTemplate promptTemplate,
-            AutoTitleService autoTitleService,
-            ActiveTurnRegistry activeTurnRegistry,
-            ToolDispatcherPort toolDispatcherPort,
-            TurnContextAssembler turnContextAssembler,
-            TurnRecorder turnRecorder,
-            ObjectMapper objectMapper,
-            ChatProperties properties,
-            Clock clock,
-            java.util.function.Supplier<List<ToolDescriptor>> toolDescriptorSupplier) {
-        this.sessionRepository = sessionRepository;
-        this.tokenBucketPort = tokenBucketPort;
-        this.lockPort = lockPort;
-        this.chatGenerationPort = chatGenerationPort;
-        this.promptTemplate = promptTemplate;
-        this.autoTitleService = autoTitleService;
-        this.activeTurnRegistry = activeTurnRegistry;
-        this.toolDispatcherPort = toolDispatcherPort;
-        this.turnContextAssembler = turnContextAssembler;
-        this.turnRecorder = turnRecorder;
-        this.objectMapper = objectMapper;
-        this.properties = properties;
-        this.clock = clock;
-        this.toolDescriptorSupplier = toolDescriptorSupplier;
-    }
+    private final ToolRegistry toolRegistry;
 
     public Flux<ChatStreamEvent> stream(ChatTurnRequest request) {
         Objects.requireNonNull(request, "request");
@@ -211,11 +157,15 @@ public class ChatTurnService {
         final List<Attachment> stagedAttachments =
                 java.util.Collections.synchronizedList(new ArrayList<>());
 
+        // Identity carrier forwarded to tool dispatch (ADR-17 §9). Created up
+        // front so the tool registry can use it to resolve the per-turn catalog.
+        UserContext userCtx = new UserContext(request.caller(), request.userSub());
+
         // ADR-17 §1 — branch on whether any tools are registered. The document
         // manifest is only useful for resolving a tool argument (briefDocId), so
         // the [YOUR DOCUMENTS] section is injected ONLY when tools are present.
         // Empty catalog → M4-invariant prompt shape (PRD Story 10), byte-identical.
-        List<ToolDescriptor> descriptors = toolDescriptorSupplier.get();
+        List<ToolDescriptor> descriptors = toolRegistry.descriptorsFor(userCtx);
         List<UserDocumentRef> promptDocuments = descriptors.isEmpty() ? List.of() : ctx.documents();
 
         String prompt = promptTemplate.assemble(
@@ -235,7 +185,6 @@ public class ChatTurnService {
         // Count of tools actively dispatching+handling. While > 0 the
         // token-inactivity guard is suspended (the dispatcher governs liveness).
         AtomicInteger inFlightTools = new AtomicInteger(0);
-        UserContext userCtx = new UserContext(request.caller(), request.userSub());
 
         List<ToolBinding> bindings = descriptors.isEmpty()
                 ? List.of()
