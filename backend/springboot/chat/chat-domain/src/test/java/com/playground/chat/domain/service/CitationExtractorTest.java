@@ -16,6 +16,21 @@ class CitationExtractorTest {
     }
 
     @Test
+    void extractMarkers_groupedBracketFlattensToIndividualNumbers() {
+        // The LLM sometimes groups sources in one bracket: [1, 2, 4, 5].
+        // The group-aware MARKER flattens it into individual positions.
+        Set<Integer> markers = extractor.extractMarkers("see the spec [1, 2, 4, 5] for details.");
+        assertThat(markers).containsExactly(1, 2, 4, 5);
+    }
+
+    @Test
+    void extractMarkers_groupedAndSingleMixedPreservesOrder() {
+        Set<Integer> markers = extractor.extractMarkers("first [3] then [1, 2] and again [3].");
+        // First-seen order across singles and groups: 3, 1, 2 (3 deduped).
+        assertThat(markers).containsExactly(3, 1, 2);
+    }
+
+    @Test
     void extractMarkers_dedupesAndPreservesOrder() {
         Set<Integer> markers = extractor.extractMarkers("foo [2] bar [1] baz [2] qux [1]");
         // LinkedHashSet preserves first-seen order — 2 then 1.
@@ -45,6 +60,14 @@ class CitationExtractorTest {
     void stripMarkers_removesAndCollapsesSpaces() {
         String stripped = extractor.stripMarkers("foo [1] bar [2] baz [3]");
         assertThat(stripped).isEqualTo("foo bar baz");
+    }
+
+    @Test
+    void stripMarkers_removesGroupedBracket() {
+        // A grouped bracket [1, 2, 4, 5] is one MARKER match — the whole bracket
+        // is removed and the surrounding double-space collapses to a single one.
+        String stripped = extractor.stripMarkers("the spec [1, 2, 4, 5] is clear");
+        assertThat(stripped).isEqualTo("the spec is clear");
     }
 
     @Test

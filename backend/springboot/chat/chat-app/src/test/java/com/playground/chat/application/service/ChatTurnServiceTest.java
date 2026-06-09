@@ -231,6 +231,84 @@ class ChatTurnServiceTest {
         verify(handle, times(1)).release();
     }
 
+    @Test
+    void renumberCitations_expandsGroupedBracketToIndividualMarkers() {
+        // The LLM grouped sources as [1, 2, 4, 5]; with all 5 positions
+        // retrieved the group expands to individual dense markers and every
+        // referenced position becomes a citation.
+        List<com.playground.chat.domain.model.RetrievedChunk> retrieved = List.of(
+                chunk(1), chunk(2), chunk(3), chunk(4), chunk(5));
+
+        ChatTurnService.CitationRenumber out =
+                ChatTurnService.renumberCitations("a [1] b [2] c [1, 2, 4, 5].", retrieved);
+
+        // First-encounter dense numbering across all brackets: 1→1, 2→2,
+        // 4→3, 5→4. The group expands to individual brackets, no separator.
+        assertThat(out.text()).isEqualTo("a [1] b [2] c [1][2][3][4].");
+        // cited carries one entry per distinct referenced position (4 here);
+        // positions 1,2 from singles + 4,5 newly seen inside the group.
+        assertThat(out.cited()).extracting(ChatTurnService.CitedChunk::newN)
+                .containsExactly(1, 2, 3, 4);
+        assertThat(out.cited()).extracting(c -> c.chunk().position())
+                .containsExactly(1, 2, 4, 5);
+    }
+
+    @Test
+    void renumberCitations_dropsInvalidPositionsInsideGroup() {
+        // Only 3 positions retrieved; [1, 9] cites 9 (orphan). The valid 1 is
+        // kept (and renumbered), the orphan 9 is dropped from the expansion.
+        List<com.playground.chat.domain.model.RetrievedChunk> retrieved = List.of(
+                chunk(1), chunk(2), chunk(3));
+
+        ChatTurnService.CitationRenumber out =
+                ChatTurnService.renumberCitations("only [1, 9] here.", retrieved);
+
+        assertThat(out.text()).isEqualTo("only [1] here.");
+        assertThat(out.cited()).extracting(ChatTurnService.CitedChunk::newN)
+                .containsExactly(1);
+    }
+
+    @Test
+    void renumberCitations_skipsOversizedNumberInsideGroup() {
+        // The LLM grouped sources with an oversized number that overflows int:
+        // [1, 99999999999999, 2]. Without the parseInt guard this throws
+        // NumberFormatException and crashes the turn. The guard treats it as an
+        // orphan — dropped from the expansion — while the valid 1, 2 expand.
+        List<com.playground.chat.domain.model.RetrievedChunk> retrieved = List.of(
+                chunk(1), chunk(2), chunk(3));
+
+        ChatTurnService.CitationRenumber out =
+                ChatTurnService.renumberCitations("see [1, 99999999999999, 2].", retrieved);
+
+        assertThat(out.text()).isEqualTo("see [1][2].");
+        assertThat(out.cited()).extracting(ChatTurnService.CitedChunk::newN)
+                .containsExactly(1, 2);
+        assertThat(out.cited()).extracting(c -> c.chunk().position())
+                .containsExactly(1, 2);
+    }
+
+    @Test
+    void renumberCitations_leavesAllInvalidGroupUntouched() {
+        // [8, 9] with only 3 retrieved — every position is an orphan, so the
+        // bracket is left exactly as written (preserves the bad-output trail).
+        List<com.playground.chat.domain.model.RetrievedChunk> retrieved = List.of(
+                chunk(1), chunk(2), chunk(3));
+
+        ChatTurnService.CitationRenumber out =
+                ChatTurnService.renumberCitations("bogus [8, 9] ref.", retrieved);
+
+        assertThat(out.text()).isEqualTo("bogus [8, 9] ref.");
+        assertThat(out.cited()).isEmpty();
+    }
+
+    private static com.playground.chat.domain.model.RetrievedChunk chunk(int position) {
+        return new com.playground.chat.domain.model.RetrievedChunk(
+                position,
+                new com.playground.shared.chat.SourceRef(
+                        "document", "Doc " + position, "text " + position,
+                        "https://o/docs/" + position));
+    }
+
     private static void addResult(ArrayNode results,
             String title, String content, String uri) {
         ObjectNode item = results.addObject();
