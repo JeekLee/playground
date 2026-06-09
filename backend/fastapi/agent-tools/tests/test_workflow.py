@@ -355,3 +355,31 @@ def test_inline_requirements_end_to_end_without_docs(monkeypatch):
     assert resp.result.basement_levels == 1
     assert resp.result.brief_title == "매싱 요청"  # inline generic title (D4)
     assert resp.artifact.storage_key.endswith(".3dm")
+
+
+def test_generate_embeds_refine_recipe_in_glb(monkeypatch):
+    # The generate path embeds a refineRecipe (NormalizedBrief + params) in the
+    # preview .glb extras so a later refine can replay the algorithm.
+    from architecture.infra.glb_serializer import read_glb_extras
+
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_3dm.upload_artifact",
+        lambda file_bytes, filename, content_type, settings:
+            f"architecture/massing/20260609/test-uuid/{filename}",
+    )
+    captured: dict = {}
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_glb.upload_to_key",
+        lambda file_bytes, key, content_type, settings: captured.update(glb=file_bytes),
+    )
+    flow = _build_workflow()
+    req = GenerateMassingRequest.model_validate(
+        {"briefDocId": "11111111-1111-1111-1111-111111111111"}
+    )
+    flow.run(req, user_id=uuid.uuid4(), user_sub=None)
+
+    extras = read_glb_extras(captured["glb"])
+    recipe = extras["refineRecipe"]
+    assert recipe["targetFloorsAbove"] == 4          # KFI fixture → 4 above-grade floors
+    assert recipe["briefTitle"] == "KFI 테스트 브리프"
+    assert recipe["normalized"]["zones"]              # NormalizedBrief survived

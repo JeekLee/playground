@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 
 from architecture.app.program_wire import build_program_json
+from architecture.app.refine_recipe import RefineRecipe
 from architecture.app.state import MassingState
 from architecture.infra.blob_storage import upload_to_key
 from architecture.infra.glb_serializer import serialize_glb
@@ -36,7 +37,15 @@ def store_glb(state: MassingState) -> dict:
         program_json = build_program_json(state["boxes"], state["inputs"]).model_dump(
             by_alias=True, mode="json"
         )
-        glb_bytes = serialize_glb(state["boxes"], program_json=program_json)
+        refine_recipe = RefineRecipe(
+            normalized=state["normalized"],
+            floor_height_m=state["inputs"].floor_height_m,
+            target_floors_above=state["inputs"].target_floors_above,
+            brief_title=state["detail"].title,
+        ).model_dump(by_alias=True, mode="json")
+        glb_bytes = serialize_glb(
+            state["boxes"], program_json=program_json, refine_recipe=refine_recipe
+        )
         upload_to_key(
             file_bytes=glb_bytes,
             key=glb_key,
