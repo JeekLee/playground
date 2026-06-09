@@ -122,15 +122,6 @@ class ChatTurnServiceTest {
     }
 
     @Test
-    void messageTooLarge_throws413() {
-        ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "x".repeat(5000));
-        assertThatThrownBy(() -> chatTurnService.stream(req).blockLast())
-                .isInstanceOf(AbstractException.class)
-                .satisfies(t -> assertThat(((AbstractException) t).errorCode().code())
-                        .isEqualTo("CHAT-VALIDATION-001"));
-    }
-
-    @Test
     void searchToolTurn_accumulatesCitations_andPersistsCitedSubset() {
         // agentic-search spec D2: a search_documents tool result feeds the
         // turn-global citation accumulator → existing renumber/persist path.

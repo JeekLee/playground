@@ -21,7 +21,6 @@ import com.playground.chat.domain.service.PromptTemplate;
 import com.playground.chat.domain.tool.ToolDescriptor;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -94,26 +93,15 @@ public class ChatTurnService {
 
     public Flux<ChatStreamEvent> stream(ChatTurnRequest request) {
         Objects.requireNonNull(request, "request");
-
-        // Pre-stream validations surface as HTTP errors (ADR-14 §C "Pre-stream"
-        // row); thrown exceptions are translated by the controller's reactive
-        // advice before any SSE handshake commits.
-        validateMessageSize(request.message());
-
+        // Message non-blank/size validation is a ChatTurnRequest invariant
+        // (enforced at construction in the controller). The remaining pre-stream
+        // guards (rate-limit, session ownership) throw HTTP errors below, before
+        // any SSE handshake commits (ADR-14 §C "Pre-stream").
         return Mono.fromCallable(() -> guardAndPrepare(request))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMapMany(ctx -> streamWithLock(request, ctx));
     }
 
-    private void validateMessageSize(String message) {
-        if (message == null || message.isBlank()) {
-            throw ExceptionCreator.of(ChatErrorCode.MESSAGE_BLANK).build();
-        }
-        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > ChatProperties.MAX_USER_MESSAGE_BYTES) {
-            throw ExceptionCreator.of(ChatErrorCode.MESSAGE_TOO_LARGE).build();
-        }
-    }
 
     /** Phase 1: pre-stream side-effects that may throw HTTP errors. */
     private TurnContext guardAndPrepare(ChatTurnRequest request) {

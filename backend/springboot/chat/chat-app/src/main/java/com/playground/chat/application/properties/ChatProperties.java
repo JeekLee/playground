@@ -14,9 +14,6 @@ package com.playground.chat.application.properties;
  */
 public final class ChatProperties {
 
-    /** Per-turn user-message raw byte cap per spec §5.1 (4 KB). */
-    public static final int MAX_USER_MESSAGE_BYTES = 4096;
-
     /** ADR-17 §6 default — max tool-call depth per user turn. */
     public static final int DEFAULT_TOOL_MAX_DEPTH = 5;
 
