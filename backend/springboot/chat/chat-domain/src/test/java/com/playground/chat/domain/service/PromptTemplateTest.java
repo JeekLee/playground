@@ -70,6 +70,10 @@ class PromptTemplateTest {
         String out = template.assemble(hist, "follow-up", List.of());
         assertThat(out).contains("user: earlier question");
         assertThat(out).contains("assistant: earlier answer with markers");
-        assertThat(out).doesNotContain("[1][2]");
+        // Scope the marker-free assertion to the conversation segment: the
+        // SYSTEM_PROMPT itself now carries a literal "[1][2]" cite-individually
+        // example, so a whole-prompt doesNotContain would false-positive.
+        String conversation = out.substring(out.indexOf("[CONVERSATION SO FAR]"));
+        assertThat(conversation).doesNotContain("[1][2]");
     }
 }

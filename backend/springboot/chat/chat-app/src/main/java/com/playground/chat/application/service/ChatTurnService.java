@@ -532,15 +532,25 @@ public class ChatTurnService {
     }
 
     /**
-     * Walk the accumulated text in order, find each {@code [N]} marker
-     * whose {@code N} corresponds to a retrieved chunk, assign new
-     * dense sequence numbers in first-encounter order, and rewrite the
-     * text so the rendered cards read [1][2][3] regardless of which
-     * original retrieval positions the LLM picked. Markers that don't
-     * match any retrieved chunk (hallucinations) are left untouched so
-     * the trail of bad LLM output is still visible.
+     * Walk the accumulated text in order, find each {@code [N]} marker — or a
+     * grouped {@code [N, M, ...]} bracket the LLM sometimes emits — whose
+     * numbers correspond to retrieved chunks, assign new dense sequence numbers
+     * in first-encounter order, and rewrite the text so the rendered cards read
+     * [1][2][3] regardless of which original retrieval positions the LLM picked.
+     *
+     * <p>A grouped bracket is EXPANDED to individual renumbered brackets
+     * ({@code [1, 2, 4, 5]} → {@code [1][2][3][4]}), so the persisted text holds
+     * only single {@code [N]} brackets that the existing FE regex renders as
+     * pills — and a position referenced only inside a group is no longer
+     * dropped from the cited subset. Numbers that don't match any retrieved
+     * chunk (hallucinations) are dropped from the expansion; a bracket whose
+     * numbers are ALL orphans is left untouched so the trail of bad LLM output
+     * is still visible.
+     *
+     * <p>Package-private static so a same-package unit test can exercise the
+     * expansion logic directly (the records below are likewise package-private).
      */
-    private static CitationRenumber renumberCitations(String text, List<RetrievedChunk> retrieved) {
+    static CitationRenumber renumberCitations(String text, List<RetrievedChunk> retrieved) {
         if (text == null || text.isEmpty()) {
             return new CitationRenumber("", List.of());
         }
@@ -549,17 +559,32 @@ public class ChatTurnService {
             byPosition.put(c.position(), c);
         }
         java.util.LinkedHashMap<Integer, Integer> remap = new java.util.LinkedHashMap<>();
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[(\\d+)\\]").matcher(text);
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("\\[(\\d+(?:\\s*,\\s*\\d+)*)\\]").matcher(text);
+        // Pass 1 — dense first-encounter numbering across ALL brackets (single
+        // or grouped), in textual order of the numbers within each group.
         while (m.find()) {
-            int orig = Integer.parseInt(m.group(1));
-            if (byPosition.containsKey(orig) && !remap.containsKey(orig)) {
-                remap.put(orig, remap.size() + 1);
+            for (String part : m.group(1).split(",")) {
+                int orig = Integer.parseInt(part.trim());
+                if (byPosition.containsKey(orig) && !remap.containsKey(orig)) {
+                    remap.put(orig, remap.size() + 1);
+                }
             }
         }
+        // Pass 2 — rewrite. Expand each (possibly grouped) bracket into the
+        // concatenation of its valid renumbered single brackets; if every
+        // number in the bracket is an orphan, leave the original untouched.
         String rewritten = m.reset().replaceAll(match -> {
-            int orig = Integer.parseInt(match.group(1));
-            Integer mapped = remap.get(orig);
-            return mapped == null ? java.util.regex.Matcher.quoteReplacement(match.group(0)) : "[" + mapped + "]";
+            StringBuilder expanded = new StringBuilder();
+            for (String part : match.group(1).split(",")) {
+                Integer mapped = remap.get(Integer.parseInt(part.trim()));
+                if (mapped != null) {
+                    expanded.append('[').append(mapped).append(']');
+                }
+            }
+            return expanded.length() == 0
+                    ? java.util.regex.Matcher.quoteReplacement(match.group(0))
+                    : expanded.toString();
         });
         List<CitedChunk> cited = new java.util.ArrayList<>(remap.size());
         for (java.util.Map.Entry<Integer, Integer> e : remap.entrySet()) {
@@ -569,10 +594,10 @@ public class ChatTurnService {
     }
 
     /** Re-numbered text + the cited chunk list in dense [1..N] order. */
-    private record CitationRenumber(String text, List<CitedChunk> cited) {}
+    record CitationRenumber(String text, List<CitedChunk> cited) {}
 
     /** A retrieved chunk paired with its new dense citation number. */
-    private record CitedChunk(int newN, RetrievedChunk chunk) {}
+    record CitedChunk(int newN, RetrievedChunk chunk) {}
 
     /**
      * Build one {@link ToolBinding} per registered descriptor. The binding's

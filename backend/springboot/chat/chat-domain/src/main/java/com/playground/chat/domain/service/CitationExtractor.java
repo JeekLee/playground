@@ -20,8 +20,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class CitationExtractor {
 
-    /** {@code [N]} where N is one or more digits, greedy. */
-    private static final Pattern MARKER = Pattern.compile("\\[(\\d+)\\]");
+    /**
+     * {@code [N]} or a grouped {@code [N, M, ...]} where each number is one or
+     * more digits. The LLM sometimes groups sources in one bracket
+     * ({@code [1, 2, 4, 5]}); group(1) captures the whole comma-separated inner
+     * list so {@link #extractMarkers} can flatten it into individual positions.
+     */
+    private static final Pattern MARKER = Pattern.compile("\\[(\\d+(?:\\s*,\\s*\\d+)*)\\]");
 
     public Set<Integer> extractMarkers(String assistantText) {
         Set<Integer> found = new LinkedHashSet<>();
@@ -30,13 +35,17 @@ public class CitationExtractor {
         }
         Matcher m = MARKER.matcher(assistantText);
         while (m.find()) {
-            try {
-                int n = Integer.parseInt(m.group(1));
-                if (n >= 1) {
-                    found.add(n);
+            // group(1) is one number ("3") or a comma list ("1, 2, 4, 5") —
+            // flatten the list, preserving first-seen order in the set.
+            for (String part : m.group(1).split(",")) {
+                try {
+                    int n = Integer.parseInt(part.trim());
+                    if (n >= 1) {
+                        found.add(n);
+                    }
+                } catch (NumberFormatException unused) {
+                    // [12345678901234567890] doesn't fit in an int — skip.
                 }
-            } catch (NumberFormatException unused) {
-                // [12345678901234567890] doesn't fit in an int — skip.
             }
         }
         return found;

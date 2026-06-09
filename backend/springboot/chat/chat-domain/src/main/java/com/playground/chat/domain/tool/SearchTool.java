@@ -41,13 +41,16 @@ public final class SearchTool {
 
     private static final String DESCRIPTION = """
             Search the user's uploaded documents by meaning (pgvector). \
-            STRICT TRIGGER: call when the user's question concerns the CONTENT \
-            of uploaded documents (면적, 요구사항, 일정, "문서에 뭐라고 적혀있어" 류). \
+            STRICT TRIGGER: ALWAYS call BEFORE answering ANY question about the \
+            CONTENT, requirements, figures, schedule, or details of uploaded \
+            documents — including follow-up questions in an ongoing conversation. \
+            Do not answer document questions from memory or earlier turns. \
             DO NOT call for casual conversation, general knowledge, or to restate \
             results already retrieved in THIS turn. When the user names a specific \
             document, set documentId from the [YOUR DOCUMENTS] list. \
-            Results carry [N] positions — cite facts from them as [N] in your answer. \
-            Never assert document contents you have not retrieved this turn.""";
+            Results carry [N] positions — cite each fact with its OWN [N] marker \
+            (e.g. [1][2]); never group them as [1, 2]. Never assert document \
+            contents you have not retrieved this turn.""";
 
     /** Default endpoint hostname — overridden by env var when set. */
     private static final URI DEFAULT_ENDPOINT =
