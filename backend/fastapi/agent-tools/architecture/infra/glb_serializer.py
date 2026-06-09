@@ -90,6 +90,7 @@ def serialize_glb(
     boxes: list[RoomBox],
     *,
     program_json: dict | None = None,
+    refine_recipe: dict | None = None,
 ) -> bytes:
     """Build a .glb scene from the box list. Returns binary glTF bytes.
 
@@ -149,6 +150,10 @@ def serialize_glb(
         # scene.metadata를 extras로 직렬화한다. FE가 히스토리 카드에서
         # 이것을 읽어 hotspot/테이블을 복원한다 (glb-extras spec D2).
         scene.metadata["programJson"] = program_json
+    if refine_recipe is not None:
+        # glTF 2.0 extras sibling of programJson — the re-derivable recipe a
+        # later refine_massing reads back (spec D1). Invisible to glb viewers.
+        scene.metadata["refineRecipe"] = refine_recipe
     return bytes(scene.export(file_type="glb"))
 
 
@@ -196,3 +201,31 @@ def _ground_plane(boxes: list[RoomBox]) -> "trimesh.Trimesh":
         )
     )
     return slab
+
+
+def read_glb_extras(glb_bytes: bytes) -> dict:
+    """Parse scenes[0].extras from a .glb produced by serialize_glb.
+
+    Minimal glTF-Binary reader: 12-byte header + length-prefixed chunks; chunk0
+    is JSON. Returns the extras dict ({} when absent). Raises ValueError on a
+    non-glTF / malformed container so callers can map it to a domain error.
+    """
+    import json
+    import struct
+
+    if len(glb_bytes) < 20:
+        raise ValueError("glb too small")
+    magic, version, _length = struct.unpack("<III", glb_bytes[:12])
+    if magic != 0x46546C67:  # "glTF"
+        raise ValueError("not a glTF container")
+    if version != 2:
+        raise ValueError(f"unsupported glTF version {version}")
+    json_len = struct.unpack("<I", glb_bytes[12:16])[0]
+    chunk_type = struct.unpack("<I", glb_bytes[16:20])[0]
+    if chunk_type != 0x4E4F534A:  # "JSON"
+        raise ValueError("chunk0 is not JSON")
+    if 20 + json_len > len(glb_bytes):
+        raise ValueError("declared JSON chunk exceeds buffer")
+    doc = json.loads(glb_bytes[20 : 20 + json_len].decode("utf-8"))
+    scenes = doc.get("scenes") or [{}]
+    return scenes[0].get("extras") or {}
