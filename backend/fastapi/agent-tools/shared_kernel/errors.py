@@ -25,6 +25,8 @@ class MassingErrorCode(str, Enum):
     BRIEF_FETCH_FAILED = "BRIEF_FETCH_FAILED"
     BRIEF_EXTRACTION_FAILED = "BRIEF_EXTRACTION_FAILED"
     MASSING_ALGORITHM_FAILED = "MASSING_ALGORITHM_FAILED"
+    RECIPE_NOT_FOUND = "RECIPE_NOT_FOUND"
+    REFINE_TARGET_NOT_FOUND = "REFINE_TARGET_NOT_FOUND"
     # SIDECAR_* — broadened semantics post-flip: rhino3dm.py is in-process
     # (no real sidecar), but the wire-shape codes are preserved so FE's
     # parseM8ErrorPrefix doesn't need updating. SIDECAR_TIMEOUT now covers
@@ -46,6 +48,8 @@ _HTTP_STATUS_BY_CODE: dict[MassingErrorCode, HTTPStatus] = {
     MassingErrorCode.BRIEF_FETCH_FAILED: HTTPStatus.BAD_GATEWAY,
     MassingErrorCode.BRIEF_EXTRACTION_FAILED: HTTPStatus.UNPROCESSABLE_ENTITY,
     MassingErrorCode.MASSING_ALGORITHM_FAILED: HTTPStatus.UNPROCESSABLE_ENTITY,
+    MassingErrorCode.RECIPE_NOT_FOUND: HTTPStatus.UNPROCESSABLE_ENTITY,
+    MassingErrorCode.REFINE_TARGET_NOT_FOUND: HTTPStatus.UNPROCESSABLE_ENTITY,
     MassingErrorCode.SIDECAR_TIMEOUT: HTTPStatus.GATEWAY_TIMEOUT,
     MassingErrorCode.SIDECAR_FAILED: HTTPStatus.BAD_GATEWAY,
     MassingErrorCode.INTERNAL: HTTPStatus.INTERNAL_SERVER_ERROR,
