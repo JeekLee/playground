@@ -562,22 +562,26 @@ public class ChatTurnService {
         java.util.regex.Matcher m =
                 java.util.regex.Pattern.compile("\\[(\\d+(?:\\s*,\\s*\\d+)*)\\]").matcher(text);
         // Pass 1 — dense first-encounter numbering across ALL brackets (single
-        // or grouped), in textual order of the numbers within each group.
+        // or grouped), in textual order of the numbers within each group. An
+        // unparseable/oversized number (e.g. [99999999999999]) is skipped —
+        // treated as invalid/orphan — mirroring CitationExtractor.extractMarkers.
         while (m.find()) {
             for (String part : m.group(1).split(",")) {
-                int orig = Integer.parseInt(part.trim());
-                if (byPosition.containsKey(orig) && !remap.containsKey(orig)) {
+                Integer orig = tryParse(part);
+                if (orig != null && byPosition.containsKey(orig) && !remap.containsKey(orig)) {
                     remap.put(orig, remap.size() + 1);
                 }
             }
         }
         // Pass 2 — rewrite. Expand each (possibly grouped) bracket into the
         // concatenation of its valid renumbered single brackets; if every
-        // number in the bracket is an orphan, leave the original untouched.
+        // number in the bracket is an orphan (or unparseable), leave the
+        // original untouched.
         String rewritten = m.reset().replaceAll(match -> {
             StringBuilder expanded = new StringBuilder();
             for (String part : match.group(1).split(",")) {
-                Integer mapped = remap.get(Integer.parseInt(part.trim()));
+                Integer orig = tryParse(part);
+                Integer mapped = orig == null ? null : remap.get(orig);
                 if (mapped != null) {
                     expanded.append('[').append(mapped).append(']');
                 }
@@ -591,6 +595,21 @@ public class ChatTurnService {
             cited.add(new CitedChunk(e.getValue(), byPosition.get(e.getKey())));
         }
         return new CitationRenumber(rewritten, cited);
+    }
+
+    /**
+     * Parse a single citation number from a bracket part, returning {@code null}
+     * when it doesn't fit in an int (e.g. an oversized {@code 99999999999999}).
+     * Matches {@code CitationExtractor.extractMarkers} — an unparseable number is
+     * skipped (treated as invalid/orphan) rather than crashing the turn with a
+     * {@link NumberFormatException}.
+     */
+    private static Integer tryParse(String part) {
+        try {
+            return Integer.parseInt(part.trim());
+        } catch (NumberFormatException unused) {
+            return null;
+        }
     }
 
     /** Re-numbered text + the cited chunk list in dense [1..N] order. */

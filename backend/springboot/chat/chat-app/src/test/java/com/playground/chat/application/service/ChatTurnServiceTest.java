@@ -269,6 +269,25 @@ class ChatTurnServiceTest {
     }
 
     @Test
+    void renumberCitations_skipsOversizedNumberInsideGroup() {
+        // The LLM grouped sources with an oversized number that overflows int:
+        // [1, 99999999999999, 2]. Without the parseInt guard this throws
+        // NumberFormatException and crashes the turn. The guard treats it as an
+        // orphan — dropped from the expansion — while the valid 1, 2 expand.
+        List<com.playground.chat.domain.model.RetrievedChunk> retrieved = List.of(
+                chunk(1), chunk(2), chunk(3));
+
+        ChatTurnService.CitationRenumber out =
+                ChatTurnService.renumberCitations("see [1, 99999999999999, 2].", retrieved);
+
+        assertThat(out.text()).isEqualTo("see [1][2].");
+        assertThat(out.cited()).extracting(ChatTurnService.CitedChunk::newN)
+                .containsExactly(1, 2);
+        assertThat(out.cited()).extracting(c -> c.chunk().position())
+                .containsExactly(1, 2);
+    }
+
+    @Test
     void renumberCitations_leavesAllInvalidGroupUntouched() {
         // [8, 9] with only 3 retrieved — every position is an orphan, so the
         // bracket is left exactly as written (preserves the bad-output trail).
