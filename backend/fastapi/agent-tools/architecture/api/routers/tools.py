@@ -35,7 +35,11 @@ async def generate_massing(
 ) -> StreamingResponse:
     logger.info(
         "generate_massing requested",
-        extra={"brief_doc_id": str(req.brief_doc_id), "user_id": str(user.user_id)},
+        extra={
+            "mode": "inline" if req.requirements is not None else "doc",
+            "brief_doc_id": str(req.brief_doc_id) if req.brief_doc_id else None,
+            "user_id": str(user.user_id),
+        },
     )
     return StreamingResponse(
         _ndjson_events(workflow, req, user, settings.stream_heartbeat_seconds),

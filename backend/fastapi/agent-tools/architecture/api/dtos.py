@@ -9,11 +9,16 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class GenerateMassingRequest(BaseModel):
     """POST /internal/tools/generate-massing — body validated by ADR-18 §9 schema.
+
+    The space program comes from EXACTLY ONE source (SP4 D1):
+    - `briefDocId` — an uploaded brief PDF read via docs-api, or
+    - `requirements` — free-text program synthesized from the conversation.
+    Providing both, or neither, is a 422 validation error.
 
     `siteWidth`/`siteDepth` are retained for wire compatibility but are no longer
     consumed by the Phase-3a pipeline (the algorithm sizes a square footprint
@@ -21,13 +26,28 @@ class GenerateMassingRequest(BaseModel):
     above-grade floor count.
     """
 
-    brief_doc_id: UUID = Field(alias="briefDocId")
+    brief_doc_id: UUID | None = Field(default=None, alias="briefDocId")
+    requirements: str | None = Field(default=None)
     site_width: float | None = Field(default=None, alias="siteWidth", gt=0)
     site_depth: float | None = Field(default=None, alias="siteDepth", gt=0)
     floor_height: float | None = Field(default=None, alias="floorHeight", gt=0)
     target_floors: int | None = Field(default=None, alias="targetFloors", ge=1)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> "GenerateMassingRequest":
+        # Blank requirements ("" or whitespace) is treated as "not provided" so
+        # it cannot masquerade as the inline path: downstream nodes wired in
+        # SP4 Task 2/3 (fetch_brief / resolve_program) branch on
+        # `requirements is not None`.
+        if self.requirements is not None and not self.requirements.strip():
+            self.requirements = None
+        has_doc = self.brief_doc_id is not None
+        has_req = self.requirements is not None
+        if has_doc == has_req:
+            raise ValueError("provide exactly one of briefDocId or requirements")
+        return self
 
 
 class LabelAnchorWire(BaseModel):

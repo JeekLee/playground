@@ -296,3 +296,62 @@ def test_stream_terminal_error_event_on_massing_error():
     assert terminal["code"] == "BRIEF_NOT_READY"
     assert terminal["status"] == 422
     assert isinstance(terminal["message"], str) and terminal["message"]
+
+
+def test_inline_path_fails_fast_without_reextraction():
+    # Inline requirements with no site area → derive returns {} → _route raises
+    # immediately (no retry). extract must be called exactly once (re-extracting
+    # the same short conversation text is pointless — SP4 D2).
+    from shared_kernel.errors import MassingError, MassingErrorCode
+
+    calls = {"n": 0}
+
+    def counting(_inputs):
+        calls["n"] += 1
+        return _NO_SITE
+
+    sub = pr.build_program_resolution_subgraph(
+        Settings(), chain=RunnableLambda(counting)
+    )
+    req = GenerateMassingRequest.model_validate(
+        {"requirements": "도서관 3층, 일반열람실 2400㎡"}  # no site area
+    )
+    with pytest.raises(MassingError) as ei:
+        sub.invoke(
+            {"req": req, "detail": SimpleNamespace(body="도서관 3층", title="t")}
+        )
+    assert ei.value.code == MassingErrorCode.BRIEF_NOT_READY
+    assert calls["n"] == 1  # no re-extraction on the inline path
+
+
+def test_inline_requirements_end_to_end_without_docs(monkeypatch):
+    # Inline path with a site area present (via the fixed extraction chain)
+    # produces a full envelope and never calls docs-api.
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_3dm.upload_artifact",
+        lambda file_bytes, filename, content_type, settings:
+            f"architecture/massing/20260609/test-uuid/{filename}",
+    )
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_glb.upload_to_key",
+        lambda file_bytes, key, content_type, settings: None,
+    )
+
+    class _NoDocs:
+        def get_document(self, *a, **k):
+            raise AssertionError("inline path must not call docs-api")
+
+    flow = MassingWorkflow(
+        Settings(), _NoDocs(), extraction_chain=_fake_extraction_chain()
+    )
+    req = GenerateMassingRequest.model_validate(
+        {"requirements": "연구소, 대지면적 14000㎡, 연면적 31000㎡, Middle Lab 5680㎡"}
+    )
+
+    resp = flow.run(req, user_id=uuid.uuid4(), user_sub=None)
+
+    # Same KFI-shaped envelope as the doc path (fixed chain drives both).
+    assert resp.result.floor_count == 4
+    assert resp.result.basement_levels == 1
+    assert resp.result.brief_title == "매싱 요청"  # inline generic title (D4)
+    assert resp.artifact.storage_key.endswith(".3dm")
