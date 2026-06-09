@@ -43,6 +43,11 @@ class MassingState(TypedDict, total=False):
     classified: ClassifiedBrief  # classify: graded zones + footprint driver
     inputs: MassingInputs  # derive: tight, validated algorithm contract
     extract_attempts: int  # re-prompt loop counter (ADR-19 Phase 3a)
+    # refine-only channels (refine_workflow): the recipe load + edits.
+    base_storage_key: str  # refine: the prior massing's .3dm key (chat-resolved)
+    edits: list  # refine: list[EditOp] to apply (see architecture.app.edits)
+    target_floors_above: int  # refine: carried floor count (SetFloors mutates)
+    floor_height_m: float  # refine: carried floor height
     boxes: list[RoomBox]
     file_bytes: bytes
     storage_key: str  # set by the store_3dm node after MinIO upload (ADR-20 §D3 revised)
