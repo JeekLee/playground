@@ -105,3 +105,18 @@ def upload_to_key(
         content_type=content_type or "application/octet-stream",
     )
     logger.info("Uploaded artifact to MinIO key=%s size=%d", key, len(file_bytes))
+
+
+def download_from_key(key: str, settings: Settings) -> bytes:
+    """Download a MinIO object by its exact key and return the bytes.
+
+    Inverse of ``upload_to_key``. Raises the minio client error (e.g. S3Error
+    NoSuchKey) when the object is absent — callers map that to a domain error.
+    """
+    client, bucket = _get_client(settings)
+    resp = client.get_object(bucket_name=bucket, object_name=key)
+    try:
+        return resp.read()
+    finally:
+        resp.close()
+        resp.release_conn()
