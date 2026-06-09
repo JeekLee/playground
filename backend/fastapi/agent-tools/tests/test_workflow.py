@@ -322,3 +322,36 @@ def test_inline_path_fails_fast_without_reextraction():
         )
     assert ei.value.code == MassingErrorCode.BRIEF_NOT_READY
     assert calls["n"] == 1  # no re-extraction on the inline path
+
+
+def test_inline_requirements_end_to_end_without_docs(monkeypatch):
+    # Inline path with a site area present (via the fixed extraction chain)
+    # produces a full envelope and never calls docs-api.
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_3dm.upload_artifact",
+        lambda file_bytes, filename, content_type, settings:
+            f"architecture/massing/20260609/test-uuid/{filename}",
+    )
+    monkeypatch.setattr(
+        "architecture.app.nodes.store_glb.upload_to_key",
+        lambda file_bytes, key, content_type, settings: None,
+    )
+
+    class _NoDocs:
+        def get_document(self, *a, **k):
+            raise AssertionError("inline path must not call docs-api")
+
+    flow = MassingWorkflow(
+        Settings(), _NoDocs(), extraction_chain=_fake_extraction_chain()
+    )
+    req = GenerateMassingRequest.model_validate(
+        {"requirements": "연구소, 대지면적 14000㎡, 연면적 31000㎡, Middle Lab 5680㎡"}
+    )
+
+    resp = flow.run(req, user_id=uuid.uuid4(), user_sub=None)
+
+    # Same KFI-shaped envelope as the doc path (fixed chain drives both).
+    assert resp.result.floor_count == 4
+    assert resp.result.basement_levels == 1
+    assert resp.result.brief_title == "매싱 요청"  # inline generic title (D4)
+    assert resp.artifact.storage_key.endswith(".3dm")
