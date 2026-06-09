@@ -296,3 +296,29 @@ def test_stream_terminal_error_event_on_massing_error():
     assert terminal["code"] == "BRIEF_NOT_READY"
     assert terminal["status"] == 422
     assert isinstance(terminal["message"], str) and terminal["message"]
+
+
+def test_inline_path_fails_fast_without_reextraction():
+    # Inline requirements with no site area → derive returns {} → _route raises
+    # immediately (no retry). extract must be called exactly once (re-extracting
+    # the same short conversation text is pointless — SP4 D2).
+    from shared_kernel.errors import MassingError, MassingErrorCode
+
+    calls = {"n": 0}
+
+    def counting(_inputs):
+        calls["n"] += 1
+        return _NO_SITE
+
+    sub = pr.build_program_resolution_subgraph(
+        Settings(), chain=RunnableLambda(counting)
+    )
+    req = GenerateMassingRequest.model_validate(
+        {"requirements": "도서관 3층, 일반열람실 2400㎡"}  # no site area
+    )
+    with pytest.raises(MassingError) as ei:
+        sub.invoke(
+            {"req": req, "detail": SimpleNamespace(body="도서관 3층", title="t")}
+        )
+    assert ei.value.code == MassingErrorCode.BRIEF_NOT_READY
+    assert calls["n"] == 1  # no re-extraction on the inline path

@@ -19,6 +19,10 @@ budget is spent the BRIEF_NOT_READY error propagates so the FastAPI handler
 maps it (422). Any other MassingError (e.g. the coverage gate) propagates
 immediately — only the missing-site-area case loops.
 
+Exception (SP4 D2): on the inline-requirements path (`state["req"].requirements`
+is set) `_route` fails fast — re-extracting the same short conversation text is
+pointless, so a missing site area raises BRIEF_NOT_READY immediately, no retry.
+
 This is composed as a single node ("resolve_program") in the orchestrator.
 """
 
@@ -83,6 +87,15 @@ def build_program_resolution_subgraph(
     def _route(state: MassingState) -> str:
         if "inputs" in state:
             return "done"
+        # Inline-requirements path (SP4 D2): re-extracting the same short
+        # conversation text is pointless, so fail fast instead of looping. The
+        # tool error reaches chat and the LLM asks the user for the site area.
+        if state["req"].requirements is not None:
+            raise MassingError(
+                MassingErrorCode.BRIEF_NOT_READY,
+                "site area (대지면적) not found in the conversation requirements "
+                "— ask the user for the site size (대지면적) before generating",
+            )
         if state.get("extract_attempts", 0) <= MAX_EXTRACT_RETRIES:
             return "retry"
         # Budget exhausted — surface the missing-input error.
