@@ -12,8 +12,9 @@ import java.util.List;
  */
 @FunctionalInterface
 public interface ToolRegistry {
-    // Source of the tools offered to the LLM this turn. UserContext is a
-    // hook for future per-user/per-plan catalogs (ADR-17 §D); the current
-    // implementation ignores it.
+    // Source of the tools offered to the LLM this turn. The UserContext is a
+    // forward-compat hook for a future dynamic, registry-backed catalog
+    // (ADR-17 §D's "registry-backed list" direction) — e.g. per-user/per-plan
+    // tool gating; the current static implementation ignores it.
     List<ToolDescriptor> descriptorsFor(UserContext user);
 }
