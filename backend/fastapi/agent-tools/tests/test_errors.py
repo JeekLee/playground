@@ -17,6 +17,8 @@ def test_enum_has_expected_codes() -> None:
         "BRIEF_FETCH_FAILED",
         "BRIEF_EXTRACTION_FAILED",
         "MASSING_ALGORITHM_FAILED",
+        "RECIPE_NOT_FOUND",
+        "REFINE_TARGET_NOT_FOUND",
         "SIDECAR_TIMEOUT",
         "SIDECAR_FAILED",
         "INTERNAL",
@@ -45,3 +47,10 @@ def test_http_status_mapping(code: MassingErrorCode, status: HTTPStatus) -> None
 def test_exception_carries_prefix_in_str() -> None:
     exc = MassingError(MassingErrorCode.BRIEF_NOT_READY, "brief still processing")
     assert "BRIEF_NOT_READY: brief still processing" in str(exc)
+
+
+def test_refine_error_codes_map_to_422():
+    from http import HTTPStatus
+    from shared_kernel.errors import MassingErrorCode
+    assert MassingErrorCode.RECIPE_NOT_FOUND.http_status == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert MassingErrorCode.REFINE_TARGET_NOT_FOUND.http_status == HTTPStatus.UNPROCESSABLE_ENTITY

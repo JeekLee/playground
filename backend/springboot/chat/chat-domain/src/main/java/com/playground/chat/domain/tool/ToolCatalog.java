@@ -34,7 +34,7 @@ public final class ToolCatalog {
      * changing consumer API (ADR-17 §D forward-compat hook).
      */
     private static final List<ToolDescriptor> DESCRIPTORS =
-            List.of(MassingTool.MASSING, SearchTool.SEARCH);
+            List.of(MassingTool.MASSING, SearchTool.SEARCH, RefineMassingTool.REFINE);
 
     private ToolCatalog() {
         // utility class — instantiation disallowed

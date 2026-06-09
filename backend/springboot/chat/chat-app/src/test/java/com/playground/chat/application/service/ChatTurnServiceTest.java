@@ -88,12 +88,14 @@ class ChatTurnServiceTest {
                 autoTitleService,
                 new ActiveTurnRegistry(),
                 toolDispatcherPort,
-                new TurnContextAssembler(messageRepository, tokenCounter, historyTruncator,
+                new TurnContextAssembler(messageRepository, attachmentRepository, tokenCounter,
+                        historyTruncator,
                         (userId, limit) -> java.util.List.of(), clock, properties),
                 new TurnRecorder(messageRepository, attachmentRepository, tokenCounter, clock),
                 new ObjectMapper(),
                 properties,
                 clock,
+                attachmentRepository,
                 // Empty catalog for the pre-stream guard tests (no tool path).
                 user -> java.util.List.of());
 
@@ -245,12 +247,13 @@ class ChatTurnServiceTest {
                 chatGenerationPort,
                 new PromptTemplate(tokenCounter, new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
-                new TurnContextAssembler(messageRepository, tokenCounter,
+                new TurnContextAssembler(messageRepository, attachmentRepository, tokenCounter,
                         new HistoryTruncator(tokenCounter),
                         (userId, limit) -> java.util.List.of(), clock, properties),
                 new TurnRecorder(messageRepository, attachmentRepository, tokenCounter, clock),
                 new ObjectMapper(), properties,
                 clock,
+                attachmentRepository,
                 catalog);
     }
 }

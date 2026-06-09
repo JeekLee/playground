@@ -80,3 +80,30 @@ def test_heartbeat_injected_when_idle():
     finally:
         app.dependency_overrides.clear()
         client.__exit__(None, None, None)
+
+
+def test_refine_streams_events_as_ndjson_lines():
+    from main import app
+    events = [
+        {"event": "progress", "stage": "load_recipe", "label": "기존 매싱 불러오기",
+         "stageIndex": 1, "stageCount": 8},
+        {"event": "result", "result": {"summary": "2실"}, "artifact": {"storageKey": "k.3dm"}},
+    ]
+    client = TestClient(app)
+    client.__enter__()
+    app.state.refine_workflow = _StubWorkflow(events)
+    app.dependency_overrides[get_settings] = lambda: Settings(stream_heartbeat_seconds=10.0)
+    try:
+        with client.stream(
+            "POST", "/internal/tools/refine-massing",
+            json={"baseStorageKey": "architecture/massing/x/y.3dm",
+                  "edits": [{"op": "SetFloors", "targetFloorsAbove": 2}]},
+            headers={"X-User-Id": str(uuid.uuid4())},
+        ) as r:
+            assert r.status_code == 200
+            assert r.headers["content-type"].startswith("application/x-ndjson")
+            lines = [json.loads(line) for line in r.iter_lines() if line]
+        assert lines == events
+    finally:
+        app.dependency_overrides.clear()
+        client.__exit__(None, None, None)

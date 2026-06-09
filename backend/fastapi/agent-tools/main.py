@@ -29,6 +29,7 @@ from shared_kernel.config import get_settings
 from shared_kernel.docs_client import DocsClient
 from shared_kernel.errors import MassingError
 from architecture.api.routers import tools
+from architecture.app.refine_workflow import RefineMassingWorkflow
 from architecture.app.workflow import MassingWorkflow
 
 logger = logging.getLogger(__name__)
@@ -40,9 +41,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     docs_client = DocsClient(settings)
     workflow = MassingWorkflow(settings, docs_client)
+    refine_workflow = RefineMassingWorkflow(settings)
     app.state.settings = settings
     app.state.docs_client = docs_client
     app.state.workflow = workflow
+    app.state.refine_workflow = refine_workflow
     logger.info(
         "massing-gen started",
         extra={

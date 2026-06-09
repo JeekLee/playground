@@ -197,6 +197,13 @@ class ToolCallingE2ETest {
                 return savedAttachments.stream()
                         .filter(a -> messageIds.contains(a.messageId())).toList();
             }
+
+            @Override
+            public java.util.List<com.playground.chat.domain.model.Attachment> findModelAttachments(
+                    com.playground.chat.domain.model.id.SessionId sessionId,
+                    com.playground.chat.domain.model.id.UserId callerId, int limit) {
+                return java.util.List.of();
+            }
         };
     }
 
@@ -208,13 +215,14 @@ class ToolCallingE2ETest {
                 chatGenerationPort,
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), dispatcher,
-                new TurnContextAssembler(messageRepository, new TokenCounter(),
+                new TurnContextAssembler(messageRepository, attachmentRepository(), new TokenCounter(),
                         new HistoryTruncator(new TokenCounter()),
                         (userId, limit) -> java.util.List.of(), clock, props),
                 new TurnRecorder(messageRepository, attachmentRepository(),
                         new TokenCounter(), clock),
                 objectMapper, props,
                 clock,
+                attachmentRepository(),
                 user -> List.of(desc));
     }
 

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.playground.chat.application.properties.ChatProperties;
+import com.playground.chat.application.repository.AttachmentRepository;
 import com.playground.chat.application.service.TurnCitationAccumulator;
 import com.playground.chat.domain.model.Attachment;
 import com.playground.chat.domain.model.id.AttachmentId;
@@ -17,6 +18,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -35,6 +37,7 @@ public final class ToolLoop {
     private static final String ATTACHMENT_DOWNLOAD_PREFIX = "/api/chat/attachments/";
 
     private final ToolDispatcherPort toolDispatcherPort;
+    private final AttachmentRepository attachmentRepository;
     private final ObjectMapper objectMapper;
     private final ChatProperties properties;
     private final Clock clock;
@@ -50,6 +53,7 @@ public final class ToolLoop {
 
     public ToolLoop(
             ToolDispatcherPort toolDispatcherPort,
+            AttachmentRepository attachmentRepository,
             ObjectMapper objectMapper,
             ChatProperties properties,
             Clock clock,
@@ -62,6 +66,7 @@ public final class ToolLoop {
             UserContext userCtx,
             SessionId sessionId) {
         this.toolDispatcherPort = toolDispatcherPort;
+        this.attachmentRepository = attachmentRepository;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.clock = clock;
@@ -121,8 +126,21 @@ public final class ToolLoop {
         }
         // tool_call BEFORE dispatching (ADR-17 §3.1 step 3a). tool_call /
         // tool_result / tool_error all emit from THIS (dispatch) thread — a
-        // single serialization point — so tryEmitNext is safe here.
+        // single serialization point — so tryEmitNext is safe here. The event
+        // carries the RAW args (with baseAttachmentId) — the LLM/SSE never see
+        // the resolved storage key.
         sink.tryEmitNext(new ChatStreamEvent.ToolCall(id, desc.name(), desc.displayName(), args));
+
+        // refine_massing: resolve+validate the LLM-chosen baseAttachmentId to a
+        // storage key BEFORE dispatch (the agent-tools BC reads the .3dm by key,
+        // and the LLM must never see an internal key). A non-model / not-owned /
+        // not-found id emits a non-terminal tool_error + returns null here so the
+        // dispatch is skipped; the early-out is BEFORE inFlightTools is bumped, so
+        // there is no decrement to balance.
+        JsonNode argsForDispatch = resolveRefineArgs(desc.name(), args, id);
+        if (argsForDispatch == null) {
+            return refineTargetNotFoundFeedback();
+        }
 
         // Progress relays from the dispatcher's NDJSON `progress` lines, which
         // the WebClient decodes on a netty event-loop thread — a DIFFERENT
@@ -146,7 +164,7 @@ public final class ToolLoop {
         inFlightTools.incrementAndGet();
         try {
         ToolInvocationResult result = toolDispatcherPort.invoke(
-                id, desc.name(), args, userCtx,
+                id, desc.name(), argsForDispatch, userCtx,
                 p -> sink.emitNext(
                         new ChatStreamEvent.ToolProgress(p.id(), p.name(), p.stage(), p.label(),
                                 p.stageIndex(), p.stageCount(), p.attempt()),
@@ -205,6 +223,80 @@ public final class ToolLoop {
         } finally {
             inFlightTools.decrementAndGet();
         }
+    }
+
+    /**
+     * Resolve + validate + transform the {@code refine_massing} args before
+     * dispatch (M9). The LLM picks a {@code baseAttachmentId} from the
+     * {@code [YOUR MODELS]} manifest; here we:
+     * <ol>
+     *   <li>look the id up owner-scoped ({@code findOwned}),</li>
+     *   <li>reject anything that is not a massing model (.3dm produced by
+     *       generate/refine_massing) — including a missing / non-owned id or a
+     *       non-UUID string — by emitting a non-terminal {@code tool_error}
+     *       (UPSTREAM_4XX) and returning {@code null} so the caller skips
+     *       dispatch,</li>
+     *   <li>otherwise strip {@code baseAttachmentId} and substitute the resolved
+     *       {@code baseStorageKey} so the agent-tools BC can read the .3dm — the
+     *       key never reaches the LLM or the SSE stream.</li>
+     * </ol>
+     * For non-{@code refine_massing} tools the args pass through untouched.
+     *
+     * @return the transformed args to dispatch, the original args for non-refine
+     *     tools, or {@code null} when the target failed validation (a
+     *     {@code tool_error} was already emitted on {@code sink}).
+     */
+    JsonNode resolveRefineArgs(String toolName, JsonNode args, String callId) {
+        if (!"refine_massing".equals(toolName)) {
+            return args;
+        }
+        JsonNode baseIdNode = (args == null) ? null : args.get("baseAttachmentId");
+        Attachment base = null;
+        if (baseIdNode != null && baseIdNode.isTextual()) {
+            try {
+                base = attachmentRepository
+                        .findOwned(AttachmentId.of(UUID.fromString(baseIdNode.asText())), userCtx.userId())
+                        .orElse(null);
+            } catch (IllegalArgumentException ignored) {
+                base = null; // non-UUID id
+            }
+        }
+        if (base == null || !isModelAttachment(base)) {
+            sink.tryEmitNext(new ChatStreamEvent.ToolError(
+                    callId, toolName, ToolErrorCode.UPSTREAM_4XX.name(),
+                    "지정한 첨부는 수정 가능한 매싱 모델이 아닙니다. 어떤 모델을 수정할지 알려주세요."));
+            return null;
+        }
+        ObjectNode transformed = ((ObjectNode) args).deepCopy();
+        transformed.remove("baseAttachmentId");
+        transformed.put("baseStorageKey", base.storageKey());
+        return transformed;
+    }
+
+    /**
+     * Synthetic LLM-bound feedback for a failed {@code refine_massing} target
+     * resolution. The matching user-facing {@code tool_error} SSE event has
+     * already been emitted; this is what Spring AI feeds back to the model so it
+     * can ask the user which model to edit (non-terminal — the round-trip
+     * continues).
+     */
+    private JsonNode refineTargetNotFoundFeedback() {
+        ObjectNode err = objectMapper.createObjectNode();
+        err.put("error", true);
+        err.put("code", "REFINE_TARGET_NOT_FOUND");
+        err.put("message", "baseAttachmentId가 이 세션의 매싱 모델을 가리키지 않습니다");
+        return err;
+    }
+
+    /**
+     * A massing model is a {@code .3dm} produced by generate_massing or
+     * refine_massing. refine_massing may only target one of these — never a
+     * document, image, or other attachment kind.
+     */
+    private static boolean isModelAttachment(Attachment a) {
+        String tool = a.toolName();
+        return ("generate_massing".equals(tool) || "refine_massing".equals(tool))
+                && a.filename() != null && a.filename().endsWith(".3dm");
     }
 
     /**

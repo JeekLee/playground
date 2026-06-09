@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from architecture.app.edits import EditOp
+
 
 class GenerateMassingRequest(BaseModel):
     """POST /internal/tools/generate-massing — body validated by ADR-18 §9 schema.
@@ -140,5 +142,19 @@ class GenerateMassingResponse(BaseModel):
 
     result: MassingResult
     artifact: MassingArtifact
+
+    model_config = {"populate_by_name": True}
+
+
+class RefineMassingRequest(BaseModel):
+    """POST /internal/tools/refine-massing — edit a prior massing.
+
+    `baseStorageKey` is chat-resolved (the LLM passed an attachment id; chat
+    mapped it to the prior .3dm's MinIO key). `edits` are the typed ops applied
+    to the recipe loaded from that model's .glb.
+    """
+
+    base_storage_key: str = Field(alias="baseStorageKey", min_length=1)
+    edits: list[EditOp] = Field(min_length=1)
 
     model_config = {"populate_by_name": True}

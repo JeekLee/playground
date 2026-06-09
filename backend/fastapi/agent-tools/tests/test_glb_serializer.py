@@ -181,3 +181,17 @@ def test_no_program_json_no_extras():
     data = serialize_glb([_box(h=3.5)])
     doc = _glb_json_chunk(data)
     assert "extras" not in doc["scenes"][0]
+
+
+def test_serialize_glb_embeds_refine_recipe_and_reads_back():
+    from architecture.infra.glb_serializer import read_glb_extras, serialize_glb
+    from architecture.domain.models import RoomBox
+
+    boxes = [RoomBox(name="z", zone="z", floor=1, x=0.0, y=0.0, z=0.0,
+                     width=10.0, depth=10.0, height=3.5)]
+    recipe = {"normalized": {"zones": [{"name": "z", "area_m2": 100.0, "grade": "above"}]},
+              "floor_height_m": 3.5, "target_floors_above": 1, "brief_title": "t"}
+    glb = serialize_glb(boxes, program_json={"rooms": []}, refine_recipe=recipe)
+    extras = read_glb_extras(glb)
+    assert extras["refineRecipe"] == recipe
+    assert extras["programJson"] == {"rooms": []}

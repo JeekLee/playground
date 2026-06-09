@@ -16,8 +16,13 @@ from typing import AsyncIterator
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from architecture.api.deps import SettingsDep, UserContextDep, WorkflowDep
-from architecture.api.dtos import GenerateMassingRequest
+from architecture.api.deps import (
+    RefineWorkflowDep,
+    SettingsDep,
+    UserContextDep,
+    WorkflowDep,
+)
+from architecture.api.dtos import GenerateMassingRequest, RefineMassingRequest
 from architecture.app.workflow import MassingWorkflow
 from shared_kernel.context import UserContext
 
@@ -38,6 +43,27 @@ async def generate_massing(
         extra={
             "mode": "inline" if req.requirements is not None else "doc",
             "brief_doc_id": str(req.brief_doc_id) if req.brief_doc_id else None,
+            "user_id": str(user.user_id),
+        },
+    )
+    return StreamingResponse(
+        _ndjson_events(workflow, req, user, settings.stream_heartbeat_seconds),
+        media_type="application/x-ndjson",
+    )
+
+
+@router.post("/refine-massing")
+async def refine_massing(
+    req: RefineMassingRequest,
+    user: UserContextDep,
+    workflow: RefineWorkflowDep,
+    settings: SettingsDep,
+) -> StreamingResponse:
+    logger.info(
+        "refine_massing requested",
+        extra={
+            "base_storage_key": req.base_storage_key,
+            "edits": len(req.edits),
             "user_id": str(user.user_id),
         },
     )

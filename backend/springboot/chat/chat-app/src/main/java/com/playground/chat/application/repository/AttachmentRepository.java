@@ -28,4 +28,14 @@ public interface AttachmentRepository {
 
     /** Load attachments for a set of assistant message ids. Used by the history endpoint. */
     List<Attachment> findByMessages(List<MessageId> messageIds);
+
+    /**
+     * List the model (.3dm massing) attachments produced in a session, owned by
+     * the caller, newest first. Used to build the {@code [YOUR MODELS]} prompt
+     * manifest so the LLM can pick a {@code baseAttachmentId} for refine_massing.
+     */
+    List<Attachment> findModelAttachments(
+            com.playground.chat.domain.model.id.SessionId sessionId,
+            UserId caller,
+            int limit);
 }

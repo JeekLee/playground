@@ -135,6 +135,11 @@ def make_resolve_program_node(
 
     def resolve_program(state: MassingState) -> dict:
         out = sub.invoke(state)
-        return {"analysis": out["analysis"], "inputs": out["inputs"]}
+        return {
+            "analysis": out["analysis"],
+            "normalized": out["normalized"],
+            "classified": out["classified"],
+            "inputs": out["inputs"],
+        }
 
     return resolve_program

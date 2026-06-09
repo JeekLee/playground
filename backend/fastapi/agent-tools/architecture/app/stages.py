@@ -23,23 +23,47 @@ STAGES: tuple[tuple[str, str], ...] = (
     ("store_glb", "미리보기 생성"),
 )
 STAGE_COUNT = len(STAGES)
-_INDEX = {name: i + 1 for i, (name, _) in enumerate(STAGES)}
-_LABEL = dict(STAGES)
+
+# Refine pipeline (spec D4) — skips fetch_brief/locate/extract/reconcile; the
+# LLM extraction is replaced by load_recipe + apply_edits, then classify/derive
+# re-run deterministically.
+REFINE_STAGES: tuple[tuple[str, str], ...] = (
+    ("load_recipe", "기존 매싱 불러오기"),
+    ("apply_edits", "수정 반영"),
+    ("classify", "공간 분류"),
+    ("derive", "층수·풋프린트 재산정"),
+    ("compute", "매싱 재계산"),
+    ("serialize", "3D 모델 생성"),
+    ("store_3dm", "파일 저장"),
+    ("store_glb", "미리보기 생성"),
+)
+REFINE_STAGE_COUNT = len(REFINE_STAGES)
 
 
-def progress_event(node: str, attempt: int | None = None) -> dict | None:
-    """노드-시작 → progress 이벤트 dict. 맵 밖 노드는 None.
+def _make_progress_event(stages: tuple[tuple[str, str], ...]):
+    index = {name: i + 1 for i, (name, _) in enumerate(stages)}
+    label = dict(stages)
+    count = len(stages)
 
-    `attempt`는 2 이상일 때만 필드로 포함 (spec W1)."""
-    if node not in _INDEX:
-        return None
-    ev: dict = {
-        "event": "progress",
-        "stage": node,
-        "label": _LABEL[node],
-        "stageIndex": _INDEX[node],
-        "stageCount": STAGE_COUNT,
-    }
-    if attempt is not None and attempt >= 2:
-        ev["attempt"] = attempt
-    return ev
+    def progress_event(node: str, attempt: int | None = None) -> dict | None:
+        """노드-시작 → progress 이벤트 dict. 맵 밖 노드는 None.
+
+        `attempt`는 2 이상일 때만 필드로 포함 (spec W1)."""
+        if node not in index:
+            return None
+        ev: dict = {
+            "event": "progress",
+            "stage": node,
+            "label": label[node],
+            "stageIndex": index[node],
+            "stageCount": count,
+        }
+        if attempt is not None and attempt >= 2:
+            ev["attempt"] = attempt
+        return ev
+
+    return progress_event
+
+
+progress_event = _make_progress_event(STAGES)
+refine_progress_event = _make_progress_event(REFINE_STAGES)

@@ -4,6 +4,7 @@ import com.playground.chat.application.repository.AttachmentRepository;
 import com.playground.chat.domain.model.Attachment;
 import com.playground.chat.domain.model.id.AttachmentId;
 import com.playground.chat.domain.model.id.MessageId;
+import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -98,6 +99,29 @@ public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
                         + "ORDER BY message_id, created_at",
                 attachmentRowMapper(),
                 idArray);
+    }
+
+    @Override
+    public List<Attachment> findModelAttachments(SessionId sessionId, UserId caller, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return jdbc.query(
+                "SELECT a.id, a.message_id, a.kind, a.filename, a.content_type, "
+                        + "a.size_bytes, a.storage_key, a.tool_name, a.brief_title, a.created_at "
+                        + "FROM chat.message_attachments a "
+                        + "JOIN chat.messages m ON m.id = a.message_id "
+                        + "WHERE m.session_id = ? AND m.user_id = ? "
+                        + "AND a.kind = ? "
+                        + "AND a.tool_name IN ('generate_massing', 'refine_massing') "
+                        + "AND a.filename ILIKE '%.3dm' "
+                        + "ORDER BY a.created_at DESC "
+                        + "LIMIT ?",
+                attachmentRowMapper(),
+                sessionId.value(),
+                caller.value(),
+                Attachment.KIND_TOOL_ARTIFACT,
+                limit);
     }
 
     private static void bindInsert(PreparedStatement ps, Attachment a) throws SQLException {
