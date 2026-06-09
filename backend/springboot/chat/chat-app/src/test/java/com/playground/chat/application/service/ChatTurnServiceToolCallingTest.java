@@ -79,24 +79,26 @@ class ChatTurnServiceToolCallingTest {
         CitationExtractor citationExtractor = new CitationExtractor();
         PromptTemplate promptTemplate = new PromptTemplate(tokenCounter, citationExtractor);
         HistoryTruncator historyTruncator = new HistoryTruncator(tokenCounter);
+        var attachmentRepository =
+                mock(com.playground.chat.application.repository.AttachmentRepository.class);
+        ChatProperties properties = ChatProperties.defaults();
+        Clock clock = Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC);
 
         chatTurnService = new ChatTurnService(
                 sessionRepository,
-                messageRepository,
                 tokenBucketPort,
                 lockPort,
                 chatGenerationPort,
-                historyTruncator,
-                tokenCounter,
                 promptTemplate,
                 autoTitleService,
                 new ActiveTurnRegistry(),
                 toolDispatcherPort,
-                (userId, limit) -> java.util.List.of(),
-                mock(com.playground.chat.application.repository.AttachmentRepository.class),
+                new TurnContextAssembler(messageRepository, tokenCounter, historyTruncator,
+                        (userId, limit) -> java.util.List.of(), clock, properties),
+                new TurnRecorder(messageRepository, attachmentRepository, tokenCounter, clock),
                 new ObjectMapper(),
-                ChatProperties.defaults(),
-                Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
+                properties,
+                clock,
                 // The production catalog has descriptors; tests in this file
                 // simulate the catalog explicitly per scenario.
                 java.util.List::of);
@@ -242,16 +244,21 @@ class ChatTurnServiceToolCallingTest {
         when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         // Use package-private test constructor.
+        ChatProperties props = ChatProperties.defaults();
+        Clock clock = Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC);
         ChatTurnService service = new ChatTurnService(
-                sessionRepository, messageRepository, tokenBucketPort, lockPort,
+                sessionRepository, tokenBucketPort, lockPort,
                 chatGenerationPort,
-                new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
-                (userId, limit) -> java.util.List.of(),
-                mock(com.playground.chat.application.repository.AttachmentRepository.class),
-                new ObjectMapper(), ChatProperties.defaults(),
-                Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
+                new TurnContextAssembler(messageRepository, new TokenCounter(),
+                        new HistoryTruncator(new TokenCounter()),
+                        (userId, limit) -> java.util.List.of(), clock, props),
+                new TurnRecorder(messageRepository,
+                        mock(com.playground.chat.application.repository.AttachmentRepository.class),
+                        new TokenCounter(), clock),
+                new ObjectMapper(), props,
+                clock,
                 () -> List.of(desc));
 
         ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "hi");
@@ -323,16 +330,21 @@ class ChatTurnServiceToolCallingTest {
         when(lockPort.acquire(caller)).thenReturn(handle);
         when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
+        ChatProperties props = ChatProperties.defaults();
+        Clock clock = Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC);
         ChatTurnService service = new ChatTurnService(
-                sessionRepository, messageRepository, tokenBucketPort, lockPort,
+                sessionRepository, tokenBucketPort, lockPort,
                 chatGenerationPort,
-                new HistoryTruncator(new TokenCounter()), new TokenCounter(),
                 new PromptTemplate(new TokenCounter(), new CitationExtractor()),
                 autoTitleService, new ActiveTurnRegistry(), toolDispatcherPort,
-                (userId, limit) -> java.util.List.of(),
-                mock(com.playground.chat.application.repository.AttachmentRepository.class),
-                new ObjectMapper(), ChatProperties.defaults(),
-                Clock.fixed(Instant.parse("2026-05-22T12:00:00Z"), ZoneOffset.UTC),
+                new TurnContextAssembler(messageRepository, new TokenCounter(),
+                        new HistoryTruncator(new TokenCounter()),
+                        (userId, limit) -> java.util.List.of(), clock, props),
+                new TurnRecorder(messageRepository,
+                        mock(com.playground.chat.application.repository.AttachmentRepository.class),
+                        new TokenCounter(), clock),
+                new ObjectMapper(), props,
+                clock,
                 () -> List.of(desc));
 
         ChatTurnRequest req = new ChatTurnRequest(sessionId, caller, "sub-1", "hi");

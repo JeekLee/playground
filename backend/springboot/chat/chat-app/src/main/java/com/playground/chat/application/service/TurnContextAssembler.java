@@ -1,0 +1,105 @@
+package com.playground.chat.application.service;
+
+import com.playground.chat.application.dto.ChatTurnRequest;
+import com.playground.chat.application.port.UserDocumentManifestPort;
+import com.playground.chat.application.properties.ChatProperties;
+import com.playground.chat.application.repository.MessageRepository;
+import com.playground.chat.domain.model.ChatSession;
+import com.playground.chat.domain.model.Message;
+import com.playground.chat.domain.model.UserDocumentRef;
+import com.playground.chat.domain.model.vo.TokenCount;
+import com.playground.chat.domain.service.HistoryTruncator;
+import com.playground.chat.domain.service.TokenCounter;
+import java.time.Clock;
+import java.util.List;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.stereotype.Component;
+
+/**
+ * Assembles the per-turn {@link TurnContext} after the gate (rate-limit +
+ * session ownership) has run in {@code ChatTurnService}: history load +
+ * truncate, persist the user message, determine the first-turn flag, and
+ * build the caller's document manifest.
+ */
+@Component
+public class TurnContextAssembler {
+
+    private static final Log log = LogFactory.getLog(TurnContextAssembler.class);
+
+    /**
+     * Cap on the document manifest injected into the prompt's [YOUR DOCUMENTS]
+     * section. Bounds prompt tokens; personal-scale corpora sit well under it.
+     */
+    static final int DOCUMENT_MANIFEST_LIMIT = 30;
+
+    private final MessageRepository messageRepository;
+    private final TokenCounter tokenCounter;
+    private final HistoryTruncator historyTruncator;
+    private final UserDocumentManifestPort userDocumentManifestPort;
+    private final Clock clock;
+    private final ChatProperties properties;
+
+    public TurnContextAssembler(
+            MessageRepository messageRepository,
+            TokenCounter tokenCounter,
+            HistoryTruncator historyTruncator,
+            UserDocumentManifestPort userDocumentManifestPort,
+            Clock clock,
+            ChatProperties properties) {
+        this.messageRepository = messageRepository;
+        this.tokenCounter = tokenCounter;
+        this.historyTruncator = historyTruncator;
+        this.userDocumentManifestPort = userDocumentManifestPort;
+        this.clock = clock;
+        this.properties = properties;
+    }
+
+    TurnContext assemble(ChatTurnRequest request, ChatSession session) {
+        // 3. History load + truncate.
+        List<Message> rawHistory = messageRepository.findBySession(session.id());
+        TokenCount currentMessageTokens = tokenCounter.count(request.message());
+        List<Message> truncated = historyTruncator.truncate(
+                rawHistory, properties.maxHistoryTokens(), currentMessageTokens);
+
+        // 4. Persist the user message before opening the stream so a mid-stream
+        // refresh shows the user turn even if the assistant never lands.
+        // (agentic-search spec D2: the always-on embed+pgvector retrieval was
+        // removed — the LLM searches via the search_documents tool only when
+        // the question concerns uploaded-document content.)
+        Message userMessage = Message.newUserTurn(
+                session.id(), request.caller(), request.message(), clock.instant());
+        Message savedUser = messageRepository.save(userMessage);
+
+        // 5. Determine whether this is the first user turn for the auto-title trigger.
+        int userMessageCount = messageRepository.countUserMessages(session.id());
+        boolean firstTurn = userMessageCount == 1;
+
+        // Caller's document manifest for the [YOUR DOCUMENTS] prompt section, so
+        // the model can resolve an ordinal/title reference to a briefDocId.
+        // Degrades gracefully — a failed lookup just omits the section.
+        List<UserDocumentRef> documents;
+        try {
+            documents = userDocumentManifestPort.recentForUser(request.caller(), DOCUMENT_MANIFEST_LIMIT);
+        } catch (RuntimeException e) {
+            log.warn("document_manifest_lookup_failed userId=" + request.caller()
+                    + " error=" + e.getMessage());
+            documents = List.of();
+        }
+
+        log.info("turn_start sessionId=" + session.id()
+                + " userId=" + request.caller()
+                + " userSub=" + maskSub(request.userSub())
+                + " historyTurns=" + truncated.size()
+                + " docManifest=" + documents.size());
+
+        return new TurnContext(session, truncated, savedUser, firstTurn, documents);
+    }
+
+    private static String maskSub(String sub) {
+        if (sub == null || sub.length() <= 4) {
+            return "***";
+        }
+        return sub.substring(0, 4) + "***";
+    }
+}
