@@ -23,7 +23,7 @@ class PromptTemplateTest {
     void assemble_baseShape_noRetrievedContextBlock() {
         // agentic-search spec D2: the RETRIEVED CONTEXT block is gone — document
         // content reaches the model only via search_documents tool results.
-        String out = template.assemble(List.of(), "what's up?", List.of());
+        String out = template.assemble(List.of(), "what's up?", List.of(), List.of());
         assertThat(out).contains("[SYSTEM]");
         assertThat(out).doesNotContain("[RETRIEVED CONTEXT]");
         assertThat(out).contains("[CURRENT TURN]\nuser: what's up?");
@@ -32,7 +32,7 @@ class PromptTemplateTest {
 
     @Test
     void assemble_withoutDocuments_rendersNoDocumentIndexSection() {
-        String out = template.assemble(List.of(), "hi", List.of());
+        String out = template.assemble(List.of(), "hi", List.of(), List.of());
         assertThat(out).doesNotContain("[YOUR DOCUMENTS]");
     }
 
@@ -43,7 +43,7 @@ class PromptTemplateTest {
         List<UserDocumentRef> docs = List.of(
                 new UserDocumentRef(1, firstId, "사업계획서"),
                 new UserDocumentRef(2, secondId, "KFI 설계공모지침서"));
-        String out = template.assemble(List.of(), "두 번째 문서로 매싱 만들어줘", docs);
+        String out = template.assemble(List.of(), "두 번째 문서로 매싱 만들어줘", docs, List.of());
 
         assertThat(out).contains("[YOUR DOCUMENTS]");
         // Ordinal + title + raw UUID must be present so the model can map an
@@ -67,7 +67,7 @@ class PromptTemplateTest {
                         null, null, null, Instant.now()),
                 new Message(MessageId.of(UUID.randomUUID()), sid, uid, Role.ASSISTANT,
                         "earlier answer with [1][2] markers", 100, 100, 6, Instant.now()));
-        String out = template.assemble(hist, "follow-up", List.of());
+        String out = template.assemble(hist, "follow-up", List.of(), List.of());
         assertThat(out).contains("user: earlier question");
         assertThat(out).contains("assistant: earlier answer with markers");
         // Scope the marker-free assertion to the conversation segment: the
@@ -75,5 +75,24 @@ class PromptTemplateTest {
         // example, so a whole-prompt doesNotContain would false-positive.
         String conversation = out.substring(out.indexOf("[CONVERSATION SO FAR]"));
         assertThat(conversation).doesNotContain("[1][2]");
+    }
+
+    @Test
+    void rendersModelsManifestWhenPresent() {
+        var models = java.util.List.of(
+                new com.playground.chat.domain.model.UserModelRef(
+                        1, java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"), "도서관"));
+        String prompt = template.assemble(
+                java.util.List.of(), "3층으로 줄여", java.util.List.of(), models);
+        assertThat(prompt).contains("[YOUR MODELS]");
+        assertThat(prompt).contains("도서관");
+        assertThat(prompt).contains("11111111-1111-1111-1111-111111111111");
+    }
+
+    @Test
+    void omitsModelsManifestWhenEmpty() {
+        String prompt = template.assemble(
+                java.util.List.of(), "안녕", java.util.List.of(), java.util.List.of());
+        assertThat(prompt).doesNotContain("[YOUR MODELS]");
     }
 }

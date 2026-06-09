@@ -3,6 +3,7 @@ package com.playground.chat.domain.service;
 import com.playground.chat.domain.enums.Role;
 import com.playground.chat.domain.model.Message;
 import com.playground.chat.domain.model.UserDocumentRef;
+import com.playground.chat.domain.model.UserModelRef;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -83,7 +84,8 @@ public class PromptTemplate {
     public String assemble(
             List<Message> truncatedHistory,
             String currentUserMessage,
-            List<UserDocumentRef> documents) {
+            List<UserDocumentRef> documents,
+            List<UserModelRef> models) {
 
         StringBuilder sb = new StringBuilder(8192);
 
@@ -99,6 +101,19 @@ public class PromptTemplate {
                 String title = (d.title() == null || d.title().isBlank()) ? "(untitled)" : d.title();
                 sb.append(d.ordinal()).append(". \"").append(title).append("\"")
                   .append(" id=").append(d.documentId()).append('\n');
+            }
+            sb.append('\n');
+        }
+
+        if (models != null && !models.isEmpty()) {
+            sb.append("[YOUR MODELS]\n");
+            sb.append("3D massing models already generated in this session, in creation\n"
+                    + "order. To MODIFY one with refine_massing, copy the matching id into\n"
+                    + "baseAttachmentId. Never invent an id; if none matches, ask the user.\n");
+            for (UserModelRef m : models) {
+                String label = (m.label() == null || m.label().isBlank()) ? "(untitled)" : m.label();
+                sb.append(m.ordinal()).append(". \"").append(label).append("\"")
+                  .append(" id=").append(m.attachmentId()).append('\n');
             }
             sb.append('\n');
         }
