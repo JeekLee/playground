@@ -95,3 +95,28 @@
 - 음성/이미지 입력, 명목 대지 역산((나) 기각).
 - `fetch_brief` 스트리밍 라벨 relabel.
 - ADR-19 정식 어멘드 (spec이 기록).
+
+---
+
+## Implementation note (2026-06-09)
+
+이 spec대로 구현 완료 (plan `docs/superpowers/plans/2026-06-09-sp4-conversational-massing.md`).
+
+- **출처 seam = `fetch_brief`**: `requirements`가 있으면 `DocsDetailSubset`를
+  합성(`body=requirements`, `title="매싱 요청"`(D4 generic), `extraction_status="extracted"`,
+  `id/author_id/visibility`는 다운스트림 dead지만 Pydantic 필수라 채움)하고 docs-api
+  호출을 스킵. doc 경로는 byte-for-byte 무변경 (회귀 리뷰로 검증).
+- **exactly-one** = `GenerateMassingRequest._exactly_one_source` (`model_validator(mode="after")`).
+  blank/whitespace `requirements`는 None으로 정규화 후 XOR 검증 → 둘 다/둘 다 없음 422.
+- **대지면적 fail-fast** (D2) = `program_resolution._route`: 인라인 경로
+  (`state["req"].requirements is not None`)에서 site area 누락 시 재추출 없이 즉시
+  `BRIEF_NOT_READY` (테스트가 extract 1회 호출을 단언).
+- **chat** `MassingTool`: INPUT_SCHEMA에서 `briefDocId` required 제거 + `requirements`
+  추가(둘 다 optional, `additionalProperties:false` 유지); DESCRIPTION에 "provide
+  EXACTLY ONE" + 대지면적 되묻기 지침. args는 chat에서 무변형 통과 (D3).
+- **FE 무변경** (D6).
+- **검증**: agent-tools pytest 116 passed; chat-domain/app/infra/api 전 모듈 green.
+  컨테이너 재빌드(`agent-tools`+`chat-api`)는 머지 후 main 체크아웃에서 수행
+  (worktree에서 재빌드하면 구동 중 스택을 worktree 소스로 바꿔치기하므로 — 기존
+  사이클 관례대로 머지 후 재빌드).
+- ADR-19 정식 어멘드는 하지 않음 — 이 spec이 기록.
