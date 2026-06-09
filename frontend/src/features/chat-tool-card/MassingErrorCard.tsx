@@ -36,7 +36,7 @@ export interface MassingErrorCardProps {
 }
 
 export function MassingErrorCard({ state }: MassingErrorCardProps) {
-  const { toolError } = state;
+  const { toolError, toolCall } = state;
   const parsed = useMemo(() => parseM8ErrorPrefix(toolError.message), [toolError.message]);
   const elapsedSec = useMemo(() => {
     const ms = Math.max(0, state.resolvedAt - state.calledAt);
@@ -53,7 +53,7 @@ export function MassingErrorCard({ state }: MassingErrorCardProps) {
   return (
     <ToolResultCard
       variant="warning"
-      ariaLabel={`Tool error: generate_massing (${displayedCode})`}
+      ariaLabel={`Tool error: ${toolCall.name} (${displayedCode})`}
       icon={
         <TriangleAlert
           size={20}
@@ -64,7 +64,7 @@ export function MassingErrorCard({ state }: MassingErrorCardProps) {
       }
       name={
         <span className="font-mono text-[14px] font-semibold text-warning">
-          generate_massing
+          {toolCall.name}
         </span>
       }
       summary={

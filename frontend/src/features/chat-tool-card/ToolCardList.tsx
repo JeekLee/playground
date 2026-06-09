@@ -51,7 +51,7 @@ export function ToolCardList({ cards }: ToolCardListProps) {
         // card; every other tool falls through to the generic fallback
         // (agentic-search spec D3) so a completed/failed search renders
         // instead of nothing.
-        if (card.toolCall.name !== 'generate_massing') {
+        if (card.toolCall.name !== 'generate_massing' && card.toolCall.name !== 'refine_massing') {
           if (card.kind === 'error') {
             return <GenericErrorCard key={key} state={card} />;
           }
