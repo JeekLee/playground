@@ -32,7 +32,7 @@ class BuildDashboardUseCaseTest {
 
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(
-                        Map.of("service", "chat-api"), 1_700_000_000L, 42.0))));
+                        Map.of("service", "playground-backend-chat-api"), 1_700_000_000L, 42.0))));
         when(actuator.probe(any())).thenReturn(Mono.just(ActuatorProbeResult.reachableUp()));
         when(spark.probe()).thenReturn(Mono.just(SparkProbeResult.up()));
         when(spark.listModels()).thenReturn(Mono.just(List.of("BGE-M3", "Qwen3-32B")));
@@ -48,8 +48,9 @@ class BuildDashboardUseCaseTest {
         assertThat(response.fetchedAt()).isNotNull();
         assertThat(response.range()).isEqualTo("1h");
         assertThat(response.pollIntervalSeconds()).isEqualTo(15);
-        // 11 service cells (6 BCs + 4 obs containers + spark)
-        assertThat(response.services()).hasSize(11);
+        // 16 service cells (6 BCs + spark + 4 obs containers + 5 stack containers)
+        // per ServiceProbeTarget.ALL (ADR-15 §17 amended).
+        assertThat(response.services()).hasSize(16);
         // 14 container cells per ContainerAllowlist
         assertThat(response.containers()).isNotEmpty();
         // Host cell present with loadAvg array of 3
@@ -61,8 +62,9 @@ class BuildDashboardUseCaseTest {
         assertThat(response.sparkGateway().modelsLoaded()).contains("BGE-M3", "Qwen3-32B");
         // 6 JVM cells — every JVM-bearing service in the stack (5 BCs + gateway)
         assertThat(response.jvm()).hasSize(6);
-        // 3 HTTP rate cells
-        assertThat(response.httpRate()).hasSize(3);
+        // 6 HTTP rate cells — every HTTP-bearing BC (HTTP_SERVICES == JVM_SERVICES)
+        // per the 2026-05-21 amendment in BuildDashboardUseCase.
+        assertThat(response.httpRate()).hasSize(6);
         // No widget degraded on the happy path
         response.containers().forEach(c -> assertThat(c.degraded()).isFalse());
         response.jvm().forEach(c -> assertThat(c.degraded()).isFalse());

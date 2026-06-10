@@ -64,11 +64,11 @@ class LogsControllerSecurityTest {
         Instant ts = Instant.parse("2026-05-19T07:41:58.234Z");
         when(lokiPort.queryRange(anyString(), any(Duration.class), anyInt()))
                 .thenReturn(Mono.just(List.of(
-                        new LogEntry(ts, "chat-api", "INFO", "hello"),
-                        new LogEntry(ts.minusSeconds(1), "chat-api", "WARN", "slow"))));
+                        new LogEntry(ts, "playground-backend-chat-api", "INFO", "hello"),
+                        new LogEntry(ts.minusSeconds(1), "playground-backend-chat-api", "WARN", "slow"))));
 
         webTestClient.get()
-                .uri("/logs?service=chat-api&since=15m")
+                .uri("/logs?service=playground-backend-chat-api&since=15m")
                 .header("X-User-Id", "11111111-2222-3333-4444-555555555555")
                 .exchange()
                 .expectStatus().isOk()
