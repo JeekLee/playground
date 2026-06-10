@@ -13,7 +13,6 @@ import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.tool.ToolDescriptor;
 import com.playground.chat.domain.tool.ToolErrorCode;
 import com.playground.shared.chat.ChatStreamEvent;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -382,19 +381,7 @@ public final class ToolLoop {
      */
     private JsonNode truncateForLlm(JsonNode body) {
         try {
-            byte[] serialized = objectMapper.writeValueAsBytes(body);
-            int cap = properties.toolMaxResultBytes();
-            if (serialized.length <= cap) {
-                return body;
-            }
-            int excerptCap = Math.max(0, cap - 64);
-            byte[] excerptBytes = new byte[excerptCap];
-            System.arraycopy(serialized, 0, excerptBytes, 0, excerptCap);
-            ObjectNode envelope = objectMapper.createObjectNode();
-            envelope.put("truncated", true);
-            envelope.put("originalBytes", serialized.length);
-            envelope.put("excerpt", new String(excerptBytes, StandardCharsets.UTF_8));
-            return envelope;
+            return JsonTruncator.truncate(objectMapper, body, properties.toolMaxResultBytes()).value();
         } catch (Exception e) {
             return body;
         }
