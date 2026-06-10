@@ -7,7 +7,6 @@ import com.playground.chat.domain.model.Attachment;
 import com.playground.chat.domain.model.id.AttachmentId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.error.ExceptionCreator;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,14 +35,9 @@ public class AttachmentDownloadService {
      */
     public Download open(AttachmentId attachmentId, UserId caller) {
         Attachment attachment = resolveOwned(attachmentId, caller);
-
-        Optional<BlobStoragePort.BlobHandle> handle = blobStoragePort.get(attachment.storageKey());
-        if (handle.isEmpty()) {
-            // Blob purged from MinIO but the row survives — indistinguishable
-            // from "not found" to the client (don't leak the dangling row).
-            throw ExceptionCreator.of(ChatErrorCode.ATTACHMENT_NOT_FOUND).build();
-        }
-        return new Download(attachment, handle.get());
+        // Blob purged from MinIO but the row survives → 404, indistinguishable
+        // from "not found" to the client (don't leak the dangling row).
+        return openKey(attachment, attachment.storageKey());
     }
 
     /**
@@ -62,16 +56,19 @@ public class AttachmentDownloadService {
         // Key is producer-written (agent-tools, ADR-20 §D3 revised), never
         // caller-derived — the suffix swap introduces no traversal surface.
         String glbKey = key.substring(0, key.length() - ".3dm".length()) + ".glb";
-        Optional<BlobStoragePort.BlobHandle> handle = blobStoragePort.get(glbKey);
-        if (handle.isEmpty()) {
-            throw ExceptionCreator.of(ChatErrorCode.ATTACHMENT_NOT_FOUND).build();
-        }
-        return new Download(attachment, handle.get());
+        return openKey(attachment, glbKey);
     }
 
     /** Owner-scoped lookup; missing OR non-owner → 404 (tenant isolation, ADR-14 §6.5). */
     private Attachment resolveOwned(AttachmentId attachmentId, UserId caller) {
         return attachmentRepository.findOwned(attachmentId, caller)
+                .orElseThrow(() -> ExceptionCreator.of(ChatErrorCode.ATTACHMENT_NOT_FOUND).build());
+    }
+
+    /** Open a blob by key into a {@link Download}; absent blob → 404. */
+    private Download openKey(Attachment attachment, String storageKey) {
+        return blobStoragePort.get(storageKey)
+                .map(handle -> new Download(attachment, handle))
                 .orElseThrow(() -> ExceptionCreator.of(ChatErrorCode.ATTACHMENT_NOT_FOUND).build());
     }
 
