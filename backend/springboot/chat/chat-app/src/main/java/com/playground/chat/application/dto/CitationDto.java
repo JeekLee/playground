@@ -15,4 +15,14 @@ package com.playground.chat.application.dto;
  * <p>Flat mirror (not SourceRef composition) keeps the established flat-DTO
  * convention and avoids {@code @JsonUnwrapped} coupling.
  */
-public record CitationDto(int n, String sourceType, String title, String content, String uri) {}
+public record CitationDto(int n, String sourceType, String title, String content, String uri) {
+
+    public CitationDto {
+        // Internal wire DTO built from already-validated domain data, so an
+        // invariant breach here is a programmer error, not user input.
+        if (n < 1) {
+            throw new IllegalArgumentException("citation n must be 1-indexed (>= 1), was " + n);
+        }
+        java.util.Objects.requireNonNull(sourceType, "sourceType");
+    }
+}
