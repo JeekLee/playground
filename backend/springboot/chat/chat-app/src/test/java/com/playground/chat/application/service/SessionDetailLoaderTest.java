@@ -18,9 +18,7 @@ import com.playground.chat.domain.model.id.MessageId;
 import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.chat.SourceRef;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,16 +26,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * loadDetail builds {@link CitationDto} straight from the persisted snapshot
- * (the corpus-agnostic SourceRef on chat.message_citations) — no cross-schema
- * resolver (SP3b spec D5).
+ * SessionDetailLoader builds {@link CitationDto} straight from the persisted
+ * snapshot (the corpus-agnostic SourceRef on chat.message_citations) — no
+ * cross-schema resolver (SP3b spec D5). Moved out of SessionServiceTest when
+ * the read-side assembly was extracted from SessionService (#250).
  */
-class SessionServiceTest {
+class SessionDetailLoaderTest {
 
     private SessionRepository sessionRepository;
     private MessageRepository messageRepository;
     private AttachmentRepository attachmentRepository;
-    private SessionService service;
+    private SessionDetailLoader loader;
 
     private final UserId caller = UserId.of(UUID.randomUUID());
     private final SessionId sessionId = SessionId.of(UUID.randomUUID());
@@ -47,13 +46,11 @@ class SessionServiceTest {
         sessionRepository = mock(SessionRepository.class);
         messageRepository = mock(MessageRepository.class);
         attachmentRepository = mock(AttachmentRepository.class);
-        service = new SessionService(
-                sessionRepository, messageRepository, attachmentRepository,
-                Clock.fixed(Instant.parse("2026-06-07T12:00:00Z"), ZoneOffset.UTC));
+        loader = new SessionDetailLoader(sessionRepository, messageRepository, attachmentRepository);
     }
 
     @Test
-    void loadDetail_buildsCitationDtoFromSnapshot_withoutResolver() {
+    void load_buildsCitationDtoFromSnapshot_withoutResolver() {
         Instant now = Instant.parse("2026-06-07T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "T", now, now)));
@@ -71,7 +68,7 @@ class SessionServiceTest {
         when(messageRepository.findCitationsForMessages(any())).thenReturn(List.of(snapshot));
         when(attachmentRepository.findByMessages(any())).thenReturn(List.of());
 
-        SessionDetailView detail = service.loadDetail(sessionId, caller);
+        SessionDetailView detail = loader.load(sessionId, caller);
 
         assertThat(detail.messages()).hasSize(1);
         List<CitationDto> citations = detail.messages().get(0).citations();
@@ -85,7 +82,7 @@ class SessionServiceTest {
     }
 
     @Test
-    void loadDetail_emptyCitations_yieldsEmptyView() {
+    void load_emptyCitations_yieldsEmptyView() {
         Instant now = Instant.parse("2026-06-07T12:00:00Z");
         when(sessionRepository.findOwned(sessionId, caller))
                 .thenReturn(Optional.of(new ChatSession(sessionId, caller, "T", now, now)));
@@ -94,7 +91,7 @@ class SessionServiceTest {
                 null, null, null, now);
         when(messageRepository.findBySession(sessionId)).thenReturn(List.of(user));
 
-        SessionDetailView detail = service.loadDetail(sessionId, caller);
+        SessionDetailView detail = loader.load(sessionId, caller);
 
         assertThat(detail.messages()).hasSize(1);
         assertThat(detail.messages().get(0).citations()).isEmpty();
