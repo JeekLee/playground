@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,19 +35,12 @@ import org.springframework.stereotype.Component;
  * {@code title === null}.
  */
 @Component
+@RequiredArgsConstructor
 public class SessionDetailLoader {
 
     private final SessionRepository sessionRepository;
     private final MessageRepository messageRepository;
     private final AttachmentRepository attachmentRepository;
-
-    public SessionDetailLoader(SessionRepository sessionRepository,
-                               MessageRepository messageRepository,
-                               AttachmentRepository attachmentRepository) {
-        this.sessionRepository = sessionRepository;
-        this.messageRepository = messageRepository;
-        this.attachmentRepository = attachmentRepository;
-    }
 
     /** Resolve session detail (404 if not owned). */
     public SessionDetailView load(SessionId id, UserId caller) {

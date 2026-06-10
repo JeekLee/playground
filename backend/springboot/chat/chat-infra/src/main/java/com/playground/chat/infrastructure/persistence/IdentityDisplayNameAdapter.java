@@ -3,6 +3,7 @@ package com.playground.chat.infrastructure.persistence;
 import com.playground.chat.application.port.OwnerDisplayNamePort;
 import com.playground.chat.domain.model.id.UserId;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -13,13 +14,10 @@ import org.springframework.stereotype.Component;
  * Empty result degrades to the email prefix at the frontend.
  */
 @Component
+@RequiredArgsConstructor
 public class IdentityDisplayNameAdapter implements OwnerDisplayNamePort {
 
     private final JdbcTemplate jdbc;
-
-    public IdentityDisplayNameAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
 
     @Override
     public Optional<DisplayName> lookup(UserId userId) {

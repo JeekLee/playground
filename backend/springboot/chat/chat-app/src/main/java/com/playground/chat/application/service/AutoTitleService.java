@@ -4,6 +4,7 @@ import com.playground.chat.application.port.ChatGenerationPort;
 import com.playground.chat.application.repository.SessionRepository;
 import com.playground.chat.domain.model.ChatSession;
 import com.playground.chat.domain.model.id.SessionId;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import reactor.core.scheduler.Schedulers;
  * {@link ChatSession#DEFAULT_TITLE}.
  */
 @Service
+@RequiredArgsConstructor
 public class AutoTitleService {
 
     private static final Log log = LogFactory.getLog(AutoTitleService.class);
@@ -48,11 +50,6 @@ public class AutoTitleService {
 
     private final ChatGenerationPort chatGenerationPort;
     private final SessionRepository sessionRepository;
-
-    public AutoTitleService(ChatGenerationPort chatGenerationPort, SessionRepository sessionRepository) {
-        this.chatGenerationPort = chatGenerationPort;
-        this.sessionRepository = sessionRepository;
-    }
 
     /**
      * Fire-and-forget. Returns a {@link Mono} the caller subscribes via

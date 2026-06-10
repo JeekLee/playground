@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -22,13 +23,10 @@ import org.springframework.stereotype.Repository;
  * layer; passing the wrong caller never mutates another tenant's row.
  */
 @Repository
+@RequiredArgsConstructor
 public class SessionRepositoryJdbcAdapter implements SessionRepository {
 
     private final JdbcTemplate jdbc;
-
-    public SessionRepositoryJdbcAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
 
     @Override
     public ChatSession save(ChatSession session) {

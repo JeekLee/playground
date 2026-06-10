@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,13 +23,10 @@ import org.springframework.stereotype.Repository;
 
 /** JdbcTemplate-backed {@link AttachmentRepository} per ADR-20 §D1. */
 @Repository
+@RequiredArgsConstructor
 public class AttachmentRepositoryJdbcAdapter implements AttachmentRepository {
 
     private final JdbcTemplate jdbc;
-
-    public AttachmentRepositoryJdbcAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
 
     @Override
     public Attachment save(Attachment attachment) {

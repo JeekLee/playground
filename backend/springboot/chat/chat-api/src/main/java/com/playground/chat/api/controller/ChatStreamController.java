@@ -10,6 +10,7 @@ import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.chat.SseFrame;
 import com.playground.shared.error.ExceptionCreator;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,13 +33,10 @@ import reactor.core.publisher.Flux;
  * is incompatible. We narrow that to 415 with a domain check.
  */
 @RestController
+@RequiredArgsConstructor
 public class ChatStreamController {
 
     private final ChatTurnService chatTurnService;
-
-    public ChatStreamController(ChatTurnService chatTurnService) {
-        this.chatTurnService = chatTurnService;
-    }
 
     @PostMapping(
             value = {"", "/"},

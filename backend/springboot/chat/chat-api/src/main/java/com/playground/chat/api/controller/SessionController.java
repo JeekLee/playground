@@ -7,6 +7,7 @@ import com.playground.chat.domain.model.id.SessionId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,13 +34,10 @@ import reactor.core.scheduler.Schedulers;
  */
 @RestController
 @RequestMapping("/sessions")
+@RequiredArgsConstructor
 public class SessionController {
 
     private final SessionService sessionService;
-
-    public SessionController(SessionService sessionService) {
-        this.sessionService = sessionService;
-    }
 
     @PostMapping
     public Mono<ResponseEntity<SessionResponses.CreateSessionResponse>> create(

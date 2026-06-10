@@ -7,6 +7,7 @@ import com.playground.chat.domain.model.Attachment;
 import com.playground.chat.domain.model.id.AttachmentId;
 import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.error.ExceptionCreator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,17 +17,11 @@ import org.springframework.stereotype.Service;
  * ADR-14 §6.5), then opens a streaming handle from MinIO.
  */
 @Service
+@RequiredArgsConstructor
 public class AttachmentDownloadService {
 
     private final AttachmentRepository attachmentRepository;
     private final BlobStoragePort blobStoragePort;
-
-    public AttachmentDownloadService(
-            AttachmentRepository attachmentRepository,
-            BlobStoragePort blobStoragePort) {
-        this.attachmentRepository = attachmentRepository;
-        this.blobStoragePort = blobStoragePort;
-    }
 
     /**
      * Resolve the owned attachment + open its blob. Throws
