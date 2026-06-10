@@ -8,6 +8,7 @@ import com.playground.identity.domain.model.vo.GoogleSub;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
  * and detail responses).
  */
 @Service
+@RequiredArgsConstructor
 public class InternalUserService {
 
     private final UserRepository repository;
-
-    public InternalUserService(UserRepository repository) {
-        this.repository = repository;
-    }
 
     /**
      * Single-user lookup by internal UUID. Throws {@link UserNotFoundException}

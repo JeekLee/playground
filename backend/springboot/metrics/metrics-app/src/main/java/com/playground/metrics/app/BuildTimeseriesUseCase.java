@@ -13,6 +13,7 @@ import com.playground.metrics.domain.TimeseriesPoint;
 import com.playground.metrics.domain.exception.MetricsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -28,13 +29,10 @@ import reactor.core.publisher.Mono;
  * ADR-15 §C.
  */
 @Service
+@RequiredArgsConstructor
 public class BuildTimeseriesUseCase {
 
     private final PrometheusPort prometheus;
-
-    public BuildTimeseriesUseCase(PrometheusPort prometheus) {
-        this.prometheus = prometheus;
-    }
 
     public Mono<TimeseriesResponse> execute(String metricId, Range range, Step step) {
         String promql;

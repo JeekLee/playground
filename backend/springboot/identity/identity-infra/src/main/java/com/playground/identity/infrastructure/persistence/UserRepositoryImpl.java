@@ -8,17 +8,15 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 /** JPA-backed adapter satisfying {@link UserRepository}. */
 @Repository
+@RequiredArgsConstructor
 public class UserRepositoryImpl implements UserRepository {
 
     private final UserJpaRepository jpaRepository;
-
-    public UserRepositoryImpl(UserJpaRepository jpaRepository) {
-        this.jpaRepository = jpaRepository;
-    }
 
     @Override
     public Optional<User> findByGoogleSub(GoogleSub googleSub) {

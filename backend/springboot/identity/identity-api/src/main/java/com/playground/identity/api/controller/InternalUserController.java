@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,13 +36,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/internal/users")
+@RequiredArgsConstructor
 public class InternalUserController {
 
     private final InternalUserService internalUserService;
-
-    public InternalUserController(InternalUserService internalUserService) {
-        this.internalUserService = internalUserService;
-    }
 
     @GetMapping("/by-google-sub/{sub}")
     public ResponseEntity<InternalUserResponse> byGoogleSub(@PathVariable("sub") String sub) {

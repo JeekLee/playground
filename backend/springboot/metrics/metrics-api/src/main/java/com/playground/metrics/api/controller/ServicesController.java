@@ -2,6 +2,7 @@ package com.playground.metrics.api.controller;
 
 import com.playground.metrics.app.BuildServicesUseCase;
 import com.playground.metrics.app.dto.ServicesResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,13 +18,10 @@ import reactor.core.publisher.Mono;
  * in-process cache).
  */
 @RestController
+@RequiredArgsConstructor
 public class ServicesController {
 
     private final BuildServicesUseCase useCase;
-
-    public ServicesController(BuildServicesUseCase useCase) {
-        this.useCase = useCase;
-    }
 
     @GetMapping(value = {"/services", "/api/metrics/services"},
             produces = MediaType.APPLICATION_JSON_VALUE)
