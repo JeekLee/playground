@@ -114,7 +114,7 @@ public class TurnRecorder {
 
             log.info("stream_end sessionId=" + ctx.session().id()
                     + " userId=" + request.caller()
-                    + " userSub=" + maskSub(request.userSub())
+                    + " userSub=" + LogMasking.maskSub(request.userSub())
                     + " messageId=" + persisted.id()
                     + " tokensIn=" + tokensIn
                     + " tokensOut=" + tokensOut
@@ -129,12 +129,5 @@ public class TurnRecorder {
                     persisted.id().value().toString(), tokensIn, tokensOut, wireCitations);
             return (ChatStreamEvent) done;
         }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    private static String maskSub(String sub) {
-        if (sub == null || sub.length() <= 4) {
-            return "***";
-        }
-        return sub.substring(0, 4) + "***";
     }
 }

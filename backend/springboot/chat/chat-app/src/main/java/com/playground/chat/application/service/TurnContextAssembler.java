@@ -128,18 +128,11 @@ public class TurnContextAssembler {
 
         log.info("turn_start sessionId=" + session.id()
                 + " userId=" + request.caller()
-                + " userSub=" + maskSub(request.userSub())
+                + " userSub=" + LogMasking.maskSub(request.userSub())
                 + " historyTurns=" + truncated.size()
                 + " docManifest=" + documents.size()
                 + " modelManifest=" + models.size());
 
         return new TurnContext(session, truncated, savedUser, firstTurn, documents, models);
-    }
-
-    private static String maskSub(String sub) {
-        if (sub == null || sub.length() <= 4) {
-            return "***";
-        }
-        return sub.substring(0, 4) + "***";
     }
 }
