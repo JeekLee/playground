@@ -8,6 +8,7 @@ import com.playground.docs.domain.model.id.DocumentId;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
  * state.
  */
 @Service
+@RequiredArgsConstructor
 public class ViewIncrementService {
 
     /** Per ADR-12 §10 the dedup window is 24 hours, fixed. */
@@ -40,11 +42,6 @@ public class ViewIncrementService {
 
     private final DocumentRepository documentRepository;
     private final ViewClaimPort viewClaim;
-
-    public ViewIncrementService(DocumentRepository documentRepository, ViewClaimPort viewClaim) {
-        this.documentRepository = documentRepository;
-        this.viewClaim = viewClaim;
-    }
 
     /**
      * Attempt to increment {@code view_count} for the given doc + viewer

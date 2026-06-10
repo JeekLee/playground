@@ -4,6 +4,7 @@ import com.playground.docs.ingestion.domain.service.ChunkerMetrics;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,13 +15,10 @@ import org.springframework.stereotype.Component;
  * bean without the domain layer importing Micrometer.
  */
 @Component
+@RequiredArgsConstructor
 public class MicrometerChunkerMetrics implements ChunkerMetrics {
 
     private final MeterRegistry registry;
-
-    public MicrometerChunkerMetrics(MeterRegistry registry) {
-        this.registry = registry;
-    }
 
     @Override
     public void recordDuration(Duration d, Outcome outcome) {

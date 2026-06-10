@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch._types.FieldValue;
 import org.opensearch.client.opensearch._types.query_dsl.Operator;
@@ -53,6 +54,7 @@ import org.springframework.stereotype.Component;
  * the spec §4.2 + §6 mapping JSON as the body).
  */
 @Component
+@RequiredArgsConstructor
 public class OpenSearchSearchIndexAdapter implements SearchIndexPort {
 
     private static final Logger log = LoggerFactory.getLogger(OpenSearchSearchIndexAdapter.class);
@@ -60,10 +62,6 @@ public class OpenSearchSearchIndexAdapter implements SearchIndexPort {
     private static final int PAGE_SIZE = 20;
 
     private final OpenSearchClient client;
-
-    public OpenSearchSearchIndexAdapter(OpenSearchClient client) {
-        this.client = client;
-    }
 
     @PostConstruct
     void ensureIndex() {

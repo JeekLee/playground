@@ -1,6 +1,7 @@
 package com.playground.docs.infrastructure.scheduler;
 
 import com.playground.docs.application.repository.DocumentRepository;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,15 +31,12 @@ import org.springframework.transaction.annotation.Transactional;
  * acceptable for drift that's already informational.
  */
 @Component
+@RequiredArgsConstructor
 public class CounterResyncJob {
 
     private static final Logger log = LoggerFactory.getLogger(CounterResyncJob.class);
 
     private final DocumentRepository documentRepository;
-
-    public CounterResyncJob(DocumentRepository documentRepository) {
-        this.documentRepository = documentRepository;
-    }
 
     /**
      * Per ADR-12 §11: 03:00 daily. The cron expression matches Spring's

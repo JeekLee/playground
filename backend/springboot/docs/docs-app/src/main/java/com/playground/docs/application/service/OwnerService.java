@@ -3,6 +3,7 @@ package com.playground.docs.application.service;
 import com.playground.docs.application.port.OwnerResolverPort;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,13 +16,10 @@ import org.springframework.stereotype.Service;
  * lookup misses; the controller surfaces {@code { ownerUserId: null }}.
  */
 @Service
+@RequiredArgsConstructor
 public class OwnerService {
 
     private final OwnerResolverPort ownerResolver;
-
-    public OwnerService(OwnerResolverPort ownerResolver) {
-        this.ownerResolver = ownerResolver;
-    }
 
     public Optional<UUID> ownerUserId() {
         return ownerResolver.ownerUserId();

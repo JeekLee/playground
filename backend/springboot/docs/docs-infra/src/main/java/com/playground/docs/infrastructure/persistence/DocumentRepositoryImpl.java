@@ -10,18 +10,16 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Repository;
 
 /** JPA-backed adapter satisfying {@link DocumentRepository}. */
 @Repository
+@RequiredArgsConstructor
 public class DocumentRepositoryImpl implements DocumentRepository {
 
     private final DocumentJpaRepository jpaRepository;
-
-    public DocumentRepositoryImpl(DocumentJpaRepository jpaRepository) {
-        this.jpaRepository = jpaRepository;
-    }
 
     @Override
     public Optional<Document> findById(DocumentId id) {

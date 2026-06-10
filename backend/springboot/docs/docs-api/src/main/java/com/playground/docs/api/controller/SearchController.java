@@ -5,6 +5,7 @@ import com.playground.docs.application.service.DocumentSearchService;
 import com.playground.docs.domain.exception.DocsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -31,13 +32,10 @@ import org.springframework.web.bind.annotation.RestController;
  * "no hits" from "search subsystem down" per spec §10.
  */
 @RestController
+@RequiredArgsConstructor
 public class SearchController {
 
     private final DocumentSearchService searchService;
-
-    public SearchController(DocumentSearchService searchService) {
-        this.searchService = searchService;
-    }
 
     @GetMapping("/search")
     public ResponseEntity<SearchResponse> search(

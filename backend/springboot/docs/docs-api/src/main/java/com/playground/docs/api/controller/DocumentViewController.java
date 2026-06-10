@@ -6,6 +6,7 @@ import com.playground.shared.error.ExceptionCreator;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,16 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping
+@RequiredArgsConstructor
 public class DocumentViewController {
 
     /** Cookie name pinned by ADR-10 §2 + the gateway's {@code AnonCookieFilter}. */
     private static final String ANON_COOKIE_NAME = "PLAYGROUND_ANON";
 
     private final ViewIncrementService viewService;
-
-    public DocumentViewController(ViewIncrementService viewService) {
-        this.viewService = viewService;
-    }
 
     @PostMapping("/{id}/view")
     public ResponseEntity<Void> view(
