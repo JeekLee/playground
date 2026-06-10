@@ -17,7 +17,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -31,9 +30,6 @@ import reactor.core.publisher.Sinks;
 public final class ToolLoop {
 
     private static final Log log = LogFactory.getLog(ToolLoop.class);
-
-    /** Download URL prefix for message attachments (ADR-20 §D4). FE-facing, gateway-routed. */
-    private static final String ATTACHMENT_DOWNLOAD_PREFIX = "/api/chat/attachments/";
 
     private final ToolDispatcherPort toolDispatcherPort;
     private final AttachmentRepository attachmentRepository;
@@ -136,7 +132,8 @@ public final class ToolLoop {
         // not-found id emits a non-terminal tool_error + returns null here so the
         // dispatch is skipped; the early-out is BEFORE inFlightTools is bumped, so
         // there is no decrement to balance.
-        JsonNode argsForDispatch = resolveRefineArgs(desc.name(), args, id);
+        JsonNode argsForDispatch =
+                RefineMassingResolver.resolve(desc.name(), args, id, userCtx, attachmentRepository, sink);
         if (argsForDispatch == null) {
             return refineTargetNotFoundFeedback();
         }
@@ -194,7 +191,7 @@ public final class ToolLoop {
             // an `attachment` object + top-level `fileUrl` for the FE. The
             // LLM-bound feedback below is the bare `body` only.
             sink.tryEmitNext(new ChatStreamEvent.ToolResult(
-                    s.id(), s.name(), enrichResultForSse(llmVisibleBody, attachment)));
+                    s.id(), s.name(), ToolResultSse.enrich(objectMapper, llmVisibleBody, attachment)));
             // Truncate the body to the configured cap if needed for the
             // LLM-bound feedback. The dispatcher already truncates at its
             // own boundary (ADR-17 §4) but we re-cap here defensively
@@ -225,54 +222,6 @@ public final class ToolLoop {
     }
 
     /**
-     * Resolve + validate + transform the {@code refine_massing} args before
-     * dispatch (M9). The LLM picks a {@code baseAttachmentId} from the
-     * {@code [YOUR MODELS]} manifest; here we:
-     * <ol>
-     *   <li>look the id up owner-scoped ({@code findOwned}),</li>
-     *   <li>reject anything that is not a massing model (.3dm produced by
-     *       generate/refine_massing) — including a missing / non-owned id or a
-     *       non-UUID string — by emitting a non-terminal {@code tool_error}
-     *       (UPSTREAM_4XX) and returning {@code null} so the caller skips
-     *       dispatch,</li>
-     *   <li>otherwise strip {@code baseAttachmentId} and substitute the resolved
-     *       {@code baseStorageKey} so the agent-tools BC can read the .3dm — the
-     *       key never reaches the LLM or the SSE stream.</li>
-     * </ol>
-     * For non-{@code refine_massing} tools the args pass through untouched.
-     *
-     * @return the transformed args to dispatch, the original args for non-refine
-     *     tools, or {@code null} when the target failed validation (a
-     *     {@code tool_error} was already emitted on {@code sink}).
-     */
-    JsonNode resolveRefineArgs(String toolName, JsonNode args, String callId) {
-        if (!"refine_massing".equals(toolName)) {
-            return args;
-        }
-        JsonNode baseIdNode = (args == null) ? null : args.get("baseAttachmentId");
-        Attachment base = null;
-        if (baseIdNode != null && baseIdNode.isTextual()) {
-            try {
-                base = attachmentRepository
-                        .findOwned(AttachmentId.of(UUID.fromString(baseIdNode.asText())), userCtx.userId())
-                        .orElse(null);
-            } catch (IllegalArgumentException ignored) {
-                base = null; // non-UUID id
-            }
-        }
-        if (base == null || !isModelAttachment(base)) {
-            sink.tryEmitNext(new ChatStreamEvent.ToolError(
-                    callId, toolName, ToolErrorCode.UPSTREAM_4XX.name(),
-                    "지정한 첨부는 수정 가능한 매싱 모델이 아닙니다. 어떤 모델을 수정할지 알려주세요."));
-            return null;
-        }
-        ObjectNode transformed = ((ObjectNode) args).deepCopy();
-        transformed.remove("baseAttachmentId");
-        transformed.put("baseStorageKey", base.storageKey());
-        return transformed;
-    }
-
-    /**
      * Synthetic LLM-bound feedback for a failed {@code refine_massing} target
      * resolution. The matching user-facing {@code tool_error} SSE event has
      * already been emitted; this is what Spring AI feeds back to the model so it
@@ -285,17 +234,6 @@ public final class ToolLoop {
         err.put("code", "REFINE_TARGET_NOT_FOUND");
         err.put("message", "baseAttachmentId가 이 세션의 매싱 모델을 가리키지 않습니다");
         return err;
-    }
-
-    /**
-     * A massing model is a {@code .3dm} produced by generate_massing or
-     * refine_massing. refine_massing may only target one of these — never a
-     * document, image, or other attachment kind.
-     */
-    private static boolean isModelAttachment(Attachment a) {
-        String tool = a.toolName();
-        return ("generate_massing".equals(tool) || "refine_massing".equals(tool))
-                && a.filename() != null && a.filename().endsWith(".3dm");
     }
 
     /**
@@ -337,41 +275,6 @@ public final class ToolLoop {
                     + " messageId=" + assistantMessageId + " reason=" + e.toString());
             return null;
         }
-    }
-
-    /**
-     * Build the {@code tool_result} SSE result payload (ADR-20 §D4): the
-     * LLM-visible result body, plus — when an artifact was captured — an
-     * {@code attachment} object and a top-level {@code fileUrl} the FE's
-     * MassingResultCard reads. When there's no artifact, the body is returned
-     * unchanged (M7 wire shape, byte-identical for plain tools).
-     */
-    private Object enrichResultForSse(JsonNode body, Attachment attachment) {
-        if (attachment == null) {
-            return body;
-        }
-        ObjectNode enriched;
-        if (body != null && body.isObject()) {
-            enriched = ((ObjectNode) body).deepCopy();
-        } else {
-            // Non-object result (rare for a file-producing tool) — nest it under
-            // `result` so the attachment fields have somewhere to live.
-            enriched = objectMapper.createObjectNode();
-            enriched.set("result", body == null ? objectMapper.nullNode() : body.deepCopy());
-        }
-        String downloadUrl = ATTACHMENT_DOWNLOAD_PREFIX + attachment.id();
-        ObjectNode attachmentNode = objectMapper.createObjectNode();
-        attachmentNode.put("id", attachment.id().toString());
-        attachmentNode.put("filename", attachment.filename());
-        attachmentNode.put("contentType", attachment.contentType());
-        attachmentNode.put("sizeBytes", attachment.sizeBytes());
-        attachmentNode.put("downloadUrl", downloadUrl);
-        enriched.set("attachment", attachmentNode);
-        enriched.put("fileUrl", downloadUrl);
-        if (attachment.briefTitle() != null) {
-            enriched.put("briefTitle", attachment.briefTitle());
-        }
-        return enriched;
     }
 
     /**
