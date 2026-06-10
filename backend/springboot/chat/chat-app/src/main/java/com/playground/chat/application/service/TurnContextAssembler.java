@@ -91,40 +91,29 @@ public class TurnContextAssembler {
 
         // Caller's document manifest for the [YOUR DOCUMENTS] prompt section, so
         // the model can resolve an ordinal/title reference to a briefDocId.
-        // Degrades gracefully — a failed lookup just omits the section.
-        List<UserDocumentRef> documents;
-        try {
-            documents = userDocumentManifestPort.recentForUser(request.caller(), DOCUMENT_MANIFEST_LIMIT);
-        } catch (RuntimeException e) {
-            log.warn("document_manifest_lookup_failed userId=" + request.caller()
-                    + " error=" + e.getMessage());
-            documents = List.of();
-        }
+        List<UserDocumentRef> documents = safeManifestLookup(
+                () -> userDocumentManifestPort.recentForUser(request.caller(), DOCUMENT_MANIFEST_LIMIT),
+                "document_manifest_lookup_failed userId=" + request.caller());
 
         // Caller's session model manifest for the [YOUR MODELS] prompt section,
         // so the model can resolve a reference ("두 번째 모델"/"the library
         // massing") to a concrete attachmentId for refine_massing's
         // baseAttachmentId. The query returns newest-first; reverse it so the
         // manifest reads oldest-first with a 1-based creation-order ordinal.
-        // Session-scoped + owner-checked; degrades gracefully — a failed lookup
-        // just omits the section.
-        List<UserModelRef> models;
-        try {
+        // Session-scoped + owner-checked.
+        List<UserModelRef> models = safeManifestLookup(() -> {
             List<Attachment> rows =
                     attachmentRepository.findModelAttachments(session.id(), request.caller(), MODEL_MANIFEST_LIMIT);
-            models = new ArrayList<>(rows.size());
+            List<UserModelRef> refs = new ArrayList<>(rows.size());
             int ord = 1;
             for (int i = rows.size() - 1; i >= 0; i--) {
                 Attachment a = rows.get(i);
                 String label = (a.briefTitle() != null && !a.briefTitle().isBlank())
                         ? a.briefTitle() : a.filename();
-                models.add(new UserModelRef(ord++, a.id().value(), label));
+                refs.add(new UserModelRef(ord++, a.id().value(), label));
             }
-        } catch (RuntimeException e) {
-            log.warn("model_manifest_lookup_failed sessionId=" + session.id()
-                    + " error=" + e.getMessage());
-            models = List.of();
-        }
+            return refs;
+        }, "model_manifest_lookup_failed sessionId=" + session.id());
 
         log.info("turn_start sessionId=" + session.id()
                 + " userId=" + request.caller()
@@ -134,5 +123,20 @@ public class TurnContextAssembler {
                 + " modelManifest=" + models.size());
 
         return new TurnContext(session, truncated, savedUser, firstTurn, documents, models);
+    }
+
+    /**
+     * Run a manifest lookup, degrading gracefully to an empty list on any
+     * failure (a missing [YOUR DOCUMENTS]/[YOUR MODELS] section is a soft loss,
+     * never a turn-breaker). {@code failTag} is the log prefix; the exception
+     * message is appended.
+     */
+    private <T> List<T> safeManifestLookup(java.util.function.Supplier<List<T>> lookup, String failTag) {
+        try {
+            return lookup.get();
+        } catch (RuntimeException e) {
+            log.warn(failTag + " error=" + e.getMessage());
+            return List.of();
+        }
     }
 }
