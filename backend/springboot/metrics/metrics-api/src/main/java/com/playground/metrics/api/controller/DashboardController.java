@@ -6,6 +6,7 @@ import com.playground.metrics.app.port.IpRateLimitPort;
 import com.playground.metrics.domain.Range;
 import com.playground.metrics.domain.exception.MetricsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,15 +23,11 @@ import reactor.core.publisher.Mono;
  * 2 (Task 8) wires the Redisson per-IP bucket per ADR-15 §C.
  */
 @RestController
+@RequiredArgsConstructor
 public class DashboardController {
 
     private final BuildDashboardUseCase useCase;
     private final IpRateLimitPort ipRateLimit;
-
-    public DashboardController(BuildDashboardUseCase useCase, IpRateLimitPort ipRateLimit) {
-        this.useCase = useCase;
-        this.ipRateLimit = ipRateLimit;
-    }
 
     @GetMapping(value = {"/dashboard", "/api/metrics/dashboard"},
             produces = MediaType.APPLICATION_JSON_VALUE)

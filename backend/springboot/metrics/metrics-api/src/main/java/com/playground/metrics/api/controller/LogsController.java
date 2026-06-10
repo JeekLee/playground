@@ -5,6 +5,7 @@ import com.playground.metrics.app.dto.LogsResponse;
 import com.playground.metrics.app.port.UserRateLimitPort;
 import com.playground.metrics.domain.exception.MetricsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -22,15 +23,11 @@ import reactor.core.publisher.Mono;
  * this controller listens on {@code /logs}.
  */
 @RestController
+@RequiredArgsConstructor
 public class LogsController {
 
     private final QueryLogsUseCase useCase;
     private final UserRateLimitPort userRateLimit;
-
-    public LogsController(QueryLogsUseCase useCase, UserRateLimitPort userRateLimit) {
-        this.useCase = useCase;
-        this.userRateLimit = userRateLimit;
-    }
 
     @GetMapping(value = {"/logs", "/api/metrics/logs"},
             produces = MediaType.APPLICATION_JSON_VALUE)

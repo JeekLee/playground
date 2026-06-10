@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,23 +32,13 @@ import org.springframework.transaction.annotation.Transactional;
  * event row atomically with the {@code users} row (ADR-10 §8).
  */
 @Service
+@RequiredArgsConstructor
 public class UserBootstrapAppService {
 
     private final UserRepository userRepository;
     private final UserBootstrapService userBootstrapService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
-
-    public UserBootstrapAppService(
-            UserRepository userRepository,
-            UserBootstrapService userBootstrapService,
-            ApplicationEventPublisher eventPublisher,
-            Clock clock) {
-        this.userRepository = userRepository;
-        this.userBootstrapService = userBootstrapService;
-        this.eventPublisher = eventPublisher;
-        this.clock = clock;
-    }
 
     @Transactional
     public UserBootstrapResult bootstrap(UserBootstrapCommand command) {

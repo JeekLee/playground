@@ -2,6 +2,7 @@ package com.playground.gateway.filter;
 
 import com.playground.gateway.bootstrap.IdentityBootstrapClient;
 import com.playground.gateway.bootstrap.IdentityBootstrapClient.BootstrapRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -23,6 +24,7 @@ import reactor.core.publisher.Mono;
  * bootstrap altogether.
  */
 @Component
+@RequiredArgsConstructor
 public class UserBootstrapFilter implements GlobalFilter, Ordered {
 
     public static final String ATTR_USER_ID = "playground.user.id";
@@ -32,10 +34,6 @@ public class UserBootstrapFilter implements GlobalFilter, Ordered {
     public static final int ORDER = -100; // After Spring Security auth, before NettyRoutingFilter.
 
     private final IdentityBootstrapClient bootstrap;
-
-    public UserBootstrapFilter(IdentityBootstrapClient bootstrap) {
-        this.bootstrap = bootstrap;
-    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {

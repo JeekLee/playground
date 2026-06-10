@@ -4,6 +4,7 @@ import com.playground.identity.api.request.UserBootstrapRequest;
 import com.playground.identity.api.response.UserBootstrapResponse;
 import com.playground.identity.application.service.UserBootstrapAppService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,13 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/users")
+@RequiredArgsConstructor
 public class UserBootstrapController {
 
     private final UserBootstrapAppService bootstrapService;
-
-    public UserBootstrapController(UserBootstrapAppService bootstrapService) {
-        this.bootstrapService = bootstrapService;
-    }
 
     @PostMapping("/bootstrap")
     public ResponseEntity<UserBootstrapResponse> bootstrap(@Valid @RequestBody UserBootstrapRequest request) {

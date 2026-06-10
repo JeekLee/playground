@@ -11,6 +11,7 @@ import com.playground.metrics.domain.HealthVerdict;
 import com.playground.metrics.domain.PromQlTemplate;
 import com.playground.metrics.domain.ServiceProbeTarget;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -44,6 +45,7 @@ import reactor.core.publisher.Mono;
  * 200 ⇒ up, non-2xx ⇒ degraded, timeout/refused ⇒ down.
  */
 @Service
+@RequiredArgsConstructor
 public class BuildServicesUseCase {
 
     /** Convenience snapshot of the 10 scrape-monitored cell names (BCs + observability). */
@@ -60,15 +62,6 @@ public class BuildServicesUseCase {
     private final PrometheusPort prometheus;
     private final ActuatorHealthPort actuator;
     private final SparkGatewayProbePort sparkProbe;
-
-    public BuildServicesUseCase(
-            PrometheusPort prometheus,
-            ActuatorHealthPort actuator,
-            SparkGatewayProbePort sparkProbe) {
-        this.prometheus = prometheus;
-        this.actuator = actuator;
-        this.sparkProbe = sparkProbe;
-    }
 
     /**
      * Executes the eleven-probe fan-out. Result order matches

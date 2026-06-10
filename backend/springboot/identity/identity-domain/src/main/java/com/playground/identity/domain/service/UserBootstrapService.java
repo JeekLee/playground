@@ -10,6 +10,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -23,13 +24,10 @@ import org.springframework.stereotype.Service;
  * {@link Clock}.
  */
 @Service
+@RequiredArgsConstructor
 public class UserBootstrapService {
 
     private final Clock clock;
-
-    public UserBootstrapService(Clock clock) {
-        this.clock = clock;
-    }
 
     public BootstrapDecision decide(
             Optional<User> existing,

@@ -9,6 +9,7 @@ import com.playground.shared.error.ExceptionCreator;
 import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -23,6 +24,7 @@ import reactor.core.publisher.Mono;
  * — cursor pagination is M5.1 territory.
  */
 @Service
+@RequiredArgsConstructor
 public class QueryLogsUseCase {
 
     private static final Pattern SINCE_PATTERN = Pattern.compile("^(\\d+)(s|m|h|d)$");
@@ -30,10 +32,6 @@ public class QueryLogsUseCase {
     private static final Duration MAX_SINCE = Duration.ofDays(7);
 
     private final LokiPort loki;
-
-    public QueryLogsUseCase(LokiPort loki) {
-        this.loki = loki;
-    }
 
     public Mono<LogsResponse> execute(String service, String sinceToken, String search, Integer limit) {
         if (!ServiceAllowlist.contains(service)) {

@@ -5,6 +5,7 @@ import com.playground.identity.application.service.MeService;
 import com.playground.identity.domain.exception.IdentityErrorCode;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -18,13 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
  * authenticated route), responds 401 via the shared exception hierarchy.
  */
 @RestController
+@RequiredArgsConstructor
 public class MeController {
 
     private final MeService meService;
-
-    public MeController(MeService meService) {
-        this.meService = meService;
-    }
 
     @GetMapping("/me")
     public ResponseEntity<MeResponse> me(@RequestHeader(value = "X-User-Id", required = false) String userIdHeader) {

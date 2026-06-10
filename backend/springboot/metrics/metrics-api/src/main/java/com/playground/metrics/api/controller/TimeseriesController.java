@@ -6,6 +6,7 @@ import com.playground.metrics.domain.Range;
 import com.playground.metrics.domain.Step;
 import com.playground.metrics.domain.exception.MetricsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,13 +23,10 @@ import reactor.core.publisher.Mono;
  * surface as 400 ({@code METRICS-VALIDATION-001}).
  */
 @RestController
+@RequiredArgsConstructor
 public class TimeseriesController {
 
     private final BuildTimeseriesUseCase useCase;
-
-    public TimeseriesController(BuildTimeseriesUseCase useCase) {
-        this.useCase = useCase;
-    }
 
     @GetMapping(value = {"/timeseries", "/api/metrics/timeseries"},
             produces = MediaType.APPLICATION_JSON_VALUE)
