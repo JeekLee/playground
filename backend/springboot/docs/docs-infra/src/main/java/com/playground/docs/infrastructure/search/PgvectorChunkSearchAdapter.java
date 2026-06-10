@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Repository;
  * concatenation.
  */
 @Repository
+@RequiredArgsConstructor
 public class PgvectorChunkSearchAdapter implements ChunkSearchPort {
 
     private static final Logger log = LoggerFactory.getLogger(PgvectorChunkSearchAdapter.class);
@@ -40,10 +42,6 @@ public class PgvectorChunkSearchAdapter implements ChunkSearchPort {
     static final int EF_SEARCH = 40;
 
     private final JdbcTemplate jdbc;
-
-    public PgvectorChunkSearchAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
 
     @Override
     public List<Row> search(UUID callerId, float[] embedding, int k, UUID documentIdOrNull) {

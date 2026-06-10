@@ -11,6 +11,7 @@ import com.playground.docs.ingestion.domain.model.vo.BodyChecksum;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,13 +29,10 @@ import org.springframework.stereotype.Repository;
  * P0.
  */
 @Repository
+@RequiredArgsConstructor
 public class ChunkRepositoryJdbcAdapter implements ChunkRepository {
 
     private final JdbcTemplate jdbc;
-
-    public ChunkRepositoryJdbcAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
 
     @Override
     public Optional<BodyChecksum> findBodyChecksum(DocumentId documentId) {

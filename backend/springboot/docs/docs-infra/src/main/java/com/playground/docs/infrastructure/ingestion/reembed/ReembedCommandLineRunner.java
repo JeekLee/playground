@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -36,6 +37,7 @@ import org.springframework.context.annotation.Profile;
 @Configuration
 @Profile("reembed")
 @EnableConfigurationProperties(ReembedProperties.class)
+@RequiredArgsConstructor
 public class ReembedCommandLineRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ReembedCommandLineRunner.class);
@@ -45,19 +47,6 @@ public class ReembedCommandLineRunner implements ApplicationRunner {
     private final ChunkRepository chunkRepository;
     private final ConfigurableApplicationContext ctx;
     private final MeterRegistry registry;
-
-    public ReembedCommandLineRunner(
-            ReembedProperties properties,
-            ReembedService service,
-            ChunkRepository chunkRepository,
-            ConfigurableApplicationContext ctx,
-            MeterRegistry registry) {
-        this.properties = properties;
-        this.service = service;
-        this.chunkRepository = chunkRepository;
-        this.ctx = ctx;
-        this.registry = registry;
-    }
 
     @Override
     public void run(ApplicationArguments args) {

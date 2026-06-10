@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,15 +35,11 @@ import org.springframework.transaction.annotation.Transactional;
  * identity lookup per page.
  */
 @Service
+@RequiredArgsConstructor
 public class DocumentSearchService {
 
     private final SearchIndexPort searchIndex;
     private final IdentityLookupPort identityLookup;
-
-    public DocumentSearchService(SearchIndexPort searchIndex, IdentityLookupPort identityLookup) {
-        this.searchIndex = searchIndex;
-        this.identityLookup = identityLookup;
-    }
 
     @Transactional(readOnly = true)
     public CursorPage<SearchHitDto> searchPublic(String query, String cursor) {

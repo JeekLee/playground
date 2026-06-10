@@ -10,6 +10,7 @@ import com.playground.docs.ingestion.domain.model.id.AuthorId;
 import com.playground.docs.ingestion.domain.model.id.DocumentId;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -35,15 +36,12 @@ import org.springframework.stereotype.Component;
  * P0, group offset starts at {@code latest}.
  */
 @Component
+@RequiredArgsConstructor
 public class DocumentEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentEventListener.class);
 
     private final IngestionService ingestionService;
-
-    public DocumentEventListener(IngestionService ingestionService) {
-        this.ingestionService = ingestionService;
-    }
 
     @KafkaListener(
             topics = "docs.document.uploaded",

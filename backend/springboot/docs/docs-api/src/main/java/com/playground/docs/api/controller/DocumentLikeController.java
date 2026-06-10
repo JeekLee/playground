@@ -4,6 +4,7 @@ import com.playground.docs.application.service.DocumentLikeService;
 import com.playground.docs.domain.exception.DocsErrorCode;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,13 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping
+@RequiredArgsConstructor
 public class DocumentLikeController {
 
     private final DocumentLikeService likeService;
-
-    public DocumentLikeController(DocumentLikeService likeService) {
-        this.likeService = likeService;
-    }
 
     /** Per M2 spec §6.1: idempotent upsert, returns 204. */
     @PostMapping("/{id}/like")

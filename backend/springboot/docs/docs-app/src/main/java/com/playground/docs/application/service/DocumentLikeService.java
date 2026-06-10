@@ -6,6 +6,7 @@ import com.playground.docs.domain.exception.DocumentNotFoundException;
 import com.playground.docs.domain.model.id.AuthorId;
 import com.playground.docs.domain.model.id.DocumentId;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,16 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
  * permitted to like their own document.
  */
 @Service
+@RequiredArgsConstructor
 public class DocumentLikeService {
 
     private final DocumentRepository documentRepository;
     private final DocumentLikeRepository likeRepository;
-
-    public DocumentLikeService(
-            DocumentRepository documentRepository, DocumentLikeRepository likeRepository) {
-        this.documentRepository = documentRepository;
-        this.likeRepository = likeRepository;
-    }
 
     /**
      * Per M2 spec §6.1 row {@code POST /api/docs/{id}/like}. Idempotent

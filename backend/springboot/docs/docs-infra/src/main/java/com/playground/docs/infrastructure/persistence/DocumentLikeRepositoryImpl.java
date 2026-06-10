@@ -7,17 +7,15 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 /** JPA-backed adapter satisfying {@link DocumentLikeRepository}. */
 @Repository
+@RequiredArgsConstructor
 public class DocumentLikeRepositoryImpl implements DocumentLikeRepository {
 
     private final DocumentLikeJpaRepository jpa;
-
-    public DocumentLikeRepositoryImpl(DocumentLikeJpaRepository jpa) {
-        this.jpa = jpa;
-    }
 
     @Override
     public boolean insertIfAbsent(DocumentId documentId, AuthorId userId) {

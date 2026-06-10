@@ -8,6 +8,7 @@ import com.playground.docs.search.application.port.QueryEmbeddingPort;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -38,6 +39,7 @@ import org.springframework.stereotype.Component;
  * the call.
  */
 @Component
+@RequiredArgsConstructor
 public class SparkInferenceEmbeddingAdapter implements EmbeddingPort, QueryEmbeddingPort {
 
     private static final Logger log = LoggerFactory.getLogger(SparkInferenceEmbeddingAdapter.class);
@@ -46,10 +48,6 @@ public class SparkInferenceEmbeddingAdapter implements EmbeddingPort, QueryEmbed
     private static final int MAX_BATCH = 32;
 
     private final EmbeddingModel embeddingModel;
-
-    public SparkInferenceEmbeddingAdapter(EmbeddingModel embeddingModel) {
-        this.embeddingModel = embeddingModel;
-    }
 
     @Override
     public List<Embedding> embed(List<ChunkText> texts) {

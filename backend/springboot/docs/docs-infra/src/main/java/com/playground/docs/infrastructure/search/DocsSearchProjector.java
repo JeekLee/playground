@@ -9,6 +9,7 @@ import com.playground.docs.domain.model.Document;
 import com.playground.docs.domain.model.id.DocumentId;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -41,6 +42,7 @@ import org.springframework.stereotype.Component;
  * compatible schema additions in the wire payload.
  */
 @Component
+@RequiredArgsConstructor
 public class DocsSearchProjector {
 
     private static final Logger log = LoggerFactory.getLogger(DocsSearchProjector.class);
@@ -49,17 +51,6 @@ public class DocsSearchProjector {
     private final SearchIndexPort searchIndex;
     private final IdentityLookupPort identityLookup;
     private final ObjectMapper objectMapper;
-
-    public DocsSearchProjector(
-            DocumentRepository repository,
-            SearchIndexPort searchIndex,
-            IdentityLookupPort identityLookup,
-            ObjectMapper objectMapper) {
-        this.repository = repository;
-        this.searchIndex = searchIndex;
-        this.identityLookup = identityLookup;
-        this.objectMapper = objectMapper;
-    }
 
     @KafkaListener(
             topics = {"docs.document.uploaded", "docs.document.visibility-changed"},

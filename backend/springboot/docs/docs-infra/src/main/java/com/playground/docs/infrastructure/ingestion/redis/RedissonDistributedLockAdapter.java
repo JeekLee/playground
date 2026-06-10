@@ -4,6 +4,7 @@ import com.playground.docs.ingestion.application.port.DistributedLockPort;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Component;
  * </ul>
  */
 @Component
+@RequiredArgsConstructor
 public class RedissonDistributedLockAdapter implements DistributedLockPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedissonDistributedLockAdapter.class);
@@ -40,10 +42,6 @@ public class RedissonDistributedLockAdapter implements DistributedLockPort {
     private static final String NAMESPACE = "docs:lock:";
 
     private final RedissonClient redisson;
-
-    public RedissonDistributedLockAdapter(RedissonClient redisson) {
-        this.redisson = redisson;
-    }
 
     @Override
     public <T> T runWithLock(String key, Duration waitTime, Duration leaseTime, Supplier<T> work) {

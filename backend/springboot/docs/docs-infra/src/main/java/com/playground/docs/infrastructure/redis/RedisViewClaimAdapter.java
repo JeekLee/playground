@@ -2,6 +2,7 @@ package com.playground.docs.infrastructure.redis;
 
 import com.playground.docs.application.port.ViewClaimPort;
 import java.time.Duration;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,15 +21,12 @@ import org.springframework.stereotype.Component;
  * contract per spec §10 ("counter drift is informational").
  */
 @Component
+@RequiredArgsConstructor
 public class RedisViewClaimAdapter implements ViewClaimPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedisViewClaimAdapter.class);
 
     private final StringRedisTemplate redis;
-
-    public RedisViewClaimAdapter(StringRedisTemplate redis) {
-        this.redis = redis;
-    }
 
     @Override
     public boolean claim(String key, Duration ttl) {

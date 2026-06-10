@@ -5,6 +5,7 @@ import com.playground.docs.application.repository.DocumentRepository;
 import com.playground.docs.domain.model.id.AuthorId;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
  * spec §10).
  */
 @Service
+@RequiredArgsConstructor
 public class FolderListService {
 
     private final DocumentRepository repository;
-
-    public FolderListService(DocumentRepository repository) {
-        this.repository = repository;
-    }
 
     @Transactional(readOnly = true)
     public List<FolderListItemDto> listFolders(UUID callerId) {

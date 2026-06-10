@@ -2,6 +2,7 @@ package com.playground.docs.api.controller;
 
 import com.playground.docs.api.response.OwnerResponse;
 import com.playground.docs.application.service.OwnerService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,13 +16,10 @@ import org.springframework.web.bind.annotation.RestController;
  * the frontend boots the home tile before login.
  */
 @RestController
+@RequiredArgsConstructor
 public class OwnerController {
 
     private final OwnerService ownerService;
-
-    public OwnerController(OwnerService ownerService) {
-        this.ownerService = ownerService;
-    }
 
     @GetMapping("/owner")
     public ResponseEntity<OwnerResponse> owner() {
