@@ -16,6 +16,7 @@ import com.playground.shared.chat.SourceRef;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Component;
@@ -29,6 +30,7 @@ import reactor.core.scheduler.Schedulers;
  * JDBC writes never tie up the reactive event-loop threads.
  */
 @Component
+@RequiredArgsConstructor
 public class TurnRecorder {
 
     private static final Log log = LogFactory.getLog(TurnRecorder.class);
@@ -37,17 +39,6 @@ public class TurnRecorder {
     private final AttachmentRepository attachmentRepository;
     private final TokenCounter tokenCounter;
     private final Clock clock;
-
-    public TurnRecorder(
-            MessageRepository messageRepository,
-            AttachmentRepository attachmentRepository,
-            TokenCounter tokenCounter,
-            Clock clock) {
-        this.messageRepository = messageRepository;
-        this.attachmentRepository = attachmentRepository;
-        this.tokenCounter = tokenCounter;
-        this.clock = clock;
-    }
 
     Mono<ChatStreamEvent> record(
             TurnContext ctx, List<RetrievedChunk> retrieved, String accumulatedText,

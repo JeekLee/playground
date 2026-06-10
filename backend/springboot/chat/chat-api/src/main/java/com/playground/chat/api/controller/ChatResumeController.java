@@ -7,6 +7,7 @@ import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.chat.ChatStreamEvent;
 import com.playground.shared.error.ExceptionCreator;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -39,15 +40,12 @@ import reactor.core.publisher.Flux;
  */
 @RestController
 @RequestMapping("/sessions")
+@RequiredArgsConstructor
 public class ChatResumeController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatResumeController.class);
 
     private final ActiveTurnRegistry registry;
-
-    public ChatResumeController(ActiveTurnRegistry registry) {
-        this.registry = registry;
-    }
 
     @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> resume(

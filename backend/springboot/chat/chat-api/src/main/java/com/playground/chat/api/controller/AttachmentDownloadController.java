@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ContentDisposition;
@@ -46,15 +47,12 @@ import reactor.core.scheduler.Schedulers;
  */
 @RestController
 @RequestMapping("/attachments")
+@RequiredArgsConstructor
 public class AttachmentDownloadController {
 
     private static final Logger log = LoggerFactory.getLogger(AttachmentDownloadController.class);
 
     private final AttachmentDownloadService downloadService;
-
-    public AttachmentDownloadController(AttachmentDownloadService downloadService) {
-        this.downloadService = downloadService;
-    }
 
     @GetMapping("/{id}")
     public Mono<ResponseEntity<byte[]>> download(

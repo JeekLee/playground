@@ -9,6 +9,7 @@ import com.playground.chat.domain.model.id.UserId;
 import com.playground.shared.error.ExceptionCreator;
 import java.time.Clock;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,19 +23,12 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link SessionDetailLoader}; this service stays a thin CRUD layer.
  */
 @Service
+@RequiredArgsConstructor
 public class SessionService {
 
     private final SessionRepository sessionRepository;
     private final SessionDetailLoader sessionDetailLoader;
     private final Clock clock;
-
-    public SessionService(SessionRepository sessionRepository,
-                          SessionDetailLoader sessionDetailLoader,
-                          Clock clock) {
-        this.sessionRepository = sessionRepository;
-        this.sessionDetailLoader = sessionDetailLoader;
-        this.clock = clock;
-    }
 
     @Transactional
     public ChatSession create(UserId caller) {

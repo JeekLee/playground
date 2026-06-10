@@ -2,6 +2,7 @@ package com.playground.chat.infrastructure.redis;
 
 import com.playground.chat.application.port.TokenBucketPort;
 import com.playground.chat.domain.model.id.UserId;
+import lombok.RequiredArgsConstructor;
 import org.redisson.api.RRateLimiter;
 import org.redisson.api.RateIntervalUnit;
 import org.redisson.api.RateType;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
  * expire as Redisson manages the rate-limit primitive's TTL.
  */
 @Component
+@RequiredArgsConstructor
 public class RedissonTokenBucketAdapter implements TokenBucketPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedissonTokenBucketAdapter.class);
@@ -29,10 +31,6 @@ public class RedissonTokenBucketAdapter implements TokenBucketPort {
     private static final long DAILY_LIMIT = 200L;
 
     private final RedissonClient redisson;
-
-    public RedissonTokenBucketAdapter(RedissonClient redisson) {
-        this.redisson = redisson;
-    }
 
     @Override
     public Decision tryAcquire(UserId user) {

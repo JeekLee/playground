@@ -3,6 +3,7 @@ package com.playground.chat.infrastructure.redis;
 import com.playground.chat.application.port.ConcurrentStreamLockPort;
 import com.playground.chat.domain.model.id.UserId;
 import java.util.concurrent.TimeUnit;
+import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
  * a {@code ConcurrentHashMap&lt;UserId, Disposable&gt;} for in-flight subscriptions.
  */
 @Component
+@RequiredArgsConstructor
 public class RedissonConcurrentStreamLockAdapter implements ConcurrentStreamLockPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedissonConcurrentStreamLockAdapter.class);
@@ -34,10 +36,6 @@ public class RedissonConcurrentStreamLockAdapter implements ConcurrentStreamLock
     private static final long LEASE_SECONDS = 120L;
 
     private final RedissonClient redisson;
-
-    public RedissonConcurrentStreamLockAdapter(RedissonClient redisson) {
-        this.redisson = redisson;
-    }
 
     @Override
     public Handle acquire(UserId user) {

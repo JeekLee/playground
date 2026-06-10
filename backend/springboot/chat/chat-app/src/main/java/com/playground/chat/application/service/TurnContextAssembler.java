@@ -16,6 +16,7 @@ import com.playground.chat.domain.service.TokenCounter;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Component;
  * build the caller's document manifest.
  */
 @Component
+@RequiredArgsConstructor
 public class TurnContextAssembler {
 
     private static final Log log = LogFactory.getLog(TurnContextAssembler.class);
@@ -51,23 +53,6 @@ public class TurnContextAssembler {
     private final UserDocumentManifestPort userDocumentManifestPort;
     private final Clock clock;
     private final ChatProperties properties;
-
-    public TurnContextAssembler(
-            MessageRepository messageRepository,
-            AttachmentRepository attachmentRepository,
-            TokenCounter tokenCounter,
-            HistoryTruncator historyTruncator,
-            UserDocumentManifestPort userDocumentManifestPort,
-            Clock clock,
-            ChatProperties properties) {
-        this.messageRepository = messageRepository;
-        this.attachmentRepository = attachmentRepository;
-        this.tokenCounter = tokenCounter;
-        this.historyTruncator = historyTruncator;
-        this.userDocumentManifestPort = userDocumentManifestPort;
-        this.clock = clock;
-        this.properties = properties;
-    }
 
     TurnContext assemble(ChatTurnRequest request, ChatSession session) {
         // 3. History load + truncate.

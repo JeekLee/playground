@@ -16,6 +16,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -23,13 +24,10 @@ import org.springframework.stereotype.Repository;
 
 /** JdbcTemplate-backed {@link MessageRepository} per ADR-14 §F. */
 @Repository
+@RequiredArgsConstructor
 public class MessageRepositoryJdbcAdapter implements MessageRepository {
 
     private final JdbcTemplate jdbc;
-
-    public MessageRepositoryJdbcAdapter(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
 
     @Override
     public Message save(Message message) {
