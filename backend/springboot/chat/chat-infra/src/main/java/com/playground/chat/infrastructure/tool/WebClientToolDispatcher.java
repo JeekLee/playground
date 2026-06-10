@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.MissingNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.playground.chat.application.properties.ChatProperties;
+import com.playground.chat.application.tool.JsonTruncator;
 import com.playground.chat.application.tool.ToolArtifact;
 import com.playground.chat.application.tool.ToolDispatcherPort;
 import com.playground.chat.application.tool.ToolInvocationResult;
@@ -16,7 +17,6 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -280,20 +280,13 @@ public class WebClientToolDispatcher implements ToolDispatcherPort {
     /** Apply the 16 KiB LLM-result cap (ADR-17 §4) to the envelope's `result` node. */
     private JsonNode applyResultCap(String name, JsonNode resultNode) {
         try {
-            byte[] serialized = objectMapper.writeValueAsBytes(resultNode);
-            int cap = properties.toolMaxResultBytes();
-            if (serialized.length <= cap) {
-                return resultNode;
+            JsonTruncator.Result capped =
+                    JsonTruncator.truncate(objectMapper, resultNode, properties.toolMaxResultBytes());
+            if (capped.truncated()) {
+                log.warn("tool_result_truncated tool={} originalBytes={} cap={}",
+                        name, capped.originalBytes(), properties.toolMaxResultBytes());
             }
-            log.warn("tool_result_truncated tool={} originalBytes={} cap={}", name, serialized.length, cap);
-            int excerptCap = Math.max(0, cap - 64);
-            byte[] excerpt = new byte[excerptCap];
-            System.arraycopy(serialized, 0, excerpt, 0, excerptCap);
-            ObjectNode envelope = objectMapper.createObjectNode();
-            envelope.put("truncated", true);
-            envelope.put("originalBytes", serialized.length);
-            envelope.put("excerpt", new String(excerpt, StandardCharsets.UTF_8));
-            return envelope;
+            return capped.value();
         } catch (IOException e) {
             return resultNode;
         }
