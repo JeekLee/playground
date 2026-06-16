@@ -17,7 +17,7 @@ import reactor.netty.http.client.HttpClient;
  *
  * <ul>
  *   <li>Base URL: {@code DOCS_API_BASE_URL} (default
- *       {@code http://docs-api:18082} per ADR-13 §B compose spec).</li>
+ *       {@code http://playground-backend-docs-api:18082} per ADR-13 §B compose spec).</li>
  *   <li>Response timeout: 5 s.</li>
  *   <li>Connect timeout: 2 s.</li>
  *   <li>{@code maxInMemorySize}: 12 MB. The M2 docs body cap was 1 MB (slack
@@ -35,7 +35,7 @@ public class DocsApiClientConfig {
     @Bean
     @Qualifier("docsWebClient")
     public WebClient docsWebClient(
-            @Value("${DOCS_API_BASE_URL:http://docs-api:18082}") String baseUrl) {
+            @Value("${DOCS_API_BASE_URL:http://playground-backend-docs-api:18082}") String baseUrl) {
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofSeconds(5))
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2_000)

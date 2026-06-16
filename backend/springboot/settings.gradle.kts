@@ -64,4 +64,4 @@ include(":metrics:metrics-infra")
 // M8 — the `architecture` BC (was `massing-gen`) implemented in Python/FastAPI
 // (ADR-18 §1 flip 2026-05-22; renamed per ADR-19 §D2). Lives at
 // backend/fastapi/agent-tools/ (the agent-tools Python host), not part of the
-// Gradle multi-project tree. Gateway route /api/arch/** → agent-tools:18083.
+// Gradle multi-project tree. Gateway route /api/arch/** → playground-agent-tools:18083.

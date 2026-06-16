@@ -16,7 +16,7 @@ public record MetricsHttpProperties(
     public record Prometheus(String baseUrl, long timeoutMs) {
         public Prometheus {
             if (baseUrl == null || baseUrl.isBlank()) {
-                baseUrl = "http://prometheus-playground:9090";
+                baseUrl = "http://playground-prometheus:9090";
             }
             if (timeoutMs <= 0) {
                 timeoutMs = 8000L;
@@ -27,7 +27,7 @@ public record MetricsHttpProperties(
     public record Loki(String baseUrl, long timeoutMs) {
         public Loki {
             if (baseUrl == null || baseUrl.isBlank()) {
-                baseUrl = "http://loki-playground:3100";
+                baseUrl = "http://playground-loki:3100";
             }
             if (timeoutMs <= 0) {
                 timeoutMs = 15000L;

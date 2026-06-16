@@ -41,8 +41,8 @@ export interface ServiceHealth {
    * Canonical service slug. The 11 expected values are:
    *
    *   gateway / identity-api / docs-api / chat-api /
-   *   metrics-api / spark-inference-gateway / prometheus-playground /
-   *   loki-playground / alloy-playground / cadvisor-playground.
+   *   metrics-api / spark-inference-gateway / playground-prometheus /
+   *   playground-loki / playground-alloy / playground-cadvisor.
    */
   name: string;
   status: ServiceStatus;

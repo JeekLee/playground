@@ -18,8 +18,8 @@ context" claim becomes paper-thin.
 | gateway -> any BC | HTTP (compose-internal) | Per ADR-07 routing |
 | BC -> Kafka -> BC | Kafka events | Per ADR-03 envelope |
 | BC -> external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
-| BC -> Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
-| BC -> Redis (`redis-playground`) | Redis protocol | Only the gateway uses Redis today (sessions); BCs may add usage if justified per-milestone |
+| BC -> Postgres (`playground-postgres`) | JDBC | Per ADR-05 |
+| BC -> Redis (`playground-redis`) | Redis protocol | Only the gateway uses Redis today (sessions); BCs may add usage if justified per-milestone |
 
 ### Forbidden channels
 
@@ -55,7 +55,7 @@ module. It is a leaf in the dependency graph.
 
 ### Discovery
 - No service registry. DNS via compose service names is sufficient
-  (`identity-api:18081`, `docs-api:18082`, etc.).
+  (`playground-backend-identity-api:18081`, `playground-backend-docs-api:18082`, etc.).
 - Gateway routes are configured statically in `application.yml`. If a BC port
   changes, ADR-01's table is the source of truth — update both.
 
@@ -82,7 +82,7 @@ relaxation of the principle.
 ### Exception 1: `rag-ingestion` → `docs` (read-only HTTP for MD body)
 
 **Sanctioned route:** `rag-ingestion-infra`'s WebClient may call
-`GET http://docs-api:18082/internal/docs/public/{id}/body` on the docs BC.
+`GET http://playground-backend-playground-backend-docs-api:18082/internal/docs/public/{id}/body` on the docs BC.
 
 **Allowed methods and paths (exhaustive — no others):**
 
@@ -125,7 +125,7 @@ This is the **first justified exception** to the cross-BC HTTP ban; it does
 not implicitly authorize others. M3+ milestones referencing this section must
 do so explicitly.
 
-### Exception 2: `rag-ingestion` → `redis-playground` (distributed locks)
+### Exception 2: `rag-ingestion` → `playground-redis` (distributed locks)
 
 **Sanctioned use:** Redisson-backed `@GlobalLock` distributed locks for
 ingestion idempotency (preventing duplicate embedding work when the same
@@ -133,7 +133,7 @@ ingestion idempotency (preventing duplicate embedding work when the same
 
 **Wiring:**
 - `rag-ingestion-infra` depends on `org.redisson:redisson-spring-boot-starter`.
-- Connects to the same `redis-playground` container that backs the gateway's
+- Connects to the same `playground-redis` container that backs the gateway's
   Spring Session (ADR-07).
 - Lock keys are namespaced: `rag-ingestion:lock:document:{id}`.
 - Lock TTLs cap at 5 minutes — exceeding the cap is a bug, not a config
@@ -145,7 +145,7 @@ ingestion idempotency (preventing duplicate embedding work when the same
 - Redis lock semantics (Redlock / Redisson `RLock`) are well-documented and
   testable; Postgres advisory locks tie the lock lifetime to a JDBC connection
   which complicates the async ingestion worker.
-- Reusing the existing `redis-playground` container keeps the infrastructure
+- Reusing the existing `playground-redis` container keeps the infrastructure
   footprint flat.
 
 **Constraints:**
@@ -166,11 +166,11 @@ ingestion idempotency (preventing duplicate embedding work when the same
 | BC -> Kafka -> BC | Kafka events | Per ADR-03 envelope |
 | `rag-ingestion` -> `docs-api` `/internal/**` | HTTP (compose-internal) | **Sanctioned exception (this section)** — read-only |
 | BC -> external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
-| BC -> Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
-| BC -> OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment; per-BC index ownership |
-| gateway -> Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
-| `rag-ingestion` -> Redis (`redis-playground`) | Redis protocol | **Sanctioned (this section)** — distributed locks, namespace `rag-ingestion:lock:*` |
-| `docs-api` -> Redis (`redis-playground`) | Redis protocol | **Sanctioned (ADR-12 amendment)** — view-counter dedup, namespace `view:*` (24h TTL keys) |
+| BC -> Postgres (`playground-postgres`) | JDBC | Per ADR-05 |
+| BC -> OpenSearch (`playground-opensearch`) | HTTP (REST) | Per ADR-05 amendment; per-BC index ownership |
+| gateway -> Redis (`playground-redis`) | Redis protocol | Spring Session (ADR-07) |
+| `rag-ingestion` -> Redis (`playground-redis`) | Redis protocol | **Sanctioned (this section)** — distributed locks, namespace `rag-ingestion:lock:*` |
+| `docs-api` -> Redis (`playground-redis`) | Redis protocol | **Sanctioned (ADR-12 amendment)** — view-counter dedup, namespace `view:*` (24h TTL keys) |
 | `docs-api` -> `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | **Sanctioned (ADR-12 amendment)** — boot-time owner resolution, read-only, cached for JVM lifetime |
 
 ## Amendment (2026-05-17, ADR-12)
@@ -234,7 +234,7 @@ already pinned, with no shape change:
   pinned by ADR-13 §2 mirrors ADR-12 §2 verbatim — 5 s timeout, 3 attempts,
   exponential backoff (200 ms, 400 ms, 800 ms base, jitter 0.5),
   permanent failure → `docs.document.uploaded.dlq` (per ADR-13 §8).
-- **Exception 2 reuse** (`rag-ingestion` → `redis-playground`): Redisson
+- **Exception 2 reuse** (`rag-ingestion` → `playground-redis`): Redisson
   `RLock` on `rag-ingestion:lock:document:{id}`, TTL ≤ 5 minutes.
   ADR-13 §5 reuses the same lock as the **serialization primitive for the
   visibility-change-before-uploaded race** — no new namespace, no new
@@ -301,13 +301,13 @@ in `docs-infra` — moved from `rag-ingestion-infra`), and the Redisson
 starter coordinate are all preserved verbatim. Only the namespace name
 changes.
 
-The Redis container (`redis-playground`) is shared with Spring Session
+The Redis container (`playground-redis`) is shared with Spring Session
 (gateway) and the M2 view-counter dedup (`view:*` namespace, owned by
 docs-api per ADR-12 amendment 2026-05-17). The new `docs:lock:*`
 namespace and the existing `view:*` namespace are both owned by the
 same docs-api JVM; no cross-namespace reads, same as before.
 
-### A08.3. New direction — `docs-api` → `minio-playground` (S3 protocol)
+### A08.3. New direction — `docs-api` → `playground-minio` (S3 protocol)
 
 **Sanctioned use:** the docs BC writes uploaded blobs to MinIO and
 streams them back to the user on `GET /api/docs/{id}/source` + to the
@@ -316,7 +316,7 @@ listener (ADR-12 amendment A12.4 + A12.5).
 
 | Direction | Channel | Notes |
 |---|---|---|
-| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol via MinIO Java SDK 8.5.x | **Sanctioned (this amendment)** — single-bucket access (`playground-docs-originals`); object key = `{document_id}.{ext}`; auth via shared `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` env vars; cascade-delete in the same transaction as the row delete (orphan cleanup via nightly `@Scheduled` job). |
+| `docs-api` → `playground-minio:9000` | HTTP / S3 protocol via MinIO Java SDK 8.5.x | **Sanctioned (this amendment)** — single-bucket access (`playground-docs-originals`); object key = `{document_id}.{ext}`; auth via shared `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` env vars; cascade-delete in the same transaction as the row delete (orphan cleanup via nightly `@Scheduled` job). |
 
 **Why MinIO and not Postgres BYTEA or `text` body alone:** ADR-12
 amendment A12.4 covers the full rationale. Summary: the multipart
@@ -342,13 +342,13 @@ other.
 | BC -> Kafka -> BC | Kafka events | Per ADR-03 envelope |
 | ~~`rag-ingestion` -> `docs-api` `/internal/**`~~ | ~~HTTP (compose-internal)~~ | **Retired by A08.1** — BC consolidated into docs |
 | BC -> external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
-| BC -> Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
-| BC -> OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment; per-BC index ownership |
-| gateway -> Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
-| `docs-api` -> Redis (`redis-playground`) — `view:*` namespace | Redis protocol | Sanctioned (ADR-12 amendment 2026-05-17) — view-counter dedup |
-| `docs-api` -> Redis (`redis-playground`) — `docs:lock:*` namespace | Redis protocol | **Sanctioned (this amendment §A08.2)** — distributed lock for ingestion idempotency (renamed from `rag-ingestion:lock:*`) |
+| BC -> Postgres (`playground-postgres`) | JDBC | Per ADR-05 |
+| BC -> OpenSearch (`playground-opensearch`) | HTTP (REST) | Per ADR-05 amendment; per-BC index ownership |
+| gateway -> Redis (`playground-redis`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` -> Redis (`playground-redis`) — `view:*` namespace | Redis protocol | Sanctioned (ADR-12 amendment 2026-05-17) — view-counter dedup |
+| `docs-api` -> Redis (`playground-redis`) — `docs:lock:*` namespace | Redis protocol | **Sanctioned (this amendment §A08.2)** — distributed lock for ingestion idempotency (renamed from `rag-ingestion:lock:*`) |
 | `docs-api` -> `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) — boot-time owner resolution |
-| `docs-api` -> `minio-playground:9000` (S3) | HTTP / S3 protocol | **Sanctioned (this amendment §A08.3)** — single bucket `playground-docs-originals` |
+| `docs-api` -> `playground-minio:9000` (S3) | HTTP / S3 protocol | **Sanctioned (this amendment §A08.3)** — single bucket `playground-docs-originals` |
 | `rag-chat-api` -> cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment) — narrowed in M6.1 (search_path drops `rag`); see A08.5 below |
 
 ### A08.5. Cross-schema SELECT exception (ADR-14) — narrowed scope
@@ -480,12 +480,12 @@ per tool BC.
 | gateway → any BC `-api` | HTTP (compose-internal) | Per ADR-07 routing |
 | BC → Kafka → BC | Kafka events | Per ADR-03 envelope |
 | BC → external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
-| BC → Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
-| BC → OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment |
-| gateway → Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
-| `docs-api` → Redis (`redis-playground`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
+| BC → Postgres (`playground-postgres`) | JDBC | Per ADR-05 |
+| BC → OpenSearch (`playground-opensearch`) | HTTP (REST) | Per ADR-05 amendment |
+| gateway → Redis (`playground-redis`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` → Redis (`playground-redis`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
 | `docs-api` → `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) — Exception 3 |
-| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
+| `docs-api` → `playground-minio:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
 | `rag-chat-api` → cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment; M6.1-narrowed to 2 schemas — A08.5) |
 | **`rag-chat-api` → tool BC `-api` `/internal/tools/<name>`** | **HTTP (compose-internal)** | **Sanctioned (this amendment §A08.8) — Exception 4.** Per-tool-BC sub-row required when the tool BC ships. |
 
@@ -633,12 +633,12 @@ WebClient may call **two routes** on the docs BC:
 | gateway → any BC `-api` | HTTP (compose-internal) | Per ADR-07 routing |
 | BC → Kafka → BC | Kafka events | Per ADR-03 envelope |
 | BC → external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
-| BC → Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
-| BC → OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment |
-| gateway → Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
-| `docs-api` → Redis (`redis-playground`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
+| BC → Postgres (`playground-postgres`) | JDBC | Per ADR-05 |
+| BC → OpenSearch (`playground-opensearch`) | HTTP (REST) | Per ADR-05 amendment |
+| gateway → Redis (`playground-redis`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` → Redis (`playground-redis`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
 | `docs-api` → `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) — Exception 3 |
-| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
+| `docs-api` → `playground-minio:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
 | `rag-chat-api` → cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment; M6.1-narrowed to 2 schemas — A08.5) |
 | `rag-chat-api` → tool BC `-api` `/internal/tools/<name>` | HTTP (compose-internal) | Sanctioned (M7 amendment §A08.8) — Exception 4. Sub-row table — `generate_massing` added by this amendment §A08.11. |
 | **`massing-gen-api`** → `docs-api` `/internal/docs/public/{id}` + `/internal/docs/public/{id}/body` | **HTTP (compose-internal)** | **Sanctioned (this amendment §A08.12) — Exception 5.** Brief body read; identity-propagation enabled (distinct from retired Exception 1). |
@@ -647,9 +647,9 @@ WebClient may call **two routes** on the docs BC:
 ### §A08.14. New external-sidecar direction (informational)
 
 The `rhino3dm-bridge` sidecar is a compose-internal external service
-(like `spark-inference-gateway` and `minio-playground`), not a sibling
+(like `spark-inference-gateway` and `playground-minio`), not a sibling
 BC. The `massing-gen-api → rhino3dm-bridge` HTTP direction is
-classified the same way the M6.1 `docs-api → minio-playground`
+classified the same way the M6.1 `docs-api → playground-minio`
 direction was — a sanctioned external-service direction, not a
 BC-to-BC HTTP exception. It does not count against the BC-to-BC
 exception count.

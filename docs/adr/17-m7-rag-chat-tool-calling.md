@@ -740,12 +740,12 @@ M8, ADR-19 for the second tool BC, etc.).
 | gateway → any BC `-api` | HTTP (compose-internal) | Per ADR-07 routing |
 | BC → Kafka → BC | Kafka events | Per ADR-03 envelope |
 | BC → external (`spark-inference-gateway`) | HTTP via Spring AI | Per ADR-04 |
-| BC → Postgres (`postgres-playground`) | JDBC | Per ADR-05 |
-| BC → OpenSearch (`opensearch-playground`) | HTTP (REST) | Per ADR-05 amendment |
-| gateway → Redis (`redis-playground`) | Redis protocol | Spring Session (ADR-07) |
-| `docs-api` → Redis (`redis-playground`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
+| BC → Postgres (`playground-postgres`) | JDBC | Per ADR-05 |
+| BC → OpenSearch (`playground-opensearch`) | HTTP (REST) | Per ADR-05 amendment |
+| gateway → Redis (`playground-redis`) | Redis protocol | Spring Session (ADR-07) |
+| `docs-api` → Redis (`playground-redis`) — `view:*` + `docs:lock:*` namespaces | Redis protocol | Sanctioned (ADR-12 amendment + M6.1 amendment A08.2) |
 | `docs-api` → `identity-api` `/internal/users/by-google-sub/{sub}` | HTTP (compose-internal) | Sanctioned (ADR-12 amendment 2026-05-17) |
-| `docs-api` → `minio-playground:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
+| `docs-api` → `playground-minio:9000` | HTTP / S3 protocol | Sanctioned (M6.1 amendment A08.3) |
 | `rag-chat-api` → cross-schema SELECT into `docs.*` + `identity.*` | JDBC (cross-schema) | Sanctioned (ADR-14 amendment; M6.1-narrowed to 2 schemas) |
 | **`rag-chat-api` → tool BC `-api` `/internal/tools/<name>`** | **HTTP (compose-internal)** | **Sanctioned (this amendment §A08.8) — Exception 4.** Per-tool-BC sub-row required. |
 

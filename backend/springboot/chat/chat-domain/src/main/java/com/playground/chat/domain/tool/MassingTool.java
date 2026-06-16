@@ -12,7 +12,7 @@ import java.time.Duration;
  * {@code ToolDispatcher} reaches it the same way as any future tool.
  *
  * <p>Endpoint default is the compose-internal hostname
- * {@code http://agent-tools:18083/internal/tools/generate-massing}
+ * {@code http://playground-agent-tools:18083/internal/tools/generate-massing}
  * (ADR-08 §A08.11 Exception 4 sub-row; host renamed per ADR-19 §D2).
  * Override via {@code PLAYGROUND_MASSING_GEN_TOOL_URL} env var if the BC moves.
  *
@@ -104,7 +104,7 @@ public final class MassingTool {
 
     /** Default endpoint hostname — overridden by env var when set. */
     private static final URI DEFAULT_ENDPOINT =
-            URI.create("http://agent-tools:18083/internal/tools/generate-massing");
+            URI.create("http://playground-agent-tools:18083/internal/tools/generate-massing");
 
     /** Singleton descriptor instance — registered in {@link ToolCatalog#descriptors()}. */
     public static final ToolDescriptor MASSING = new ToolDescriptor(

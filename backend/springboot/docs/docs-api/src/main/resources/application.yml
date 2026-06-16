@@ -13,7 +13,7 @@ spring:
     # container per ADR-05. No namespace clash because the view-claim keys are
     # prefixed `view:` while gateway session keys live under `spring:session:`.
     redis:
-      host: ${REDIS_HOST:redis-playground}
+      host: ${REDIS_HOST:playground-redis}
       port: ${REDIS_PORT:6379}
   servlet:
     multipart:
@@ -27,7 +27,7 @@ spring:
       max-file-size: 25MB
       max-request-size: 26MB
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=docs
+    url: jdbc:postgresql://${POSTGRES_HOST:playground-postgres}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=docs
     username: ${POSTGRES_USER:playground}
     password: ${POSTGRES_PASSWORD:}
     hikari:
@@ -49,7 +49,7 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-playground:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:playground-kafka-broker:9092}
     producer:
       acks: all
       properties:
@@ -167,7 +167,7 @@ playground:
     # fails to boot, rather than silently emitting broken citation links.
     public-origin: ${PLAYGROUND_PUBLIC_ORIGIN}
     minio:
-      endpoint: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:http://minio-playground:9000}
+      endpoint: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:http://playground-minio:9000}
       access-key: ${MINIO_ROOT_USER:playground}
       secret-key: ${MINIO_ROOT_PASSWORD:playground-secret}
       bucket: ${PLAYGROUND_DOCS_MINIO_BUCKET:playground-docs-originals}
@@ -208,8 +208,8 @@ springdoc:
 # in the respective infra adapters; left here only as a single-line audit
 # trail so a reader of application.yml sees all the externals at a glance.
 # No Spring binding here — these are pure env vars consumed at @Value time.
-#   OPENSEARCH_BASE_URL          (default http://opensearch-playground:9200)
-#   IDENTITY_BASE_URL            (default http://identity-api:18081)
+#   OPENSEARCH_BASE_URL          (default http://playground-opensearch:9200)
+#   IDENTITY_BASE_URL            (default http://playground-backend-identity-api:18081)
 #   PLAYGROUND_OWNER_GOOGLE_SUB  (unset → fail-closed empty owner feed)
 #   MINIO_ROOT_USER              (default playground)
 #   MINIO_ROOT_PASSWORD          (default playground-secret)

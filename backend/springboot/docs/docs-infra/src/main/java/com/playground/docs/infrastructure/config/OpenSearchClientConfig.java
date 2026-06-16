@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
  * search query path per ADR-12 §5.
  *
  * <p>Single endpoint URL pinned via {@code OPENSEARCH_BASE_URL} (default
- * {@code http://opensearch-playground:9200} per the ADR-12 compose spec).
+ * {@code http://playground-opensearch:9200} per the ADR-12 compose spec).
  * Security plugin is disabled in dev (per the same ADR + ADR-05 amendment),
  * so no credentials are sent.
  *
@@ -30,7 +30,7 @@ public class OpenSearchClientConfig {
 
     @Bean
     public OpenSearchClient openSearchClient(
-            @Value("${OPENSEARCH_BASE_URL:http://opensearch-playground:9200}") String baseUrl) {
+            @Value("${OPENSEARCH_BASE_URL:http://playground-opensearch:9200}") String baseUrl) {
         URI uri = URI.create(baseUrl);
         HttpHost host = new HttpHost(uri.getScheme(), uri.getHost(), uri.getPort());
 

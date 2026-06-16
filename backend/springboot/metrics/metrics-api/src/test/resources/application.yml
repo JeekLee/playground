@@ -1,7 +1,7 @@
 # Test-side overrides for metrics-api @SpringBootTest contexts.
 #
 # Excludes RedissonAutoConfigurationV2 so the test bootstrap does NOT try to
-# resolve `redis-playground:6379` (DNS-fails outside the compose stack). The
+# resolve `playground-redis:6379` (DNS-fails outside the compose stack). The
 # real `RedissonIpRateLimiterAdapter` is `@ConditionalOnBean(RedissonClient.class)`,
 # so without the auto-config the no-op `IpRateLimitPort` fallback applies and
 # the dashboard route's rate-limit branch is exercised by injecting a test

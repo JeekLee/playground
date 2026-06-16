@@ -24,7 +24,7 @@ Alternatives considered:
 - Image: **`pgvector/pgvector:pg16`** (Postgres 16 + pgvector pre-installed —
   one image, no init script gymnastics).
 - Compose service name (and DNS hostname inside the network):
-  **`postgres-playground`**.
+  **`playground-postgres`**.
 - Compose-internal port: **`5432`**.
 - Host-exposed port: **`10232`** (in the `102xx` block, well clear of
   `clic-postgres:10132`).
@@ -67,7 +67,7 @@ a single-user personal service; a future ADR can introduce them.)
 - Migration naming: `V<yyyyMMddHHmm>__<snake_case_description>.sql`.
 
 ### Connection settings (per service)
-- JDBC URL template: `jdbc:postgresql://postgres-playground:5432/playground?currentSchema=<schema>`
+- JDBC URL template: `jdbc:postgresql://playground-postgres:5432/playground?currentSchema=<schema>`
 - HikariCP defaults; max pool size 5 (small per-service pool — many services,
   one DB).
 
@@ -98,10 +98,10 @@ efficiently at the latency/relevance bar M2 sets.
 
 - **Image:** `opensearchproject/opensearch:2.18.0` (latest 2.x at time of
   pinning; bump on per-milestone ADR if needed).
-- **Compose service name:** `opensearch-playground`.
+- **Compose service name:** `playground-opensearch`.
 - **Compose-internal port:** `9200` (REST), `9600` (perf analyzer).
 - **Host-exposed port:** `10292` (in the `102xx` block, clears
-  `postgres-playground:10232` and `redis-playground:10279`).
+  `playground-postgres:10232` and `playground-redis:10279`).
 - **Auth:** the security plugin is **disabled** for dev (single-node, internal
   network). Production deployment would re-enable it via a per-milestone ADR.
 - **Topology:** **single-node** in dev (`discovery.type=single-node`).
@@ -356,7 +356,7 @@ The total schema count drops from 4 to 3 (excluding the
 ### A05.2. MinIO sidecar — original-blob storage for the docs BC
 
 **Decision:** a new compose-internal MinIO instance
-(`minio-playground`) is provisioned as a sidecar for the docs BC.
+(`playground-minio`) is provisioned as a sidecar for the docs BC.
 **This is the activation of the "object storage — reserved slot" that
 ADR-05's 2026-05-17 amendment penciled in for M2.1**, materialized one
 milestone early because M6.1's async extraction shape requires the
@@ -364,14 +364,14 @@ original PDF/MD bytes to survive the upload request-response cycle.
 
 | Concern | Pin |
 |---|---|
-| Compose service name | `minio-playground` (replaces the reserved `objectstore-playground` slot from the 2026-05-17 amendment — the slot was unpinned; M6.1 pins it) |
+| Compose service name | `playground-minio` (replaces the reserved `objectstore-playground` slot from the 2026-05-17 amendment — the slot was unpinned; M6.1 pins it; volume name remains `minio-playground-data` to preserve existing local data) |
 | Image | `minio/minio:RELEASE.2025-04-08T15-41-24Z` (latest stable as of the M6.1 PR; infra-implementer may bump to current latest) |
 | Compose-internal port | `9000` (S3 API), `9001` (console) |
-| Host-exposed port | `10294` (S3 API), `10295` (console) — both in the `102xx` block, after `opensearch-playground:10292/10293-reserved` |
+| Host-exposed port | `10294` (S3 API), `10295` (console) — both in the `102xx` block, after `playground-opensearch:10292/10293-reserved` |
 | Volume | `minio-playground-data` (named volume) |
 | Bucket | `playground-docs-originals` (only one bucket in M6.1; reserved naming pattern `<bc>-<purpose>` per ADR-05's 2026-05-17 amendment is honored — `<bc>=docs`, `<purpose>=originals`) |
 | Auth | Single root user, `MINIO_ROOT_USER` + `MINIO_ROOT_PASSWORD` from `.env`; compose-internal network only; security plugin sufficient for personal scale (no per-service role split in M6.1) |
-| Bucket ownership | `docs-api` only. Future BCs adding object-store usage either declare their own bucket on `minio-playground` (and add a per-milestone ADR row enumerating the bucket name) or provision a separate sidecar. Cross-bucket access is forbidden by the same principle as cross-schema DB access. |
+| Bucket ownership | `docs-api` only. Future BCs adding object-store usage either declare their own bucket on `playground-minio` (and add a per-milestone ADR row enumerating the bucket name) or provision a separate sidecar. Cross-bucket access is forbidden by the same principle as cross-schema DB access. |
 | Java client | `io.minio:minio:8.5.x` on docs-infra's classpath. `BlobStoragePort` interface in `docs-app`; `MinioBlobStorageAdapter` in `docs-infra` (per ADR-02 layering). |
 | Multipart-upload streaming | `MinioClient.putObject(InputStream, size, ...)` — never materializes the full blob into a `byte[]`. Spring Multipart's `file-size-threshold` stays at 1 MB (ADR-16 §8); larger uploads spill to a temp file and the file-backed `getInputStream()` re-streams to MinIO. |
 | Download streaming | `MinioClient.getObject(...)` → response output stream; never buffers full blob. |
@@ -515,11 +515,11 @@ stay in BYTEA, not MinIO). The slot remains open for M9+ or for a
 future migration of `arch.outputs.file_bytes` → MinIO if corpus
 growth makes it necessary.
 
-The existing `minio-playground` sidecar (introduced by M6.1
+The existing `playground-minio` sidecar (introduced by M6.1
 §A05.2 for docs-originals) is **not shared** with M8 — its bucket
 (`playground-docs-originals`) is owned exclusively by docs-api per
 the single-tenant invariant. Any future MinIO-backed M8 storage
-would either declare a new bucket on `minio-playground`
+would either declare a new bucket on `playground-minio`
 (`playground-arch-outputs`, with an updated bucket-ownership
 amendment) or provision a separate sidecar at slot 6.
 
@@ -560,7 +560,7 @@ REAL / INT / TEXT / TIMESTAMPTZ), same indexes
 
 **Decision: Java BCs continue to use Flyway (the ADR-05 default). The
 Python BC (massing-gen at M8) uses Alembic (or hand-rolled SQL). Both
-tools target the same `postgres-playground` Postgres instance, the
+tools target the same `playground-postgres` Postgres instance, the
 same `playground` database, but distinct history tables
 (`flyway_arch` would not have existed under Java post-M6.1 anyway —
 ADR-05 §"Migrations" baseline uses per-schema `flyway_history`; for

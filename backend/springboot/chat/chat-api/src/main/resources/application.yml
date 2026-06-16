@@ -17,7 +17,7 @@ spring:
     # schema was retired by M6.1 (ADR-05 §A05.1). Fully-qualified table names are
     # used in adapters too; search_path is belt-and-suspenders for diagnostic
     # SQL via psql.
-    url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=chat
+    url: jdbc:postgresql://${POSTGRES_HOST:playground-postgres}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=chat
     username: ${POSTGRES_USER:playground}
     password: ${POSTGRES_PASSWORD:}
     hikari:
@@ -45,7 +45,7 @@ spring:
     # RedissonClient bean. Rate-limit keys (chat:bucket:user:*) and lock
     # keys (chat:lock:user:*) are namespaced inside the adapters.
     redis:
-      host: ${REDIS_HOST:redis-playground}
+      host: ${REDIS_HOST:playground-redis}
       port: ${REDIS_PORT:6379}
   ai:
     openai:
@@ -98,9 +98,9 @@ playground:
 
 # ADR-20 §D3 — MinIO attachment blob store. The MinioClientConfig +
 # MinioBlobStorageAdapter read these env vars directly (with code defaults), so
-# chat boots against the compose-internal minio-playground sidecar without
+# chat boots against the compose-internal playground-minio sidecar without
 # explicit wiring. Secrets stay in infra/.env (gitignored), never in YAML.
-#   PLAYGROUND_CHAT_MINIO_ENDPOINT  (default http://minio-playground:9000)
+#   PLAYGROUND_CHAT_MINIO_ENDPOINT  (default http://playground-minio:9000)
 #   MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
 #   PLAYGROUND_CHAT_MINIO_BUCKET    (default chat-attachments)
 

@@ -35,7 +35,7 @@ public class DocsKafkaConsumerConfig {
 
     @Bean
     public ConsumerFactory<String, JsonNode> jsonNodeConsumerFactory(
-            @Value("${spring.kafka.bootstrap-servers:kafka-playground:9092}") String bootstrap,
+            @Value("${spring.kafka.bootstrap-servers:playground-kafka-broker:9092}") String bootstrap,
             ObjectMapper objectMapper) {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);

@@ -508,9 +508,9 @@ M6.1 §A01.3 reservation status for the `18083` row):
 | (reserved) | 18085 | reserved for next BC | — |
 | `metrics-api` | **18086** | no | Java |
 
-Other compose services that backend BCs reach (`postgres-playground`
-10232, `redis-playground` 10279, `opensearch-playground` 10292,
-`minio-playground` 10294/10295, the M5 observability stack, the
+Other compose services that backend BCs reach (`playground-postgres`
+10232, `playground-redis` 10279, `playground-opensearch` 10292,
+`playground-minio` 10294/10295, the M5 observability stack, the
 host's `spark-inference-gateway` at `host.docker.internal:10080`)
 all remain language-neutral — the Python BC consumes them via
 SQLAlchemy / httpx the same way the Java BCs consume them via
@@ -571,7 +571,8 @@ unaffected.** (See ADR-19 §D1 for the full rationale and trade-offs.)
 
 | Concern | Decision |
 |---|---|
-| Host service name | **`agent-tools`** (compose service / `container_name` / `hostname` / image `playground/agent-tools:dev`) |
+| Host logical name | **`agent-tools`** |
+| Docker service / `container_name` / `hostname` | **`playground-agent-tools`** (image remains `playground/agent-tools:dev`) |
 | Port | **18083** (unchanged; reclaims the slot `massing-gen-api` held under §A01.13) |
 | Runtime | Python 3.12 + FastAPI + uvicorn — single ASGI app, per-BC routers mounted under their own prefixes |
 | Repo layout | `backend/fastapi/agent-tools/` is the host; each BC is a directory module `backend/fastapi/agent-tools/<bc>/`; host-shared plumbing lives at `backend/fastapi/agent-tools/app/` (LLM client, docs-api client, config, app factory, observability) |
@@ -591,10 +592,11 @@ container under a future ADR amendment.
 ### §A01.16. `massing-gen-api` service retired → `agent-tools`; port table
 
 **Decision: the `massing-gen-api` compose service / hostname (pinned
-under §A01.13) is **retired** and replaced by `agent-tools` on the same
-port 18083. The `massing-gen` BC is renamed to `architecture` and
-relocates to `backend/fastapi/agent-tools/architecture/` (see ADR-19
-§D2 for the full rename change-set and ADR-18 §A18.10).**
+under §A01.13) is **retired** and replaced by the logical `agent-tools`
+host on the same port 18083. Docker-visible service identifiers use
+`playground-agent-tools`. The `massing-gen` BC is renamed to
+`architecture` and relocates to `backend/fastapi/agent-tools/architecture/`
+(see ADR-19 §D2 for the full rename change-set and ADR-18 §A18.10).**
 
 Java module count is **unchanged** (still 22 — the Python host is not a
 Gradle module). Total runnable backend containers is **unchanged at 6**
@@ -608,7 +610,7 @@ Port table (supersedes §A01.13's `massing-gen-api` row):
 | `gateway` | **18080** | yes (single ingress) | Java (Spring Boot 3.3) |
 | `identity-api` | **18081** | no | Java |
 | `docs-api` | **18082** | no | Java |
-| **`agent-tools`** | **18083** | **no** | **Python 3.12 (FastAPI + uvicorn)** — multi-BC host; hosts the `architecture` BC (was `massing-gen-api`) |
+| **`playground-agent-tools`** (`agent-tools` logical host) | **18083** | **no** | **Python 3.12 (FastAPI + uvicorn)** — multi-BC host; hosts the `architecture` BC (was `massing-gen-api`) |
 | `rag-chat-api` | **18084** | no | Java |
 | (reserved) | 18085 | reserved for next Java BC | — |
 | `metrics-api` | **18086** | no | Java |

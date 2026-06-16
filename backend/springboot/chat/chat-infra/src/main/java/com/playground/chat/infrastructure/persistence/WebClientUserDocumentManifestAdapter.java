@@ -31,7 +31,7 @@ public class WebClientUserDocumentManifestAdapter implements UserDocumentManifes
 
     public WebClientUserDocumentManifestAdapter(
             WebClient.Builder builder,
-            @Value("${playground.chat.docs-manifest-url:http://docs-api:18082/internal/docs/manifest}")
+            @Value("${playground.chat.docs-manifest-url:http://playground-backend-docs-api:18082/internal/docs/manifest}")
             String endpoint) {
         this.webClient = builder.build();
         this.endpoint = endpoint;

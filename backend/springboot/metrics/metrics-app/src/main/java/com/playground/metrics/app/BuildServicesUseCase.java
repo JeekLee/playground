@@ -25,8 +25,8 @@ import reactor.core.publisher.Mono;
  *   <li>gateway, identity-api, docs-api, chat-api, metrics-api
  *       (active BCs — {@code up{}} scrape + actuator/health)</li>
  *   <li>spark-inference-gateway (HEAD {@code /v1/models})</li>
- *   <li>prometheus-playground, loki-playground, alloy-playground,
- *       cadvisor-playground (native readiness endpoints + {@code up{}}
+ *   <li>playground-prometheus, playground-loki, playground-alloy,
+ *       playground-cadvisor (native readiness endpoints + {@code up{}}
  *       self-scrape)</li>
  * </ol>
  *

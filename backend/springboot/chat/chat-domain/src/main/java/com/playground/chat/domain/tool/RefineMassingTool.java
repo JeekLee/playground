@@ -60,7 +60,7 @@ public final class RefineMassingTool {
             summary and confirm completion.""";
 
     private static final URI DEFAULT_ENDPOINT =
-            URI.create("http://agent-tools:18083/internal/tools/refine-massing");
+            URI.create("http://playground-agent-tools:18083/internal/tools/refine-massing");
 
     public static final ToolDescriptor REFINE = new ToolDescriptor(
             "refine_massing",
