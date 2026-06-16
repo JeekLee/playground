@@ -34,11 +34,10 @@ public final class ServiceAllowlist {
 
     /** 명시적 카탈로그 — dashboard 렌더링 + 가드 테스트용. */
     private static final Set<String> KNOWN_ENTRIES = unmodifiable(
-            // 6 BCs
+            // 5 active BCs. rag-ingestion-api was retired in M6.1.
             "playground-backend-gateway",
             "playground-backend-identity-api",
             "playground-backend-docs-api",
-            "playground-backend-rag-ingestion-api",
             "playground-backend-chat-api",
             "playground-backend-metrics-api",
             // 4 observability containers (self-monitoring per ADR-15 §17)

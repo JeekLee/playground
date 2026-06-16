@@ -48,9 +48,9 @@ class BuildDashboardUseCaseTest {
         assertThat(response.fetchedAt()).isNotNull();
         assertThat(response.range()).isEqualTo("1h");
         assertThat(response.pollIntervalSeconds()).isEqualTo(15);
-        // 16 service cells (6 BCs + spark + 4 obs containers + 5 stack containers)
+        // 15 service cells (5 active BCs + spark + 4 obs containers + 5 stack containers)
         // per ServiceProbeTarget.ALL (ADR-15 §17 amended).
-        assertThat(response.services()).hasSize(16);
+        assertThat(response.services()).hasSize(15);
         // 14 container cells per ContainerAllowlist
         assertThat(response.containers()).isNotEmpty();
         // Host cell present with loadAvg array of 3
@@ -60,11 +60,11 @@ class BuildDashboardUseCaseTest {
         assertThat(response.sparkGateway()).isNotNull();
         assertThat(response.sparkGateway().url()).isEqualTo("host.docker.internal:10080");
         assertThat(response.sparkGateway().modelsLoaded()).contains("BGE-M3", "Qwen3-32B");
-        // 6 JVM cells — every JVM-bearing service in the stack (5 BCs + gateway)
-        assertThat(response.jvm()).hasSize(6);
-        // 6 HTTP rate cells — every HTTP-bearing BC (HTTP_SERVICES == JVM_SERVICES)
+        // 5 JVM cells — every active JVM-bearing service in the stack.
+        assertThat(response.jvm()).hasSize(5);
+        // 5 HTTP rate cells — every active HTTP-bearing BC (HTTP_SERVICES == JVM_SERVICES)
         // per the 2026-05-21 amendment in BuildDashboardUseCase.
-        assertThat(response.httpRate()).hasSize(6);
+        assertThat(response.httpRate()).hasSize(5);
         // No widget degraded on the happy path
         response.containers().forEach(c -> assertThat(c.degraded()).isFalse());
         response.jvm().forEach(c -> assertThat(c.degraded()).isFalse());

@@ -30,7 +30,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * WebTestClient slice for {@code GET /api/metrics/services} per issue #138.
- * Verifies the eleven-cell payload shape + ADR-15 §17 canonical ordering.
+ * Verifies the active service payload shape + ADR-15 §17 canonical ordering.
  */
 @SpringBootTest(
         classes = ServicesControllerTest.TestConfig.class,
@@ -55,7 +55,7 @@ class ServicesControllerTest {
     }
 
     @Test
-    void allUpReturnsElevenCellsInCanonicalOrder() {
+    void allUpReturnsActiveCellsInCanonicalOrder() {
         // sum_over_time(up{}[12s]) = 2 → both scrapes captured
         when(prometheus.instantQuery(anyString()))
                 .thenReturn(Mono.just(List.of(new PrometheusSample(Map.of(), 1_700_000_000L, 2.0))));
@@ -69,27 +69,26 @@ class ServicesControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.services").isArray()
-                .jsonPath("$.services.length()").isEqualTo(16)
+                .jsonPath("$.services.length()").isEqualTo(15)
                 // ADR-15 §17 canonical order — assert each index
                 .jsonPath("$.services[0].name").isEqualTo("playground-backend-gateway")
                 .jsonPath("$.services[1].name").isEqualTo("playground-backend-identity-api")
                 .jsonPath("$.services[2].name").isEqualTo("playground-backend-docs-api")
-                .jsonPath("$.services[3].name").isEqualTo("playground-backend-rag-ingestion-api")
-                .jsonPath("$.services[4].name").isEqualTo("playground-backend-chat-api")
-                .jsonPath("$.services[5].name").isEqualTo("playground-backend-metrics-api")
-                .jsonPath("$.services[6].name").isEqualTo("spark-inference-gateway")
-                .jsonPath("$.services[7].name").isEqualTo("playground-prometheus")
-                .jsonPath("$.services[8].name").isEqualTo("playground-loki")
-                .jsonPath("$.services[9].name").isEqualTo("playground-alloy")
-                .jsonPath("$.services[10].name").isEqualTo("playground-cadvisor")
-                .jsonPath("$.services[11].name").isEqualTo("playground-frontend")
-                .jsonPath("$.services[12].name").isEqualTo("playground-postgres")
-                .jsonPath("$.services[13].name").isEqualTo("playground-redis")
-                .jsonPath("$.services[14].name").isEqualTo("playground-kafka-broker")
-                .jsonPath("$.services[15].name").isEqualTo("playground-opensearch")
+                .jsonPath("$.services[3].name").isEqualTo("playground-backend-chat-api")
+                .jsonPath("$.services[4].name").isEqualTo("playground-backend-metrics-api")
+                .jsonPath("$.services[5].name").isEqualTo("spark-inference-gateway")
+                .jsonPath("$.services[6].name").isEqualTo("playground-prometheus")
+                .jsonPath("$.services[7].name").isEqualTo("playground-loki")
+                .jsonPath("$.services[8].name").isEqualTo("playground-alloy")
+                .jsonPath("$.services[9].name").isEqualTo("playground-cadvisor")
+                .jsonPath("$.services[10].name").isEqualTo("playground-frontend")
+                .jsonPath("$.services[11].name").isEqualTo("playground-postgres")
+                .jsonPath("$.services[12].name").isEqualTo("playground-redis")
+                .jsonPath("$.services[13].name").isEqualTo("playground-kafka-broker")
+                .jsonPath("$.services[14].name").isEqualTo("playground-opensearch")
                 // All up under the all-good mock setup
                 .jsonPath("$.services[0].status").isEqualTo("up")
-                .jsonPath("$.services[6].status").isEqualTo("up");
+                .jsonPath("$.services[5].status").isEqualTo("up");
     }
 
     @Test
@@ -105,8 +104,8 @@ class ServicesControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.services[0].status").isEqualTo("down")
-                .jsonPath("$.services[6].status").isEqualTo("down")
-                .jsonPath("$.services[10].status").isEqualTo("down");
+                .jsonPath("$.services[5].status").isEqualTo("down")
+                .jsonPath("$.services[9].status").isEqualTo("down");
     }
 
     @Test
@@ -124,9 +123,9 @@ class ServicesControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.services[0].status").isEqualTo("degraded")
-                .jsonPath("$.services[5].status").isEqualTo("degraded")
+                .jsonPath("$.services[4].status").isEqualTo("degraded")
                 // Spark is independent of the actuator path — still up.
-                .jsonPath("$.services[6].status").isEqualTo("up");
+                .jsonPath("$.services[5].status").isEqualTo("up");
     }
 
     @Test
@@ -134,7 +133,7 @@ class ServicesControllerTest {
         // Guardrail: if a future PR widens ServiceProbeTarget.ALL beyond the
         // 11 cells issue #138 wired up, this slice test will surface it so
         // the frontend grid layout is updated in lock-step.
-        org.assertj.core.api.Assertions.assertThat(ServiceProbeTarget.ALL).hasSize(16);
+        org.assertj.core.api.Assertions.assertThat(ServiceProbeTarget.ALL).hasSize(15);
     }
 
     @Configuration(proxyBeanMethods = false)

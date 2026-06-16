@@ -17,13 +17,13 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Composes the eleven-cell {@code services[]} array per spec §5.2 + ADR-15
+ * Composes the active {@code services[]} array per spec §5.2 + ADR-15
  * §9 + §17.
  *
  * <p>Cell catalog (canonical order, also drives the dashboard grid):
  * <ol>
- *   <li>gateway, identity-api, docs-api, rag-ingestion-api, chat-api,
- *       metrics-api (BCs — {@code up{}} scrape + actuator/health)</li>
+ *   <li>gateway, identity-api, docs-api, chat-api, metrics-api
+ *       (active BCs — {@code up{}} scrape + actuator/health)</li>
  *   <li>spark-inference-gateway (HEAD {@code /v1/models})</li>
  *   <li>prometheus-playground, loki-playground, alloy-playground,
  *       cadvisor-playground (native readiness endpoints + {@code up{}}
@@ -64,7 +64,7 @@ public class BuildServicesUseCase {
     private final SparkGatewayProbePort sparkProbe;
 
     /**
-     * Executes the eleven-probe fan-out. Result order matches
+     * Executes the service-probe fan-out. Result order matches
      * {@link ServiceProbeTarget#ALL} verbatim so the frontend sees a stable
      * cell ordering across polls.
      */

@@ -10,17 +10,16 @@ import type {
 } from '@/entities/metrics';
 
 /**
- * ServiceHealthGrid — 16-cell unified container grid.
+ * ServiceHealthGrid — unified container grid.
  *
- * 2026-05-21 amendment: ADR-15 §17의 11-cell service health grid +
+ * 2026-05-21 amendment: ADR-15 §17의 service health grid +
  * 별도 Containers 섹션을 단일 4×4 grid로 통합. spark-inference-gateway는
  * Inference 섹션으로 분리 (Models loaded 카드에 status icon이 박힘).
  *
- * 16 카드 = 6 BC + 4 observability + 6 stack containers:
- *   Row 1 (BCs):    gateway · identity-api · docs-api · rag-ingestion-api
- *   Row 2 (BCs):    chat-api · metrics-api · frontend · prometheus
- *   Row 3 (obs):    loki · alloy · cadvisor · postgres
- *   Row 4 (stack):  redis · kafka-broker · kafka-init · opensearch
+ * Active cards = 5 BC + frontend + 4 observability + 4 data sources:
+ *   Applications: gateway · identity-api · docs-api · chat-api · metrics-api · frontend
+ *   Metrics:      prometheus · loki · alloy · cadvisor
+ *   Datasources:  postgres · redis · kafka-broker · opensearch
  *
  * 카드 종류:
  *   - status + cpu/mem 둘 다 (BC + obs): services[] + containers[] 둘 다 hit.
@@ -63,7 +62,6 @@ const SUB_SECTIONS: ReadonlyArray<SubSection> = [
       { slug: 'playground-backend-gateway', label: 'gateway' },
       { slug: 'playground-backend-identity-api', label: 'identity-api' },
       { slug: 'playground-backend-docs-api', label: 'docs-api' },
-      { slug: 'playground-backend-rag-ingestion-api', label: 'rag-ingestion' },
       { slug: 'playground-backend-chat-api', label: 'chat-api' },
       { slug: 'playground-backend-metrics-api', label: 'metrics-api' },
       { slug: 'playground-frontend', label: 'frontend' },

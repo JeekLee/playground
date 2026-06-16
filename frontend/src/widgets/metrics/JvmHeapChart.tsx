@@ -127,9 +127,7 @@ export function JvmHeapChart({ service, jvm, range, pollKey }: JvmHeapChartProps
  * Composite that renders one JVM heap card per JVM-bearing service. The
  * service list comes from the dashboard payload's `jvm[]` (backend owns
  * the source of truth — design context M5-metrics.md §2.1). On lg the
- * row lays out as `grid-cols-3` (6 services pack into 3×2); on xl it
- * collapses to `grid-cols-6` for a single-row display when viewport
- * permits.
+ * row lays out responsively from one to four columns.
  */
 export interface JvmHeapRowProps {
   jvm: JvmSummary[] | null;
@@ -150,7 +148,6 @@ const JVM_SLUGS_SSR_FALLBACK: ReadonlyArray<string> = [
   'playground-backend-gateway',
   'playground-backend-identity-api',
   'playground-backend-docs-api',
-  'playground-backend-rag-ingestion-api',
   'playground-backend-chat-api',
   'playground-backend-metrics-api',
 ];
