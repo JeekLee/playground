@@ -40,11 +40,10 @@ public final class ContainerAllowlist {
             "playground-loki",
             "playground-alloy",
             "playground-cadvisor",
-            // BC service container names
+            // Active BC service container names. rag-ingestion-api was retired in M6.1.
             "playground-backend-gateway",
             "playground-backend-identity-api",
             "playground-backend-docs-api",
-            "playground-backend-rag-ingestion-api",
             "playground-backend-chat-api",
             "playground-backend-metrics-api",
             // Frontend

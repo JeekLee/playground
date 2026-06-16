@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the {@link ServiceProbeTarget#ALL} catalog per ADR-15 §17 — eleven
+ * Pins the {@link ServiceProbeTarget#ALL} catalog per ADR-15 §17 — active
  * cells in canonical order, with the per-cell probe metadata (URL + kind)
  * matching the ADR's mappings.
  *
@@ -15,14 +15,13 @@ import org.junit.jupiter.api.Test;
 class ServiceProbeTargetTest {
 
     @Test
-    void allCatalogHasSixteenCellsInCanonicalOrder() {
-        assertThat(ServiceProbeTarget.ALL).hasSize(16);
+    void allCatalogHasFifteenCellsInCanonicalOrder() {
+        assertThat(ServiceProbeTarget.ALL).hasSize(15);
         assertThat(ServiceProbeTarget.ALL.stream().map(ServiceProbeTarget::name).toList())
                 .containsExactly(
                         "playground-backend-gateway",
                         "playground-backend-identity-api",
                         "playground-backend-docs-api",
-                        "playground-backend-rag-ingestion-api",
                         "playground-backend-chat-api",
                         "playground-backend-metrics-api",
                         "spark-inference-gateway",
@@ -51,7 +50,7 @@ class ServiceProbeTargetTest {
     }
 
     @Test
-    void sixBcsAreKindBcWithActuatorPath() {
+    void fiveBcsAreKindBcWithActuatorPath() {
         ServiceProbeTarget.ALL.stream()
                 .filter(t -> t.kind() == ServiceProbeTarget.Kind.BC)
                 .forEach(t -> {
@@ -60,7 +59,7 @@ class ServiceProbeTargetTest {
                 });
         long bcs = ServiceProbeTarget.ALL.stream()
                 .filter(t -> t.kind() == ServiceProbeTarget.Kind.BC).count();
-        assertThat(bcs).isEqualTo(6);
+        assertThat(bcs).isEqualTo(5);
     }
 
     @Test
@@ -96,8 +95,6 @@ class ServiceProbeTargetTest {
                 .isEqualTo("http://playground-backend-identity-api:18081/actuator/health");
         assertThat(probeOf("playground-backend-docs-api").probeUrl())
                 .isEqualTo("http://playground-backend-docs-api:18082/actuator/health");
-        assertThat(probeOf("playground-backend-rag-ingestion-api").probeUrl())
-                .isEqualTo("http://playground-backend-rag-ingestion-api:18083/actuator/health");
         assertThat(probeOf("playground-backend-chat-api").probeUrl())
                 .isEqualTo("http://playground-backend-chat-api:18084/actuator/health");
         assertThat(probeOf("playground-backend-metrics-api").probeUrl())

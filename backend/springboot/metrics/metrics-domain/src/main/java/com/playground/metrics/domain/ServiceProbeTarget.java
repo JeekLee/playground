@@ -4,11 +4,11 @@ import java.util.List;
 
 /**
  * Probe metadata for a single service-health-grid cell per ADR-15 §17 + §9.
- * Captures the eleven cells the BC monitors and the secondary-signal URL
+ * Captures the active cells the BC monitors and the secondary-signal URL
  * each cell uses.
  *
  * <ul>
- *   <li>{@link Kind#BC} — six Spring Boot apps. Secondary signal is Spring
+ *   <li>{@link Kind#BC} — five Spring Boot apps. Secondary signal is Spring
  *       Actuator {@code /actuator/health}; the response body's {@code status}
  *       field is parsed (200 + body {@code "UP"} ⇒ healthy). The probe URL
  *       targets the compose-internal hostname:port, NOT the gateway, to
@@ -23,7 +23,7 @@ import java.util.List;
  *       {@code probeUrl} is unused (returned for diagnostic completeness only).</li>
  * </ul>
  *
- * <p>Constants are listed in ADR-15 §17's canonical order: six BCs → spark →
+ * <p>Constants are listed in ADR-15 §17's canonical order: five BCs → spark →
  * four observability containers. {@code BuildServicesUseCase} consumes
  * {@link #ALL} verbatim so the response array order is stable.
  *
@@ -43,7 +43,7 @@ import java.util.List;
 public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolean scrapeMonitored) {
 
     public enum Kind {
-        /** Six Spring Boot BCs — parse {@code /actuator/health} JSON body. */
+        /** Five Spring Boot BCs — parse {@code /actuator/health} JSON body. */
         BC,
         /** Four observability containers — 2xx on the tool-native readiness path. */
         OBSERVABILITY,
@@ -58,16 +58,16 @@ public record ServiceProbeTarget(String name, Kind kind, String probeUrl, boolea
     }
 
     /**
-     * 17 cells: 6 BCs → spark → 4 observability → 6 stack containers.
+     * 15 cells: 5 BCs → spark → 4 observability → 5 stack containers.
      * Order matches the dashboard's grid left-to-right / top-to-bottom
      * layout (frontend filters spark into the Inference section).
      */
     public static final List<ServiceProbeTarget> ALL = List.of(
-            // 6 BCs — actuator/health on compose-internal port (NOT via gateway)
+            // 5 BCs — actuator/health on compose-internal port (NOT via gateway).
+            // rag-ingestion-api was retired in M6.1 and absorbed into docs-api.
             new ServiceProbeTarget("playground-backend-gateway",           Kind.BC, "http://playground-backend-gateway:18080/actuator/health",           true),
             new ServiceProbeTarget("playground-backend-identity-api",      Kind.BC, "http://playground-backend-identity-api:18081/actuator/health",      true),
             new ServiceProbeTarget("playground-backend-docs-api",          Kind.BC, "http://playground-backend-docs-api:18082/actuator/health",          true),
-            new ServiceProbeTarget("playground-backend-rag-ingestion-api", Kind.BC, "http://playground-backend-rag-ingestion-api:18083/actuator/health", true),
             new ServiceProbeTarget("playground-backend-chat-api",      Kind.BC, "http://playground-backend-chat-api:18084/actuator/health",      true),
             new ServiceProbeTarget("playground-backend-metrics-api",       Kind.BC, "http://playground-backend-metrics-api:18085/actuator/health",       true),
             // spark-inference-gateway — HEAD /v1/models per ADR-15 §12 (host process; no scrape, no actuator)

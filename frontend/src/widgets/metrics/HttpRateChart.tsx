@@ -18,8 +18,7 @@ import { WidgetDegradeOverlay } from './WidgetDegradeOverlay';
  *    `error 0%` (or 1.0%) `text.muted` 11/400 → chart area 151 × 144
  *    `surface.soft` + 2px `accent` line.
  *
- * Three widgets per spec §5.2: gateway / chat-api / docs-api
- * (rag-ingestion is Kafka-driven, no HTTP rate to chart).
+ * Active Spring Boot widgets per metrics API dashboard payload.
  */
 
 export interface HttpRateChartProps {
@@ -96,14 +95,11 @@ export function HttpRateChart({ service, http, range, pollKey }: HttpRateChartPr
   );
 }
 
-// 2026-05-21 amendment (ADR-15 §G): 모든 BC를 표시. 백엔드의
-// `BuildDashboardUseCase.HTTP_SERVICES`와 동일 순서 (6개 BC). rag-ingestion-api
-// 처럼 HTTP 트래픽 적은 BC도 actuator health-check rate가 visible.
+// 백엔드의 `BuildDashboardUseCase.HTTP_SERVICES`와 동일 순서.
 const HTTP_ORDER: ReadonlyArray<string> = [
   'playground-backend-gateway',
   'playground-backend-identity-api',
   'playground-backend-docs-api',
-  'playground-backend-rag-ingestion-api',
   'playground-backend-chat-api',
   'playground-backend-metrics-api',
 ];

@@ -22,7 +22,7 @@ import reactor.core.publisher.Mono;
 class BuildServicesUseCaseTest {
 
     @Test
-    void composesSixteenCellsInCanonicalOrder() {
+    void composesFifteenCellsInCanonicalOrder() {
         PrometheusPort prometheus = Mockito.mock(PrometheusPort.class);
         ActuatorHealthPort actuator = Mockito.mock(ActuatorHealthPort.class);
         SparkGatewayProbePort spark = Mockito.mock(SparkGatewayProbePort.class);
@@ -40,14 +40,13 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        assertThat(cells).hasSize(16);
-        // ADR-15 §17 canonical order: 6 BCs, spark, 4 obs, 5 stack
+        assertThat(cells).hasSize(15);
+        // ADR-15 §17 canonical order: 5 active BCs, spark, 4 obs, 5 stack.
         assertThat(cells.stream().map(ServiceCell::name).toList())
                 .containsExactly(
                         "playground-backend-gateway",
                         "playground-backend-identity-api",
                         "playground-backend-docs-api",
-                        "playground-backend-rag-ingestion-api",
                         "playground-backend-chat-api",
                         "playground-backend-metrics-api",
                         "spark-inference-gateway",
@@ -94,10 +93,10 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        // 10 scrape-monitored cells (BC + obs): scrape clean + actuator
+        // 9 scrape-monitored cells (BC + obs): scrape clean + actuator
         // unreachable → degraded per §9.
         // spark: HEAD probe up → up.
-        // 6 stack: instantQuery value=2 → age 2s < 30 → up (§13 amended).
+        // 5 stack: instantQuery value=2 → age 2s < 30 → up (§13 amended).
         ServiceProbeTarget.ALL.stream()
                 .filter(t -> t.kind() == ServiceProbeTarget.Kind.BC
                         || t.kind() == ServiceProbeTarget.Kind.OBSERVABILITY)
@@ -161,9 +160,9 @@ class BuildServicesUseCaseTest {
         BuildServicesUseCase useCase = new BuildServicesUseCase(prometheus, actuator, spark);
         List<ServiceCell> cells = useCase.execute().block();
 
-        assertThat(cells).hasSize(16);
-        // BC + obs (10): scrape clean + actuator error → degraded.
-        // spark: up. stack (6): instantQuery 2 → age 2s → up.
+        assertThat(cells).hasSize(15);
+        // BC + obs (9): scrape clean + actuator error → degraded.
+        // spark: up. stack (5): instantQuery 2 → age 2s → up.
         ServiceProbeTarget.ALL.stream()
                 .filter(t -> t.kind() == ServiceProbeTarget.Kind.BC
                         || t.kind() == ServiceProbeTarget.Kind.OBSERVABILITY)

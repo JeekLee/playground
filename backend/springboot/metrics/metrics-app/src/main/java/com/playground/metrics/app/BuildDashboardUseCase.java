@@ -32,18 +32,17 @@ import reactor.core.publisher.Mono;
  * by substituting a {@code "degraded": true} cell instead of failing the
  * whole composition (spec §7.3 + §8.2).
  *
- * <p>JVM-bearing services in the {@code jvm[]} array: every JVM-bearing
- * service in the stack (5 BCs + gateway). The {@code httpRate[]} array
- * covers gateway + chat-api + docs-api. The {@code services[]} array
- * reuses {@link BuildServicesUseCase}'s 11-cell result (6 BCs + spark
- * gateway + 4 observability containers).
+ * <p>JVM-bearing services in the {@code jvm[]} array: every active
+ * JVM-bearing service in the stack. The {@code httpRate[]} array mirrors
+ * the same active Spring Boot service set. The {@code services[]} array
+ * reuses {@link BuildServicesUseCase}'s canonical service catalog.
  */
 @Service
 public class BuildDashboardUseCase {
 
     /**
-     * Every JVM-bearing service in the stack — six Spring Boot apps total
-     * (the BC quadruplets' -api modules + the gateway). Spec §5.2 listed
+     * Every active JVM-bearing service in the stack — five Spring Boot apps
+     * total (the BC quadruplets' -api modules + the gateway). Spec §5.2 listed
      * four originally; the dashboard amendment in design context §2.1
      * (post-slice-1) widens this to "all JVM-bearing services". Same
      * deterministic order across polls so frontend card positions are
@@ -56,16 +55,14 @@ public class BuildDashboardUseCase {
             "playground-backend-gateway",
             "playground-backend-identity-api",
             "playground-backend-docs-api",
-            "playground-backend-rag-ingestion-api",
             "playground-backend-chat-api",
             "playground-backend-metrics-api");
 
     /**
-     * Every HTTP-bearing Spring Boot BC. Spec §5.2는 원래 3개 (gateway,
-     * chat-api, docs-api)였지만, 2026-05-21 amendment에서 운영 가시성
-     * 위해 6개 BC 전체로 확장 — 모든 actuator/Spring MVC traffic을 한
-     * row에 노출. rag-ingestion-api처럼 HTTP 트래픽 적은 BC도 actuator
-     * health-check + Spring observation을 통해 rate가 비등하게 나옴.
+     * Every active HTTP-bearing Spring Boot BC. Spec §5.2는 원래 3개
+     * (gateway, chat-api, docs-api)였지만, 2026-05-21 amendment에서 운영
+     * 가시성 위해 전체 active BC로 확장 — 모든 actuator/Spring MVC traffic을
+     * 한 row에 노출.
      */
     private static final List<String> HTTP_SERVICES = JVM_SERVICES;
 

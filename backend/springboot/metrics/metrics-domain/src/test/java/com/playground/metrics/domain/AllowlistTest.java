@@ -7,11 +7,10 @@ import org.junit.jupiter.api.Test;
 class AllowlistTest {
 
     @Test
-    void serviceAllowlistIncludesAllSixBCs() {
+    void serviceAllowlistIncludesAllActiveBCs() {
         assertThat(ServiceAllowlist.contains("playground-backend-gateway")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-identity-api")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-docs-api")).isTrue();
-        assertThat(ServiceAllowlist.contains("playground-backend-rag-ingestion-api")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-chat-api")).isTrue();
         assertThat(ServiceAllowlist.contains("playground-backend-metrics-api")).isTrue();
     }

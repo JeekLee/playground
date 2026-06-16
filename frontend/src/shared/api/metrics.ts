@@ -34,14 +34,13 @@
 export type ServiceStatus = 'up' | 'degraded' | 'down';
 
 /**
- * One row of the 11-cell service health grid (per ADR-15 §17 —
- * supersedes the spec §7.1 wireframe's 6-cell version).
+ * One row of the active service health grid (per ADR-15 §17).
  */
 export interface ServiceHealth {
   /**
    * Canonical service slug. The 11 expected values are:
    *
-   *   gateway / identity-api / docs-api / rag-ingestion / chat-api /
+   *   gateway / identity-api / docs-api / chat-api /
    *   metrics-api / spark-inference-gateway / prometheus-playground /
    *   loki-playground / alloy-playground / cadvisor-playground.
    */
@@ -90,8 +89,7 @@ export interface SparkGatewaySummary {
 }
 
 /**
- * JVM heap snapshot per Spring Boot BC. The 4 rows mirror the 4
- * Spring Boot services scraped (NOT gateway or metrics-api itself).
+ * JVM heap snapshot per active Spring Boot service.
  */
 export interface JvmSummary {
   service: string;
@@ -102,8 +100,7 @@ export interface JvmSummary {
 }
 
 /**
- * HTTP request rate snapshot per request-heavy BC (gateway,
- * chat-api, docs-api — 3 rows). `rag-ingestion` is Kafka-driven.
+ * HTTP request rate snapshot per active Spring Boot service.
  */
 export interface HttpRateSummary {
   service: string;
