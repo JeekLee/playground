@@ -11,10 +11,8 @@
 //   4. Docker log discovery + shipping to Loki
 // Plus the remote_write sink to Prometheus.
 //
-// `metrics-api:18085/actuator/prometheus` is intentionally NOT in the
-// backend_bcs target list for slice 1 (the metrics BC ships in slice 2).
-// A later slice MAY add it per ADR-15 §5 — Alloy will silently fail-open
-// on a missing target until then.
+// Includes the metrics BC; all backend scrape targets should resolve to
+// current compose service keys.
 // =====================================================================
 
 // 1. Backend BC scrape — 5 jobs at 5s cadence (post-M6.1, was 6 pre-M6.1)
@@ -32,7 +30,7 @@ prometheus.scrape "backend_bcs" {
     { __address__ = "gateway:18080",       service = "playground-backend-gateway",       __metrics_path__ = "/actuator/prometheus" },
     { __address__ = "identity-api:18081",  service = "playground-backend-identity-api",  __metrics_path__ = "/actuator/prometheus" },
     { __address__ = "docs-api:18082",      service = "playground-backend-docs-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "rag-chat-api:18084",  service = "playground-backend-rag-chat-api",  __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "chat-api:18084",      service = "playground-backend-chat-api",      __metrics_path__ = "/actuator/prometheus" },
     { __address__ = "metrics-api:18085",   service = "playground-backend-metrics-api",   __metrics_path__ = "/actuator/prometheus" },
   ]
   scrape_interval = "5s"
@@ -49,8 +47,13 @@ prometheus.scrape "cadvisor" {
   forward_to = [prometheus.remote_write.local.receiver]
 }
 
-// 3. Host metrics — replaces node_exporter
-prometheus.exporter.unix "host" { }
+// 3. Host metrics — replaces node_exporter.
+// Disable collectors which are unsupported or noisy in this containerized
+// personal environment; they otherwise report collector_success=0 and hwmon
+// logs stale /sys/class/hwmon symlink errors every scrape.
+prometheus.exporter.unix "host" {
+  disable_collectors = ["bonding", "conntrack", "fibrechannel", "hwmon", "ipvs", "nfs", "nfsd", "tapestats", "zfs"]
+}
 prometheus.scrape "host" {
   job_name        = "host"
   targets         = prometheus.exporter.unix.host.targets

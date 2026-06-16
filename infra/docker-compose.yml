@@ -638,7 +638,11 @@ services:
       loki-playground:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:12345/-/ready || exit 1"]
+      # grafana/alloy:v1.3.1 does not ship wget/curl; verify the Alloy HTTP
+      # server is listening on 12345 without adding a custom image.
+      test:
+        - CMD-SHELL
+        - "awk '$$2 ~ /:3039$/ && $$4 == \"0A\" { found=1 } END { exit found ? 0 : 1 }' /proc/net/tcp /proc/net/tcp6"
       interval: 15s
       timeout: 5s
       retries: 10
