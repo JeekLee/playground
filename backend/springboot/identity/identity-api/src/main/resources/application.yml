@@ -6,7 +6,7 @@ spring:
   application:
     name: identity-api
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:postgres-playground}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=identity
+    url: jdbc:postgresql://${POSTGRES_HOST:playground-postgres}:${POSTGRES_PORT:5432}/${POSTGRES_DB:playground}?currentSchema=identity
     username: ${POSTGRES_USER:playground}
     password: ${POSTGRES_PASSWORD:}
     hikari:
@@ -28,7 +28,7 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-playground:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:playground-kafka-broker:9092}
     producer:
       acks: all
       properties:

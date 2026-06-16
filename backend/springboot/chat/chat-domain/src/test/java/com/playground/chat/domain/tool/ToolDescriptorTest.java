@@ -28,7 +28,7 @@ class ToolDescriptorTest {
                 "매싱 모델",
                 "Generate a massing model from a brief PDF",
                 "{\"type\":\"object\"}",
-                URI.create("http://agent-tools:18086/internal/tools/generate-massing"),
+                URI.create("http://playground-agent-tools:18086/internal/tools/generate-massing"),
                 Duration.ofSeconds(30),
                 Duration.ofSeconds(300));
 
@@ -37,7 +37,7 @@ class ToolDescriptorTest {
         assertThat(d.description()).isEqualTo("Generate a massing model from a brief PDF");
         assertThat(d.parameterSchema()).isEqualTo("{\"type\":\"object\"}");
         assertThat(d.endpoint()).isEqualTo(URI.create(
-                "http://agent-tools:18086/internal/tools/generate-massing"));
+                "http://playground-agent-tools:18086/internal/tools/generate-massing"));
         assertThat(d.timeout()).isEqualTo(Duration.ofSeconds(30));
         assertThat(d.totalTimeout()).isEqualTo(Duration.ofSeconds(300));
     }

@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Wires the singleton {@link MinioClient} bean for the chat attachment
  * store per ADR-20 §D3 (mirrors docs-api's MinioClientConfig). Defaults target
- * the compose-internal sidecar {@code minio-playground:9000} so the chat
+ * the compose-internal sidecar {@code playground-minio:9000} so the chat
  * container reaches MinIO over the bridge network with no host-port plumbing.
  *
  * <p>Env precedence (compose sets these): {@code PLAYGROUND_CHAT_MINIO_ENDPOINT},
@@ -21,7 +21,7 @@ public class MinioClientConfig {
 
     @Bean(destroyMethod = "")
     public MinioClient minioClient(
-            @Value("${PLAYGROUND_CHAT_MINIO_ENDPOINT:http://minio-playground:9000}") String endpoint,
+            @Value("${PLAYGROUND_CHAT_MINIO_ENDPOINT:http://playground-minio:9000}") String endpoint,
             @Value("${MINIO_ROOT_USER:playground}") String accessKey,
             @Value("${MINIO_ROOT_PASSWORD:playground-secret}") String secretKey,
             @Value("${PLAYGROUND_CHAT_MINIO_REGION:us-east-1}") String region) {

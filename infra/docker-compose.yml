@@ -1,10 +1,10 @@
 # M0 platform skeleton — boots gateway + Kafka KRaft + Postgres pgvector + Redis.
-# Service names are pinned by ADR (referenced inline). Host-exposed ports follow
+# Service names use the visible `playground-*` prefix. Host-exposed ports follow
 # the 102xx data-store block + 18080 gateway + 19092 Kafka.
 
 services:
   # --- ADR-05: Postgres 16 + pgvector ---
-  postgres-playground:
+  playground-postgres:
     image: pgvector/pgvector:pg16
     container_name: playground-postgres
     hostname: playground-postgres
@@ -27,7 +27,7 @@ services:
   # Namespace allocation (ADR-08 §A08.4): `spring:session:*` (gateway sessions)
   # and `docs:lock:*` (docs-ingestion distributed locks — renamed from
   # `rag-ingestion:lock:*` in M6.1 per BC consolidation).
-  redis-playground:
+  playground-redis:
     image: redis:7-alpine
     container_name: playground-redis
     hostname: playground-redis
@@ -42,7 +42,7 @@ services:
       retries: 5
 
   # --- ADR-03: Kafka KRaft mode (no Zookeeper) ---
-  kafka-playground:
+  playground-kafka-broker:
     image: apache/kafka:3.8.0
     container_name: playground-kafka-broker
     hostname: playground-kafka-broker
@@ -50,10 +50,10 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:19092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-playground:9092,EXTERNAL://localhost:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://playground-kafka-broker:9092,EXTERNAL://localhost:19092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-playground:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@playground-kafka-broker:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -66,13 +66,13 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka-playground:9092 || exit 1"
+        - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server playground-kafka-broker:9092 || exit 1"
       interval: 15s
       timeout: 10s
       retries: 10
 
   # --- ADR-01 v2 / ADR-07: Gateway (single ingress, host-exposed) ---
-  gateway:
+  playground-backend-gateway:
     build:
       context: ../backend/springboot
       dockerfile: gateway/Dockerfile
@@ -80,11 +80,11 @@ services:
     container_name: playground-backend-gateway
     hostname: playground-backend-gateway
     depends_on:
-      postgres-playground:
+      playground-postgres:
         condition: service_healthy
-      redis-playground:
+      playground-redis:
         condition: service_healthy
-      kafka-playground:
+      playground-kafka-broker:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -102,10 +102,10 @@ services:
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
       PLAYGROUND_PUBLIC_BASE_URL: ${PLAYGROUND_PUBLIC_BASE_URL:-https://playground.jeeklee.com}
       # M1: gateway → identity-api bootstrap + Redis cache (per ADR-10 §4)
-      IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://identity-api:18081}
+      IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://playground-backend-identity-api:18081}
       # M2: gateway → docs-api routing target for /api/docs/** (per ADR-12 §15)
-      DOCS_BASE_URL: ${DOCS_BASE_URL:-http://docs-api:18082}
-      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      DOCS_BASE_URL: ${DOCS_BASE_URL:-http://playground-backend-docs-api:18082}
+      REDIS_HOST: ${REDIS_HOST:-playground-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       PLAYGROUND_COOKIES_SECURE: ${PLAYGROUND_COOKIES_SECURE:-true}
     ports:
@@ -118,7 +118,7 @@ services:
 
   # --- M1: identity-api (Identity BC quadruplet runnable per ADR-01 v2) ---
   # No host port — gateway is the only host-exposed ingress (ADR-08).
-  identity-api:
+  playground-backend-identity-api:
     build:
       context: ../backend/springboot
       dockerfile: identity/identity-api/Dockerfile
@@ -126,11 +126,11 @@ services:
     container_name: playground-backend-identity-api
     hostname: playground-backend-identity-api
     depends_on:
-      postgres-playground:
+      playground-postgres:
         condition: service_healthy
-      kafka-playground:
+      playground-kafka-broker:
         condition: service_healthy
-      redis-playground:
+      playground-redis:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -142,12 +142,12 @@ services:
       # tune via the JAVA_TOOL_OPTIONS env var without rebuilding.
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx512m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
+      POSTGRES_HOST: ${POSTGRES_HOST:-playground-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-playground}
       POSTGRES_USER: ${POSTGRES_USER:-playground}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-playground-kafka-broker:9092}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18081/actuator/health || exit 1"]
       interval: 15s
@@ -160,7 +160,7 @@ services:
   # ships built-in with the 2.x image — no extra install step. Security plugin is
   # disabled for dev (single-node, compose-internal); re-enable for any public
   # deployment via a future per-milestone ADR.
-  opensearch-playground:
+  playground-opensearch:
     build:
       context: ./opensearch
       dockerfile: Dockerfile
@@ -196,10 +196,10 @@ services:
   # Java SDK's bucketExists + makeBucket (in-process bootstrap; no sidecar init
   # container). Compose-internal only for the S3 API consumers — `10294` is
   # host-exposed for operator tooling (mc, awscli) and `10295` for the console.
-  minio-playground:
+  playground-minio:
     image: minio/minio:RELEASE.2025-04-08T15-41-24Z
-    container_name: minio-playground
-    hostname: minio-playground
+    container_name: playground-minio
+    hostname: playground-minio
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
@@ -221,17 +221,17 @@ services:
   # retention=7d). Auto-create is still enabled on the broker for safety, but
   # auto-created topics use the broker's `num.partitions=1` default — running
   # this init container at compose-up time pins the partition count. The
-  # service exits 0 on success; recreate it with `docker compose up kafka-init`
+  # service exits 0 on success; recreate it with `docker compose up playground-kafka-init`
   # if a new topic is added.
-  kafka-init:
+  playground-kafka-init:
     image: apache/kafka:3.8.0
     container_name: playground-kafka-init
     hostname: playground-kafka-init
     depends_on:
-      kafka-playground:
+      playground-kafka-broker:
         condition: service_healthy
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-playground-kafka-broker:9092}
     entrypoint: ["/bin/sh", "/etc/kafka-init/init-topics.sh"]
     volumes:
       - ./kafka/init-topics.sh:/etc/kafka-init/init-topics.sh:ro
@@ -242,7 +242,7 @@ services:
   # S2 adds: OpenSearch projector wiring (OPENSEARCH_BASE_URL), owner-resolution
   # webclient against identity-api (IDENTITY_BASE_URL), and the configured owner
   # google-sub (PLAYGROUND_OWNER_GOOGLE_SUB) for the public feed (ADR-12 §8).
-  docs-api:
+  playground-backend-docs-api:
     build:
       context: ../backend/springboot
       dockerfile: docs/docs-api/Dockerfile
@@ -250,17 +250,17 @@ services:
     container_name: playground-backend-docs-api
     hostname: playground-backend-docs-api
     depends_on:
-      postgres-playground:
+      playground-postgres:
         condition: service_healthy
-      kafka-playground:
+      playground-kafka-broker:
         condition: service_healthy
-      redis-playground:
+      playground-redis:
         condition: service_healthy
-      opensearch-playground:
+      playground-opensearch:
         condition: service_healthy
-      minio-playground:
+      playground-minio:
         condition: service_healthy   # M6.1: bucket bootstrap must not race the sidecar
-      identity-api:
+      playground-backend-identity-api:
         condition: service_healthy   # boot-time owner resolution per ADR-12 §8
     networks:
       # M6 ADR-16 — docs-api uses Spring AI Vision for PDF OCR fallback and
@@ -292,17 +292,17 @@ services:
       # tunable via JAVA_TOOL_OPTIONS without rebuilding.
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx2048m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
+      POSTGRES_HOST: ${POSTGRES_HOST:-playground-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-playground}
       POSTGRES_USER: ${POSTGRES_USER:-playground}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}
-      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-playground-kafka-broker:9092}
+      REDIS_HOST: ${REDIS_HOST:-playground-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       # M2 S2 (ADR-12 §5 + §8)
-      OPENSEARCH_BASE_URL: ${OPENSEARCH_BASE_URL:-http://opensearch-playground:9200}
-      IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://identity-api:18081}
+      OPENSEARCH_BASE_URL: ${OPENSEARCH_BASE_URL:-http://playground-opensearch:9200}
+      IDENTITY_BASE_URL: ${IDENTITY_BASE_URL:-http://playground-backend-identity-api:18081}
       PLAYGROUND_OWNER_GOOGLE_SUB: ${PLAYGROUND_OWNER_GOOGLE_SUB:-}
       # M6 ADR-16 + M6.1 ADR-12 §A12.1 — Spring AI Vision OCR + BGE-M3 embed.
       # docs-api joins the spark-inference-net bridge (declared above) AND
@@ -317,7 +317,7 @@ services:
       # M6.1 ADR-12 §A12.4 — MinIO source-blob storage. The sidecar service
       # itself is added in the infra commit; here we wire only the env vars
       # the docs-api process reads via application.yml's @Value bindings.
-      PLAYGROUND_DOCS_MINIO_ENDPOINT: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:-http://minio-playground:9000}
+      PLAYGROUND_DOCS_MINIO_ENDPOINT: ${PLAYGROUND_DOCS_MINIO_ENDPOINT:-http://playground-minio:9000}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
       # SP3b — public origin for citation absolute uris (uri = ORIGIN/docs/{id}).
@@ -341,12 +341,12 @@ services:
   # No host port — gateway routes /api/chat/** here per ADR-07 + ADR-14 §2.
   # No Kafka dependency — chat publishes/consumes no events (ADR-14 §1 + §A).
   # Cross-schema SELECT into `docs.document_chunks`, `docs.documents`, and
-  # `identity.users` runs via JDBC against postgres-playground (ADR-14 §3 + §G.3,
+  # `identity.users` runs via JDBC against playground-postgres (ADR-14 §3 + §G.3,
   # post-M6.1 the chunks table moved to the `docs` schema per ADR-12 §A12.1);
   # docs-api is NOT a depends_on target (no HTTP coupling).
   # Reaches spark-inference-gateway (Qwen3-32B chat + BGE-M3 query embeddings)
   # via host.docker.internal:10080 per ADR-04 + ADR-14 §B.
-  chat-api:
+  playground-backend-chat-api:
     build:
       context: ../backend/springboot
       dockerfile: chat/chat-api/Dockerfile
@@ -354,13 +354,13 @@ services:
     container_name: playground-backend-chat-api
     hostname: playground-backend-chat-api
     depends_on:
-      postgres-playground:
+      playground-postgres:
         condition: service_healthy
-      redis-playground:
+      playground-redis:
         condition: service_healthy
-      minio-playground:
+      playground-minio:
         condition: service_healthy     # ADR-20: chat attachment blob store
-      gateway:
+      playground-backend-gateway:
         condition: service_started     # gateway must be up for /api/chat/** routing
     networks:
       # Joined to two bridges (see docs-api block + ADR-04 amendment
@@ -378,12 +378,12 @@ services:
       # tune via the JAVA_TOOL_OPTIONS env var without rebuilding.
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx512m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres-playground}
+      POSTGRES_HOST: ${POSTGRES_HOST:-playground-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-playground}
       POSTGRES_USER: ${POSTGRES_USER:-playground}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
-      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      REDIS_HOST: ${REDIS_HOST:-playground-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       # spark-inference-gateway via the OpenAI-compatible vLLM endpoint (ADR-04 + ADR-14 §B).
       # Same defaults as docs-api (post-M6.1 absorbed rag-ingestion's embed path)
@@ -392,8 +392,8 @@ services:
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
       # ADR-20: MinIO blob store for chat message attachments (tool artifacts,
       # e.g. the .3dm). Mirrors docs-api's MinIO wiring (ADR-12 §A12.4); same
-      # minio-playground on playground-net. Bucket is made-if-absent at startup.
-      PLAYGROUND_CHAT_MINIO_ENDPOINT: ${PLAYGROUND_CHAT_MINIO_ENDPOINT:-http://minio-playground:9000}
+      # playground-minio on playground-net. Bucket is made-if-absent at startup.
+      PLAYGROUND_CHAT_MINIO_ENDPOINT: ${PLAYGROUND_CHAT_MINIO_ENDPOINT:-http://playground-minio:9000}
       PLAYGROUND_CHAT_MINIO_BUCKET: ${PLAYGROUND_CHAT_MINIO_BUCKET:-chat-attachments}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
@@ -403,9 +403,9 @@ services:
       timeout: 10s
       retries: 10
     # NO `ports:` block — chat-api is compose-internal only (ADR-08).
-    # Browser traffic reaches it via gateway:18080 → /api/chat/** → http://chat-api:18084.
+    # Browser traffic reaches it via playground-backend-gateway:18080 → /api/chat/** → http://playground-backend-chat-api:18084.
 
-  # --- agent-tools: Python multi-BC host (ADR-19 §D1) — first BC: architecture ---
+  # --- playground-agent-tools: Python multi-BC host (ADR-19 §D1) — first BC: architecture ---
   # Single FastAPI host for small LLM-tool BCs (ADR-19 supersedes ADR-18's
   # single-service `massing-gen` framing). First BC is `architecture`
   # (tool: generate_massing); rhino3dm.py is imported in-process (no
@@ -415,17 +415,17 @@ services:
   # gateway's /api/arch/** route per ADR-18 §21 (StripPrefix=2 → /outputs/{id}).
   # Phase 1 (rename only) keeps the cohesive `app` package; the host/BC
   # package split (agent-tools/app + agent-tools/architecture) is Phase 2.
-  agent-tools:
+  playground-agent-tools:
     build:
       context: ../backend/fastapi/agent-tools
       dockerfile: Dockerfile
     image: playground/agent-tools:dev
-    container_name: agent-tools
-    hostname: agent-tools
+    container_name: playground-agent-tools
+    hostname: playground-agent-tools
     depends_on:
-      minio-playground:
+      playground-minio:
         condition: service_healthy   # ADR-20 §D3 revised: agent-tools owns MinIO write
-      gateway:
+      playground-backend-gateway:
         condition: service_started
     networks:
       - default
@@ -433,7 +433,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      DOCS_API_BASE_URL: ${DOCS_API_BASE_URL:-http://docs-api:18082}
+      DOCS_API_BASE_URL: ${DOCS_API_BASE_URL:-http://playground-backend-docs-api:18082}
       # spark-inference-gateway — shared with the other LLM-touching BCs.
       SPRING_AI_OPENAI_BASE_URL: ${SPRING_AI_OPENAI_BASE_URL:-http://host.docker.internal:10080}
       SPRING_AI_OPENAI_API_KEY: ${SPRING_AI_OPENAI_API_KEY:-dummy-not-used}
@@ -441,7 +441,7 @@ services:
       PLAYGROUND_MASSING_GEN_MAX_FLOORS: ${PLAYGROUND_MASSING_GEN_MAX_FLOORS:-10}
       # ADR-20 §D3 revised — agent-tools owns MinIO write; same bucket as chat
       # so chat's download adapter can GET using the returned storageKey.
-      PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT: ${PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT:-http://minio-playground:9000}
+      PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT: ${PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT:-http://playground-minio:9000}
       PLAYGROUND_ARCHITECTURE_MINIO_BUCKET: ${PLAYGROUND_ARCHITECTURE_MINIO_BUCKET:-chat-attachments}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-playground}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-playground-secret}
@@ -451,14 +451,14 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
-    # NO `ports:` block — compose-internal only. chat-api reaches
+    # NO `ports:` block — compose-internal only. playground-backend-chat-api reaches
     # `/internal/tools/generate-massing` directly via the hostname;
     # browser traffic for /api/arch/outputs/{id} hops through the gateway.
 
   # --- M5 s1: metrics-api (read-only BC over Prometheus + Loki) per ADR-15 §1 ---
   # WebFlux app on port 18085, gateway-routable. No Postgres / no Kafka.
   # Probes spark-inference-gateway via host.docker.internal (ADR-04).
-  metrics-api:
+  playground-backend-metrics-api:
     build:
       context: ../backend/springboot
       dockerfile: metrics/metrics-api/Dockerfile
@@ -466,13 +466,13 @@ services:
     container_name: playground-backend-metrics-api
     hostname: playground-backend-metrics-api
     depends_on:
-      prometheus-playground:
+      playground-prometheus:
         condition: service_healthy
-      loki-playground:
+      playground-loki:
         condition: service_healthy
-      redis-playground:
+      playground-redis:
         condition: service_healthy     # reserved for slice-2 rate limiter
-      gateway:
+      playground-backend-gateway:
         condition: service_started     # gateway must be up for /api/metrics/** routing
     networks:
       # Joined to two bridges (see ADR-04 amendment 2026-05-20): playground
@@ -491,8 +491,8 @@ services:
       # tune via the JAVA_TOOL_OPTIONS env var without rebuilding.
       JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx512m}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
-      METRICS_PROMETHEUS_BASE_URL: http://prometheus-playground:9090
-      METRICS_LOKI_BASE_URL: http://loki-playground:3100
+      METRICS_PROMETHEUS_BASE_URL: http://playground-prometheus:9090
+      METRICS_LOKI_BASE_URL: http://playground-loki:3100
       # Spark probe wiring — reuses the operator's `.env` SPARK_INFERENCE_GATEWAY_URL
       # so the metrics health-grid sees the same endpoint docs-api / chat
       # call (ADR-15 §12 amendment 2026-05-20; post-M6.1 the embed path moved
@@ -503,7 +503,7 @@ services:
       # use, so a single `.env` change covers all three BCs. Blank → no header,
       # which is fine for the bare-vLLM fallback that doesn't validate keys.
       METRICS_SPARK_GATEWAY_API_KEY: ${METRICS_SPARK_GATEWAY_API_KEY:-${SPRING_AI_OPENAI_API_KEY:-}}
-      REDIS_HOST: ${REDIS_HOST:-redis-playground}
+      REDIS_HOST: ${REDIS_HOST:-playground-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:18085/actuator/health || exit 1"]
@@ -511,11 +511,11 @@ services:
       timeout: 10s
       retries: 10
     # NO `ports:` block — metrics-api is compose-internal only (ADR-08 / ADR-15 §A).
-    # Browser traffic reaches it via gateway:18080 → /api/metrics/** → http://metrics-api:18085.
+    # Browser traffic reaches it via playground-backend-gateway:18080 → /api/metrics/** → http://playground-backend-metrics-api:18085.
 
   # --- M1: frontend (Next.js SSR) per ADR-06 + ADR-07 forwarding map ---
   # No host port — gateway routes `/**` here.
-  frontend:
+  playground-frontend:
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -523,12 +523,12 @@ services:
     container_name: playground-frontend
     hostname: playground-frontend
     depends_on:
-      gateway:
+      playground-backend-gateway:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       # SSR fetches against the gateway (compose-internal hostname per ADR-07)
-      GATEWAY_INTERNAL_URL: ${GATEWAY_INTERNAL_URL:-http://gateway:18080}
+      GATEWAY_INTERNAL_URL: ${GATEWAY_INTERNAL_URL:-http://playground-backend-gateway:18080}
     healthcheck:
       # 127.0.0.1, not localhost — busybox wget resolves localhost to ::1
       # first and next-server binds IPv4 only, so the probe false-negatives.
@@ -537,10 +537,10 @@ services:
       timeout: 10s
       retries: 10
 
-  # --- M5 s1: cadvisor-playground (per-container CPU/mem/IO/network metrics) ---
+  # --- M5 s1: playground-cadvisor (per-container CPU/mem/IO/network metrics) ---
   # Pinned by ADR-15 §6 + §A. Read-only docker.sock + read-only host mounts.
   # NO host port — accessed by Alloy via compose-internal name only.
-  cadvisor-playground:
+  playground-cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.51.0
     container_name: playground-cadvisor
     hostname: playground-cadvisor
@@ -564,13 +564,13 @@ services:
       retries: 5
     # NO `ports:` — compose-internal only (ADR-15 §6).
 
-  # --- M5 s1: prometheus-playground (TSDB + remote-write receiver) ---
+  # --- M5 s1: playground-prometheus (TSDB + remote-write receiver) ---
   # Pinned by ADR-15 §3 + §A. Minimal scrape config — Alloy is the orchestrator
   # and pushes everything else via remote_write (--web.enable-remote-write-receiver).
   # Retention overridable via METRICS_PROM_RETENTION_DAYS (ADR-15 §18).
   # Host bind is OFF by default; operator may set PROMETHEUS_HOST_BIND=9090 (or
   # `127.0.0.1:9090`) to enable ad-hoc PromQL CLI access (ADR-15 §3 / spec §4.4).
-  prometheus-playground:
+  playground-prometheus:
     image: prom/prometheus:v2.54.1
     container_name: playground-prometheus
     hostname: playground-prometheus
@@ -591,12 +591,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- M5 s1: loki-playground (log TSDB, push receiver only) ---
+  # --- M5 s1: playground-loki (log TSDB, push receiver only) ---
   # Pinned by ADR-15 §4 + §A. Single-binary `--target=all` (image default).
   # tsdb schema head from day one; retention 72h (3d). Push receiver open to
   # compose-internal traffic only (Alloy is the sole producer).
   # NO host port — accessed by metrics-api via compose-internal name only.
-  loki-playground:
+  playground-loki:
     image: grafana/loki:3.2.1
     container_name: playground-loki
     hostname: playground-loki
@@ -613,13 +613,13 @@ services:
       retries: 10
     # NO `ports:` — compose-internal only (ADR-15 §4).
 
-  # --- M5 s1: alloy-playground (unified collector — scrape orchestrator + log shipper) ---
+  # --- M5 s1: playground-alloy (unified collector — scrape orchestrator + log shipper) ---
   # Pinned by ADR-15 §5 + §A. Replaces Promtail + node_exporter; single-file
   # River config at /etc/alloy/config.alloy. Mounts docker.sock read-only for
   # discovery.docker + loki.source.docker. State volume persists log cursors.
   # Depends on prometheus + loki being healthy (remote_write / loki.write
   # endpoints must be reachable at startup or Alloy back-offs spam logs).
-  alloy-playground:
+  playground-alloy:
     image: grafana/alloy:v1.3.1
     container_name: playground-alloy
     hostname: playground-alloy
@@ -633,9 +633,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only docker socket (ADR-15 §5 + §20)
       - alloy-playground-data:/var/lib/alloy/data
     depends_on:
-      prometheus-playground:
+      playground-prometheus:
         condition: service_healthy
-      loki-playground:
+      playground-loki:
         condition: service_healthy
     healthcheck:
       # grafana/alloy:v1.3.1 does not ship wget/curl; verify the Alloy HTTP
@@ -668,7 +668,8 @@ networks:
   # The Spark inference stack (`spark-inference-gateway` + per-model backends
   # like `spark-inference-qwen3-vl-30b-a3b`, `spark-inference-bge-m3`) lives in a
   # SEPARATE compose project on a bridge named `spark-inference-net`. Three
-  # playground services (`docs-api`, `chat-api`, `metrics-api`) join this
+  # playground services (`playground-backend-docs-api`,
+  # `playground-backend-chat-api`, `playground-backend-metrics-api`) join this
   # bridge so the gateway's container DNS resolves directly. (Pre-M6.1 the
   # third member was `rag-ingestion-api`; that BC was absorbed into docs-api
   # in M6.1, which now carries both the Vision OCR and the BGE-M3 embedding

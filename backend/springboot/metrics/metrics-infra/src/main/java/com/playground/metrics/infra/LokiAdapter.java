@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * WebClient adapter against {@code /loki/api/v1/query_range} on
- * loki-playground per ADR-15 §7 + §11. The timeout is 15 seconds.
+ * playground-loki per ADR-15 §7 + §11. The timeout is 15 seconds.
  *
  * <p>Loki returns timestamps as nanosecond-since-epoch strings; we convert
  * to {@link Instant} via integer division (nanoseconds → seconds + nanos

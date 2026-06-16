@@ -13,13 +13,13 @@
 # `num.partitions=1` default otherwise).
 #
 # Invocation: run from inside a one-shot compose service against a healthy
-# `kafka-playground` broker on the compose-internal listener
-# (`kafka-playground:9092`). See `kafka-init` service in
+# `playground-kafka-broker` broker on the compose-internal listener
+# (`playground-kafka-broker:9092`). See `kafka-init` service in
 # `infra/docker-compose.yml`.
 
 set -eu
 
-BOOTSTRAP_SERVER="${KAFKA_BOOTSTRAP_SERVERS:-kafka-playground:9092}"
+BOOTSTRAP_SERVER="${KAFKA_BOOTSTRAP_SERVERS:-playground-kafka-broker:9092}"
 KAFKA_BIN="${KAFKA_BIN:-/opt/kafka/bin/kafka-topics.sh}"
 
 # Default settings per ADR-03.

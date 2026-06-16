@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # along with the persist node and shared_kernel.database.
 
     # --- Cross-BC HTTP (docs-api body fetch per ADR-08 Exception 5) ---
-    docs_api_base_url: str = Field(default="http://docs-api:18082")
+    docs_api_base_url: str = Field(default="http://playground-backend-docs-api:18082")
     docs_api_timeout_seconds: float = Field(default=10.0)
 
     # --- LLM (spark-inference-gateway OpenAI-compatible) ---
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # --- MinIO (ADR-20 §D3 revised — architecture BC owns write path) ---
     minio_endpoint: str = Field(
-        default="http://minio-playground:9000",
+        default="http://playground-minio:9000",
         alias="PLAYGROUND_ARCHITECTURE_MINIO_ENDPOINT",
     )
     minio_access_key: str = Field(default="playground", alias="MINIO_ROOT_USER")

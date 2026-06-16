@@ -21,7 +21,7 @@ import java.time.Duration;
  * preserving the existing citation machinery.
  *
  * <p>Endpoint default is the compose-internal hostname
- * {@code http://docs-api:18082/internal/tools/search-documents}; override via
+ * {@code http://playground-backend-docs-api:18082/internal/tools/search-documents}; override via
  * {@code PLAYGROUND_SEARCH_TOOL_URL} env var (mirrors {@link MassingTool}'s
  * pattern).
  */
@@ -54,7 +54,7 @@ public final class SearchTool {
 
     /** Default endpoint hostname — overridden by env var when set. */
     private static final URI DEFAULT_ENDPOINT =
-            URI.create("http://docs-api:18082/internal/tools/search-documents");
+            URI.create("http://playground-backend-docs-api:18082/internal/tools/search-documents");
 
     /** Singleton descriptor instance — registered in {@link ToolCatalog#descriptors()}. */
     public static final ToolDescriptor SEARCH = new ToolDescriptor(

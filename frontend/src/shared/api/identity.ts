@@ -36,7 +36,7 @@ const ME_PATH = '/api/users/me';
  * because `NEXT_PUBLIC_GATEWAY_URL` is honored when set.
  */
 function gatewayBaseUrl(): string {
-  return process.env.GATEWAY_INTERNAL_URL ?? 'http://gateway:18080';
+  return process.env.GATEWAY_INTERNAL_URL ?? 'http://playground-backend-gateway:18080';
 }
 
 export type MeResult =

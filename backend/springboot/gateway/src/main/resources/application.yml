@@ -19,7 +19,7 @@ spring:
     name: gateway
   data:
     redis:
-      host: ${REDIS_HOST:redis-playground}
+      host: ${REDIS_HOST:playground-redis}
       port: ${REDIS_PORT:6379}
   session:
     store-type: redis
@@ -48,13 +48,13 @@ spring:
         # the placeholders for M2+ BCs are wired with the URIs they will use so
         # adding them later is just dropping their compose service in.
         - id: identity-api
-          uri: http://identity-api:18081
+          uri: http://playground-backend-identity-api:18081
           predicates:
             - Path=/api/identity/**
           filters:
             - StripPrefix=2
         - id: docs-api
-          uri: http://docs-api:18082
+          uri: http://playground-backend-docs-api:18082
           predicates:
             - Path=/api/docs/**
           filters:
@@ -66,7 +66,7 @@ spring:
           filters:
             - StripPrefix=3
         - id: chat-api
-          uri: http://chat-api:18084
+          uri: http://playground-backend-chat-api:18084
           predicates:
             - Path=/api/chat/**
           filters:
@@ -74,7 +74,7 @@ spring:
         - id: metrics-api
           # ADR-15 §1 — metrics-api lives on port 18085 (was 18086 in the
           # placeholder; the lowest-unused-BC-port discipline put it at 18085).
-          uri: http://metrics-api:18085
+          uri: http://playground-backend-metrics-api:18085
           predicates:
             - Path=/api/metrics/**
           filters:
@@ -90,14 +90,14 @@ spring:
         # ADR-09 §allowlist names /api/users/me explicitly — BC-prefix-less
         # alias for the current-user endpoint matching the frontend's /me fetch.
         - id: users-me
-          uri: http://identity-api:18081
+          uri: http://playground-backend-identity-api:18081
           predicates:
             - Path=/api/users/me
           filters:
             - StripPrefix=2
         # Catch-all to the Next.js SSR server.
         - id: frontend
-          uri: http://frontend:3000
+          uri: http://playground-frontend:3000
           predicates:
             - Path=/**
 
@@ -105,7 +105,7 @@ playground:
   cookies:
     secure: ${PLAYGROUND_COOKIES_SECURE:true}
   identity:
-    base-url: ${IDENTITY_BASE_URL:http://identity-api:18081}
+    base-url: ${IDENTITY_BASE_URL:http://playground-backend-identity-api:18081}
 
 management:
   endpoints:

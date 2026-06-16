@@ -21,17 +21,17 @@ spring:
     # RedissonClient bean. Bucket keys (metrics:bucket:ip:*:dashboard) are
     # namespaced inside the RedissonIpRateLimiterAdapter.
     redis:
-      host: ${REDIS_HOST:redis-playground}
+      host: ${REDIS_HOST:playground-redis}
       port: ${REDIS_PORT:6379}
 
 # ADR-15 §7 + §18 — upstream URLs + per-adapter timeouts.
 playground:
   metrics:
     prometheus:
-      base-url: ${METRICS_PROMETHEUS_BASE_URL:http://prometheus-playground:9090}
+      base-url: ${METRICS_PROMETHEUS_BASE_URL:http://playground-prometheus:9090}
       timeout-ms: 8000
     loki:
-      base-url: ${METRICS_LOKI_BASE_URL:http://loki-playground:3100}
+      base-url: ${METRICS_LOKI_BASE_URL:http://playground-loki:3100}
       timeout-ms: 15000
     spark-gateway:
       base-url: ${METRICS_SPARK_GATEWAY_BASE_URL:http://host.docker.internal:10080}

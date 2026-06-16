@@ -18,7 +18,7 @@ import reactor.netty.http.client.HttpClient;
  * identity, just without author display names.
  *
  * <p>Base URL comes from {@code IDENTITY_BASE_URL} (default
- * {@code http://identity-api:18081} per ADR-12 §15 compose spec).
+ * {@code http://playground-backend-identity-api:18081} per ADR-12 §15 compose spec).
  */
 @Configuration(proxyBeanMethods = false)
 public class IdentityClientConfig {
@@ -26,7 +26,7 @@ public class IdentityClientConfig {
     @Bean
     @Qualifier("identityWebClient")
     public WebClient identityWebClient(
-            @Value("${IDENTITY_BASE_URL:http://identity-api:18081}") String baseUrl) {
+            @Value("${IDENTITY_BASE_URL:http://playground-backend-identity-api:18081}") String baseUrl) {
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofSeconds(2));
         return WebClient.builder()

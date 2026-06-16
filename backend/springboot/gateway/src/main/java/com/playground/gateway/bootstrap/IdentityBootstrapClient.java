@@ -26,7 +26,7 @@ public class IdentityBootstrapClient {
     public IdentityBootstrapClient(
             WebClient.Builder webClientBuilder,
             ReactiveStringRedisTemplate redis,
-            @Value("${playground.identity.base-url:http://identity-api:18081}") String identityBaseUrl) {
+            @Value("${playground.identity.base-url:http://playground-backend-identity-api:18081}") String identityBaseUrl) {
         this.webClient = webClientBuilder.baseUrl(identityBaseUrl).build();
         this.redis = redis;
     }

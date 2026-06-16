@@ -25,7 +25,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * WebClient adapter against {@code /api/v1/query} +
- * {@code /api/v1/query_range} on prometheus-playground per ADR-15 §7. The
+ * {@code /api/v1/query_range} on playground-prometheus per ADR-15 §7. The
  * per-query timeout is 8 seconds (carrying the ADR-15 §7 budget); the
  * shared HttpClient is the Reactor Netty default.
  */

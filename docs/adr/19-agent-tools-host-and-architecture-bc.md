@@ -78,7 +78,8 @@ BCs.**
 
 | Concern | Decision |
 |---|---|
-| Host service name | **`agent-tools`** (container / hostname / compose service / image) |
+| Host logical name | **`agent-tools`** |
+| Docker service / container / hostname | **`playground-agent-tools`** (image remains `playground/agent-tools:dev`) |
 | Repo layout | `backend/fastapi/agent-tools/` is the host; each BC is a directory module at `backend/fastapi/agent-tools/<bc>/` |
 | Port | **18083** (unchanged — reclaims the slot `massing-gen-api` held) |
 | Runtime | Python 3.12 + FastAPI + uvicorn (single ASGI app; per-BC routers mounted under their own prefixes) |
@@ -135,19 +136,19 @@ explicitly rejected any "keep the old host for now" dual-routing.
 
 | # | Identifier / reference | From | To | Where |
 |---|---|---|---|---|
-| 1 | Compose service name | `massing-gen-api` | `agent-tools` | `infra/docker-compose.yml` |
-| 2 | Compose `container_name` | `massing-gen-api` | `agent-tools` | `infra/docker-compose.yml` |
-| 3 | Compose `hostname` | `massing-gen-api` | `agent-tools` | `infra/docker-compose.yml` |
+| 1 | Compose service name | `massing-gen-api` | `playground-agent-tools` | `infra/docker-compose.yml` |
+| 2 | Compose `container_name` | `massing-gen-api` | `playground-agent-tools` | `infra/docker-compose.yml` |
+| 3 | Compose `hostname` | `massing-gen-api` | `playground-agent-tools` | `infra/docker-compose.yml` |
 | 4 | Compose `image` | `playground/massing-gen-api:dev` | `playground/agent-tools:dev` | `infra/docker-compose.yml` |
 | 5 | Compose `build.context` | `../backend/fastapi/massing-gen` | `../backend/fastapi/agent-tools` | `infra/docker-compose.yml` |
 | 6 | Compose healthcheck target | `http://localhost:18083/actuator/health` | **NO CHANGE — preserved.** The FastAPI app deliberately exposes `@app.get("/actuator/health")` (main.py) for cross-service uniformity with every Java BC's `/actuator/health`; it is intentional, not a stale Java path. Only the host alias the gateway/rag-chat target moves. | `infra/docker-compose.yml` |
 | 7 | Top-level directory | `backend/fastapi/massing-gen/` | `backend/fastapi/agent-tools/architecture/` (BC module) + `backend/fastapi/agent-tools/app/` (host shared) | repo |
-| 8 | rag-chat `MassingTool` endpoint host | `http://massing-gen-api:18083/internal/tools/generate-massing` | `http://agent-tools:18083/internal/tools/generate-massing` | `rag-chat-domain/.../tool/MassingTool.java` (`DEFAULT_ENDPOINT`) |
+| 8 | rag-chat `MassingTool` endpoint host | `http://massing-gen-api:18083/internal/tools/generate-massing` | `http://playground-agent-tools:18083/internal/tools/generate-massing` | `rag-chat-domain/.../tool/MassingTool.java` (`DEFAULT_ENDPOINT`) |
 | 9 | rag-chat env override var | `PLAYGROUND_MASSING_GEN_TOOL_URL` | retained name OR renamed `PLAYGROUND_ARCHITECTURE_TOOL_URL` (implementer choice — pin in Phase-1 PR; default URL is the load-bearing change) | `MassingTool.java` |
-| 10 | Gateway route `uri` | `http://massing-gen-api:18083` | `http://agent-tools:18083` | `gateway/.../application.yml` (route id `massing-gen-api`) |
+| 10 | Gateway route `uri` | `http://massing-gen-api:18083` | `http://playground-agent-tools:18083` | `gateway/.../application.yml` (route id `massing-gen-api`) |
 | 11 | Gateway route `id` | `massing-gen-api` | `agent-tools` (or `architecture`) | `gateway/.../application.yml` |
 | 12 | Python package paths | `app.*` under `massing-gen/` | `architecture.*` (BC) + host `app.*` | `backend/fastapi/agent-tools/` |
-| 13 | M5 Prometheus scrape job target | `massing-gen-api:18083` | `agent-tools:18083` | `infra/prometheus/prometheus.yml` (Phase 2 / next M5 pass) |
+| 13 | M5 Prometheus scrape job target | `massing-gen-api:18083` | `playground-agent-tools:18083` | `infra/prometheus/prometheus.yml` (Phase 2 / next M5 pass) |
 
 #### Rename change-set — what is PRESERVED (no change)
 
@@ -276,7 +277,7 @@ amendment.
   area with no coverage ratio and basement parking lumped in).
 - **Persistence changes (direction):**
   - *Option A — store the `.3dm` in MinIO.* The MinIO sidecar
-    (`minio-playground`) is already on the same `playground-net`;
+    (`playground-minio`) is already on the same `playground-net`;
     mirror docs-api's MinIO pattern (ADR-12 §A12.4 / ADR-08 §A08.3).
     Keep an **object key** in `arch.outputs` instead of inline BYTEA.
     (This is the Phase-3 realization of the BYTEA→MinIO migration path

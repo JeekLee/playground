@@ -20,18 +20,18 @@
 // container_name과 동일한 `playground-backend-*` prefix로 통일 — PromQL의
 // `{service=~"^playground-(backend|frontend)-.*"}` 정규식 매칭을 위함.
 // M6.1 ADR-12 §A12.1: `rag-ingestion-api:18083` 타깃은 BC 흡수와 함께 제거됨.
-// `docs-api`가 chunker/embedder/pgvector writer + Vision OCR을 모두 흡수했으므로
+// `playground-backend-docs-api`가 chunker/embedder/pgvector writer + Vision OCR을 모두 흡수했으므로
 // 동일 컨테이너의 `/actuator/prometheus`가 이전의 docs + rag-ingestion 메트릭을
 // 함께 노출한다 (counters는 `playground.rag-ingestion.*` prefix를 유지하므로
 // PromQL/대시보드는 무수정).
 prometheus.scrape "backend_bcs" {
   job_name = "playground-bcs"
   targets = [
-    { __address__ = "gateway:18080",       service = "playground-backend-gateway",       __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "identity-api:18081",  service = "playground-backend-identity-api",  __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "docs-api:18082",      service = "playground-backend-docs-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "chat-api:18084",      service = "playground-backend-chat-api",      __metrics_path__ = "/actuator/prometheus" },
-    { __address__ = "metrics-api:18085",   service = "playground-backend-metrics-api",   __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "playground-backend-gateway:18080",       service = "playground-backend-gateway",       __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "playground-backend-identity-api:18081",  service = "playground-backend-identity-api",  __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "playground-backend-docs-api:18082",      service = "playground-backend-docs-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "playground-backend-chat-api:18084",      service = "playground-backend-chat-api",      __metrics_path__ = "/actuator/prometheus" },
+    { __address__ = "playground-backend-metrics-api:18085",   service = "playground-backend-metrics-api",   __metrics_path__ = "/actuator/prometheus" },
   ]
   scrape_interval = "5s"
   scrape_timeout  = "4s"
@@ -41,7 +41,7 @@ prometheus.scrape "backend_bcs" {
 // 2. cAdvisor scrape — per-container CPU/mem
 prometheus.scrape "cadvisor" {
   job_name = "cadvisor"
-  targets = [{ __address__ = "cadvisor-playground:8080" }]
+  targets = [{ __address__ = "playground-cadvisor:8080" }]
   scrape_interval = "5s"
   scrape_timeout  = "4s"
   forward_to = [prometheus.remote_write.local.receiver]
@@ -69,10 +69,10 @@ prometheus.scrape "host" {
 prometheus.scrape "observability_self" {
   job_name = "observability-self"
   targets = [
-    { __address__ = "prometheus-playground:9090", service = "playground-prometheus", __metrics_path__ = "/metrics" },
-    { __address__ = "loki-playground:3100",       service = "playground-loki",       __metrics_path__ = "/metrics" },
-    { __address__ = "alloy-playground:12345",     service = "playground-alloy",      __metrics_path__ = "/metrics" },
-    { __address__ = "cadvisor-playground:8080",   service = "playground-cadvisor",   __metrics_path__ = "/metrics" },
+    { __address__ = "playground-prometheus:9090", service = "playground-prometheus", __metrics_path__ = "/metrics" },
+    { __address__ = "playground-loki:3100",       service = "playground-loki",       __metrics_path__ = "/metrics" },
+    { __address__ = "playground-alloy:12345",     service = "playground-alloy",      __metrics_path__ = "/metrics" },
+    { __address__ = "playground-cadvisor:8080",   service = "playground-cadvisor",   __metrics_path__ = "/metrics" },
   ]
   scrape_interval = "5s"
   scrape_timeout  = "4s"
@@ -81,7 +81,7 @@ prometheus.scrape "observability_self" {
 
 // 5. Local Prometheus (push) — remote_write sink
 prometheus.remote_write "local" {
-  endpoint { url = "http://prometheus-playground:9090/api/v1/write" }
+  endpoint { url = "http://playground-prometheus:9090/api/v1/write" }
 }
 
 // 6. Docker log discovery + shipping to Loki (per ADR-15 §11 label set)
@@ -110,5 +110,5 @@ loki.source.docker "containers" {
 }
 
 loki.write "local" {
-  endpoint { url = "http://loki-playground:3100/loki/api/v1/push" }
+  endpoint { url = "http://playground-loki:3100/loki/api/v1/push" }
 }
